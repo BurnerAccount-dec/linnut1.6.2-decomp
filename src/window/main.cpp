@@ -97,10 +97,15 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--audio-out") && i + 1 < argc) audioOut = argv[++i];
         else if (!std::strcmp(argv[i], "--screenshot") && i + 2 < argc) { shot = argv[++i]; shotFrames = std::atoi(argv[++i]); }
     }
-    if (scripts.empty() || data.empty()) {
-        std::printf("usage: %s --scripts <scripts folder> --data <data folder> [--screenshot <png> <frames>]\n", argv[0]);
+    // without arguments the exe works like the original: put it next to the game's data folder
+    if (data.empty()) data = "data";
+    if (scripts.empty()) scripts = data + "/scripts";
+    FILE* probe = std::fopen((scripts + "/gamelogic.lua").c_str(), "rb");
+    if (!probe) {
+        std::printf("Could not find %s/gamelogic.lua.\nPut this exe next to the game's data folder, or run:\n  %s --scripts <scripts folder> --data <data folder>\n", scripts.c_str(), argv[0]);
         return 2;
     }
+    std::fclose(probe);
 
     // config.lua: --config, else the folder that holds the data folder (where the original exe sits), else the working folder
     WindowConfig wc;
