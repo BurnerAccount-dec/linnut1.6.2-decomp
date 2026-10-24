@@ -217,13 +217,52 @@ int l_saveLuaFile(lua_State* L) {
     lua_getfield(L, -1, name.c_str());
     lua_remove(L, -2);
     if (!lua_istable(L, -1)) { lua_pop(L, 1); return 0; }
-    std::string text = name + " = ";
-    Serialize(L, text, 0);
-    text += "\n";
-    lua_pop(L, 1);
     std::string path = P(L)->ResolveUserFile(file, appData);
+    // an existing original file stays in its format: one `key = value` line per entry, encrypted if it was
+    // (some originals are not encrypted: their text starts with an entry, not with `tableName = {`)
+    std::string old;
+    bool encrypted = false;
+    ab::ReadSaveFile(path, old, encrypted);
+    size_t start = old.find_first_not_of(" \t\r\n");
+    bool original = encrypted || (start != std::string::npos && old.compare(start, name.size() + 3, name + " = ") != 0);
+    std::string text;
+    if (original) {
+        lua_pushnil(L);
+        while (lua_next(L, -2)) {
+            if (lua_type(L, -2) == LUA_TSTRING) {
+                text += lua_tostring(L, -2);
+                text += " = ";
+                Serialize(L, text, 0);
+                text += "\n";
+            }
+            lua_pop(L, 1);
+        }
+    } else {
+        text = name + " = ";
+        Serialize(L, text, 0);
+        text += "\n";
+    }
+    lua_pop(L, 1);
+    std::vector<uint8_t> bytes(text.begin(), text.end());
+    if (original) {
+        std::string backup = path + ".original-backup";        // the first overwrite keeps the file the game wrote
+        if (FILE* b = std::fopen(backup.c_str(), "rb")) std::fclose(b);
+        else if (FILE* in = std::fopen(path.c_str(), "rb")) {
+            if (FILE* b = std::fopen(backup.c_str(), "wb")) {
+                int c;
+                while ((c = std::fgetc(in)) != EOF) std::fputc(c, b);
+                std::fclose(b);
+            }
+            std::fclose(in);
+        }
+        if (encrypted) {
+            std::vector<uint8_t> enc;
+            ab::AesEncryptCbc((const uint8_t*)ab::kSaveKey, bytes, enc);
+            bytes = enc;
+        }
+    }
     if (FILE* f = std::fopen(path.c_str(), "wb")) {
-        std::fwrite(text.data(), 1, text.size(), f);
+        std::fwrite(bytes.data(), 1, bytes.size(), f);
         std::fclose(f);
     } else {
         P(L)->Print("saveLuaFile: cannot write " + path);

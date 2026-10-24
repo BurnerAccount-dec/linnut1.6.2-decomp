@@ -63,6 +63,7 @@ static int MapKey(SDL_Keycode k) {
 // fullscreen and showCursor.
 struct WindowConfig {
     std::string name = "Angry Birds";
+    std::string product = "Angry Birds";          // names the save folder %APPDATA%\\Rovio\\<product>
     int width = 1280, height = 720;
     bool fullscreen = false, showCursor = true;
 };
@@ -71,6 +72,7 @@ static void ReadConfigLua(const std::string& path, WindowConfig& out) {
     lua_State* L = luaL_newstate();
     if (luaL_loadfile(L, path.c_str()) == 0 && lua_pcall(L, 0, 0, 0) == 0) {
         lua_getglobal(L, "name"); if (lua_isstring(L, -1)) out.name = lua_tostring(L, -1); lua_pop(L, 1);
+        lua_getglobal(L, "product"); if (lua_isstring(L, -1)) out.product = lua_tostring(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "width"); if (lua_isnumber(L, -1)) out.width = (int)lua_tonumber(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "height"); if (lua_isnumber(L, -1)) out.height = (int)lua_tonumber(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "fullscreen"); if (lua_isboolean(L, -1)) out.fullscreen = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
@@ -81,7 +83,7 @@ static void ReadConfigLua(const std::string& path, WindowConfig& out) {
 }
 
 int main(int argc, char** argv) {
-    std::string scripts, data, shot, configPath;
+    std::string scripts, data, shot, configPath, userData;
     int shotFrames = 0;
     std::string audioOut;                 // test: write the mixed sound of the --screenshot run to this .wav
     struct Click { int frame; float x, y, x2, y2; int length; };   // length 3 is a click, more is a drag to (x2, y2)
@@ -90,6 +92,7 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; i++) {
         if (!std::strcmp(argv[i], "--scripts") && i + 1 < argc) scripts = argv[++i];
         else if (!std::strcmp(argv[i], "--data") && i + 1 < argc) data = argv[++i];
+        else if (!std::strcmp(argv[i], "--userdata") && i + 1 < argc) userData = argv[++i];
         else if (!std::strcmp(argv[i], "--config") && i + 1 < argc) configPath = argv[++i];
         else if (!std::strcmp(argv[i], "--wheel") && i + 2 < argc) { wheels.push_back({std::atoi(argv[i + 1]), std::atoi(argv[i + 2])}); i += 2; }
         else if (!std::strcmp(argv[i], "--click") && i + 3 < argc) { float x = (float)std::atof(argv[i + 2]), y = (float)std::atof(argv[i + 3]); clicks.push_back({std::atoi(argv[i + 1]), x, y, x, y, 3}); i += 3; }
@@ -151,6 +154,16 @@ int main(int argc, char** argv) {
     cfg.screenWidth = (float)pw;
     cfg.screenHeight = (float)ph;
     GamePlatform platform(data);
+    // --userdata <folder> keeps settings.lua / highscores.lua there; "original" is the folder the game itself
+    // uses, %APPDATA%\Rovio\<product>, whose encrypted files are read and written in their own format
+    if (userData.empty() && !shotFrames) userData = "original";     // like the game itself; --userdata . keeps saves in the working folder
+    if (userData == "original") {
+        const char* appData = std::getenv("APPDATA");
+        if (appData) userData = std::string(appData) + "\\Rovio\\" + wc.product;
+        else { std::printf("--userdata original: APPDATA is not set, using the working folder\n"); userData.clear(); }
+    }
+    platform.SetUserDir(userData);
+    std::printf("saves: %s\n", userData.empty() ? "(working folder)" : userData.c_str());
 
     // The sound device. The exe mixes in software and plays through DirectSound; here the same mixer
     // (platform.Audio()) is asked for blocks by SDL's audio thread.

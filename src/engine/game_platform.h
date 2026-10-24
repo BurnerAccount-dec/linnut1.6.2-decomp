@@ -87,6 +87,12 @@ public:
     void Print(const std::string& text) override;
     void BeginLevelLoad() override;
     std::string ResolveDataFile(const std::string& path) override;
+    // Where settings.lua and highscores.lua live (default: the working folder).
+    void SetUserDir(const std::string& dir) { userDir_ = dir; }
+    std::string ResolveUserFile(const std::string& file, bool appData) override {
+        (void)appData;
+        return userDir_.empty() ? file : userDir_ + "/" + file;
+    }
 
     // Sprite sheets: the sprite is looked up by name across every loaded sheet (the sheet argument of
     // getSpriteBounds / getSpritePivot is ignored by the exe); sizes are the raw integers from the file.
@@ -226,6 +232,7 @@ private:
     std::string current_;                               // useFont
     std::unique_ptr<Host> host_;
     std::vector<std::string> log_;
+    std::string userDir_;
 };
 
 }  // namespace ab
