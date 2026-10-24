@@ -5,6 +5,7 @@
 namespace ab {
 
 const char kLevelKey[33] = "USCaPQpA4TSNVxMI1v9SK9UC0yZuAnb2";
+const char kSaveKey[33] = "44iUY5aTrlaYoet9lapRlaK1Ehlec5i0";
 
 namespace {
 
@@ -38,13 +39,9 @@ void InitTables() {
     done = true;
 }
 
-}  // namespace
-
-bool AesDecryptCbc(const uint8_t key[32], const std::vector<uint8_t>& in, std::vector<uint8_t>& out) {
-    if (in.empty() || in.size() % 16 != 0) return false;
+// key expansion: 15 round keys of 16 bytes
+void ExpandKey(const uint8_t key[32], uint8_t w[240]) {
     InitTables();
-    // key expansion: 15 round keys of 16 bytes
-    uint8_t w[240];
     for (int i = 0; i < 32; i++) w[i] = key[i];
     uint8_t rcon = 1;
     for (int i = 8; i < 60; i++) {
@@ -58,6 +55,14 @@ bool AesDecryptCbc(const uint8_t key[32], const std::vector<uint8_t>& in, std::v
         }
         for (int j = 0; j < 4; j++) w[i * 4 + j] = (uint8_t)(w[(i - 8) * 4 + j] ^ t[j]);
     }
+}
+
+}  // namespace
+
+bool AesDecryptCbc(const uint8_t key[32], const std::vector<uint8_t>& in, std::vector<uint8_t>& out) {
+    if (in.empty() || in.size() % 16 != 0) return false;
+    uint8_t w[240];
+    ExpandKey(key, w);
 
     out.resize(in.size());
     uint8_t prev[16] = {0};
@@ -86,6 +91,53 @@ bool AesDecryptCbc(const uint8_t key[32], const std::vector<uint8_t>& in, std::v
     if (pad == 0 || pad > 16) return false;
     for (int i = 0; i < pad; i++) if (out[out.size() - 1 - i] != pad) return false;
     out.resize(out.size() - pad);
+    return true;
+}
+
+void AesEncryptCbc(const uint8_t key[32], const std::vector<uint8_t>& in, std::vector<uint8_t>& out) {
+    uint8_t w[240];
+    ExpandKey(key, w);
+    std::vector<uint8_t> data = in;
+    uint8_t pad = (uint8_t)(16 - data.size() % 16);
+    data.insert(data.end(), pad, pad);
+    out.resize(data.size());
+    uint8_t prev[16] = {0};
+    for (size_t pos = 0; pos < data.size(); pos += 16) {
+        uint8_t s[16];
+        for (int i = 0; i < 16; i++) s[i] = (uint8_t)(data[pos + i] ^ prev[i] ^ w[i]);
+        for (int round = 1; round <= 14; round++) {
+            uint8_t t[16];
+            for (int c = 0; c < 4; c++)
+                for (int r = 0; r < 4; r++) t[c * 4 + r] = sbox[s[((c + r) % 4) * 4 + r]];   // sub bytes + shift rows
+            if (round < 14) {
+                for (int c = 0; c < 4; c++) {
+                    uint8_t a0 = t[c * 4], a1 = t[c * 4 + 1], a2 = t[c * 4 + 2], a3 = t[c * 4 + 3];
+                    s[c * 4]     = (uint8_t)(Mul2(a0) ^ (Mul2(a1) ^ a1) ^ a2 ^ a3);
+                    s[c * 4 + 1] = (uint8_t)(a0 ^ Mul2(a1) ^ (Mul2(a2) ^ a2) ^ a3);
+                    s[c * 4 + 2] = (uint8_t)(a0 ^ a1 ^ Mul2(a2) ^ (Mul2(a3) ^ a3));
+                    s[c * 4 + 3] = (uint8_t)((Mul2(a0) ^ a0) ^ a1 ^ a2 ^ Mul2(a3));
+                }
+            } else {
+                for (int i = 0; i < 16; i++) s[i] = t[i];
+            }
+            for (int i = 0; i < 16; i++) s[i] ^= w[round * 16 + i];
+        }
+        for (int i = 0; i < 16; i++) { out[pos + i] = s[i]; prev[i] = s[i]; }
+    }
+}
+
+bool ReadSaveFile(const std::string& path, std::string& text, bool& encrypted) {
+    std::ifstream f(path.c_str(), std::ios::binary);
+    if (!f) return false;
+    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>()), plain;
+    encrypted = false;
+    if (AesDecryptCbc((const uint8_t*)kSaveKey, bytes, plain)) {
+        encrypted = true;
+        for (size_t i = 0; i < plain.size() && i < 64; i++)
+            if (plain[i] < 0x20 && plain[i] != '\t' && plain[i] != '\n' && plain[i] != '\r') encrypted = false;
+    }
+    if (encrypted) bytes = plain;
+    text.assign(bytes.begin(), bytes.end());
     return true;
 }
 

@@ -149,21 +149,33 @@ void ScriptHost::NewGlobalTable(const char* name) {
     SetEnvField(name);
 }
 
-// settings.lua / highscores.lua define a global of the same name; a missing file means an empty table.
+// settings.lua / highscores.lua: either `tableName = {...}` (written by this engine) or, in the original
+// (encrypted) files, one assignment per entry (`Level27 = {...}`). The file runs in a table of its own and
+// that table, or the table inside it, becomes the global. A missing file means an empty table.
 void ScriptHost::LoadPersisted(const char* tableName, const char* fileName) {
-    std::string path = platform_.ResolveUserFile(fileName, true);
-    if (LoadInEnv(path) == 0) {
-        if (lua_pcall(L_, 0, 0, 0) != 0) {
-            platform_.Print(std::string("cannot run ") + path + ": " + lua_tostring(L_, -1));
+    std::string path = platform_.ResolveUserFile(fileName, true), text;
+    bool encrypted = false;
+    lua_newtable(L_);                                           // the file's own environment
+    if (!ab::ReadSaveFile(path, text, encrypted)) {
+        platform_.Print("no saved file " + path);
+    } else {
+        platform_.Print("saved file " + path + (encrypted ? " (encrypted original)" : " (plain)"));
+        if (luaL_loadbuffer(L_, text.data(), text.size(), ("@" + path).c_str()) == 0) {
+            lua_pushvalue(L_, -2);
+            lua_setfenv(L_, -2);
+            if (lua_pcall(L_, 0, 0, 0) != 0) {
+                platform_.Print(std::string("cannot run ") + path + ": " + lua_tostring(L_, -1));
+                lua_pop(L_, 1);
+            }
+        } else {
+            platform_.Print(std::string("cannot read ") + path + ": " + lua_tostring(L_, -1));
             lua_pop(L_, 1);
         }
-    } else {
-        lua_pop(L_, 1);
     }
-    GetEnvField(tableName);
-    bool isTable = lua_istable(L_, -1);
-    lua_pop(L_, 1);
-    if (!isTable) NewGlobalTable(tableName);
+    lua_getfield(L_, -1, tableName);
+    if (lua_istable(L_, -1)) lua_remove(L_, -2);
+    else lua_pop(L_, 1);
+    SetEnvField(tableName);
 }
 
 bool ScriptHost::RunFile(const std::string& path) {
