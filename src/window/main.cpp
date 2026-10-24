@@ -102,7 +102,9 @@ int main(int argc, char** argv) {
     if (scripts.empty()) scripts = data + "/scripts";
     FILE* probe = std::fopen((scripts + "/gamelogic.lua").c_str(), "rb");
     if (!probe) {
-        std::printf("Could not find %s/gamelogic.lua.\nPut this exe next to the game's data folder, or run:\n  %s --scripts <scripts folder> --data <data folder>\n", scripts.c_str(), argv[0]);
+        std::string msg = "Could not find " + scripts + "/gamelogic.lua.\n\nPut this exe next to the game's data folder (beside the original AngryBirds.exe) and start it from there.";
+        std::printf("%s\nOr run: %s --scripts <scripts folder> --data <data folder>\n", msg.c_str(), argv[0]);
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Angry Birds engine", msg.c_str(), nullptr);
         return 2;
     }
     std::fclose(probe);
