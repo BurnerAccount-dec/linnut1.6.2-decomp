@@ -10,7 +10,7 @@ An unofficial reimplementation of the engine of the Angry Birds 1.6.2 PC build i
     cmake --build build
     build\Debug\angrybirds.exe --scripts "<game>\data\scripts" --data "<game>\data"
 
-For a release build add `--config Release`. SDL2 is downloaded and built on the first configure if CMake cannot find it (internet needed). Or put `angrybirds.exe` next to the game's `data` folder (where the original `AngryBirds.exe` sits) and run it without arguments. The window reads `config.lua` (title, size, fullscreen, cursor) from the folder above `--data`, or from `--config <file>`.
+For a release build add `--config Release`. SDL2 is downloaded and built on the first configure if CMake cannot find it (internet needed). Or put the built exe (released as `AngryBirdsEngine.exe`) next to the game's `data` folder, where the original `AngryBirds.exe` sits, and run it without arguments. Do not name it `angrybirds.exe`: Windows treats that as the same name as the original and would overwrite it. The window reads `config.lua` (title, size, fullscreen, cursor) from the folder above `--data`, or from `--config <file>`.
 
 ## Licence
 
