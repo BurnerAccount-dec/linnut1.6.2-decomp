@@ -1,6 +1,28 @@
-# Angry Birds engine (C++), rebuilt from the 1.6.2 PC exe
+# Angry Birds 1.6.2 engine (unofficial, C++)
 
-Spec of what the scripts need: `../ENGINE_SPEC.md`. Physics must be **Box2D 2.1.0** (not 2.2.x) so the feel matches. Lua must be **5.1 with `lua_Number` = float** (`#define LUA_NUMBER float` in luaconf.h).
+An unofficial reimplementation of the engine of the Angry Birds 1.6.2 PC build in C++ (SDL2, OpenGL 1.x, Lua 5.1, Box2D 2.1). It runs the game's original Lua scripts.
+
+**Not affiliated with, endorsed by or connected to Rovio Entertainment.** "Angry Birds" and everything in the game belong to their owners. This repository contains no game files: no scripts, images, sounds, levels or executables. To run it you need your own legally obtained copy of the game's `data` folder.
+
+## Build and run (Windows, Visual Studio + CMake)
+
+    cmake -S . -B build
+    cmake --build build
+    build\Debug\angrybirds.exe --scripts "<game>\data\scripts" --data "<game>\data"
+
+SDL2 is downloaded and built on the first configure if CMake cannot find it (internet needed). The window reads `config.lua` (title, size, fullscreen, cursor) from the folder above `--data`, or from `--config <file>`.
+
+## Licence
+
+The code in this repository is MIT licensed (`LICENSE`). Lua, Box2D and minimp3 in `third_party/` keep their own licences, see the `LICENSE` files in their folders.
+
+---
+
+## Development notes
+
+The notes below are the original working notes from while the engine was being written. The "not started" entries are out of date; everything listed now works.
+
+Spec of what the scripts need: `ENGINE_SPEC.md` (not included in this repository). Physics must be **Box2D 2.1.0** (not 2.2.x) so the feel matches. Lua must be **5.1 with `lua_Number` = float** (`#define LUA_NUMBER float` in luaconf.h).
 
 ## Layout (mirrors the original source tree, whose paths are embedded in the exe)
 
@@ -70,7 +92,3 @@ Not yet done: the `Platform` overrides that call `PhysicsWorld` and write the Lu
 Optional joint fields follow the exe's reading rules: a flag counts only if it is a real boolean (`collideConnected = 0` is "absent"), a number only if it is a number or string.
 
 `ab_level_test <scripts> <data> <levels/pack1/Level1.lua> [seconds]` boots the scripts, loads a level through `loadLevelInternal` and runs the physics. Today it reports NaN-like results for blocks, because sprite sizes still come from the stubbed `res.getSpriteBounds` (every block is 0 x 0). The sprite sheet loader is the next piece.
-
-## Build
-
-    cmake -S . -B build && cmake --build build && ./build/ab_tests && ./build/ab_frame_tests && ./build/ab_lua_frame_tests && ./build/ab_physics_tests
