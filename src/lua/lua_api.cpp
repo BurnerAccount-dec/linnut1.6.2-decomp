@@ -94,7 +94,10 @@ int l_setGameOn(lua_State* L) { P(L)->SetGameOn(B(L, 1)); return 0; }
 int l_loadLuaFileToObject(lua_State* L) {
     // loadLuaFileToObject(path, this, name): runs the file; its globals land in the shared global table
     std::string path = S(L, 1);
-    int rc = luaL_loadfile(L, path.c_str());
+    std::vector<uint8_t> bytes;
+    int rc = 1;
+    if (ab::ReadLuaFile(path, bytes)) rc = luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), ("@" + path).c_str());
+    else lua_pushstring(L, ("cannot open " + path).c_str());
     if (rc == 0) {
         PushEnv(L);
         lua_setfenv(L, -2);
@@ -135,13 +138,8 @@ int l_loadLevel(lua_State* L) {
     std::vector<uint8_t> bytes;
     int loaded = 1;
     std::string loadError = "No such file or directory";
-    {
-        std::ifstream f(path.c_str(), std::ios::binary);
-        if (f) bytes.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
-    }
+    ab::ReadLuaFile(path, bytes);
     if (!bytes.empty()) {
-        std::vector<uint8_t> plain;
-        if (ab::AesDecryptCbc((const uint8_t*)ab::kLevelKey, bytes, plain) && plain.size() > 4 && plain[0] == 0x1b) bytes = plain;
         loaded = luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), path.c_str());
         if (loaded != 0) { loadError = lua_tostring(L, -1); lua_pop(L, 1); }
     }
@@ -778,13 +776,8 @@ bool LoadTableFile(lua_State* L, const char* name, const std::string& path, std:
     std::vector<uint8_t> bytes;
     int loaded = 1;
     std::string loadError = "No such file or directory";
-    {
-        std::ifstream f(path.c_str(), std::ios::binary);
-        if (f) bytes.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
-    }
+    ab::ReadLuaFile(path, bytes);
     if (!bytes.empty()) {
-        std::vector<uint8_t> plain;
-        if (ab::AesDecryptCbc((const uint8_t*)ab::kLevelKey, bytes, plain) && plain.size() > 4 && plain[0] == 0x1b) bytes = plain;
         loaded = luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), path.c_str());
         if (loaded != 0) { loadError = lua_tostring(L, -1); lua_pop(L, 1); }
     }

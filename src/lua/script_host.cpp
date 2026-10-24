@@ -1,4 +1,5 @@
 #include "lua/script_host.h"
+#include "lua/aes.h"
 
 #include <cstdio>
 
@@ -127,7 +128,10 @@ void ScriptHost::GetEnvField(const char* name) {
 
 // Loads a Lua file so that it runs in the script environment. Leaves the function on the stack.
 int ScriptHost::LoadInEnv(const std::string& path) {
-    int rc = luaL_loadfile(L_, path.c_str());
+    std::vector<uint8_t> bytes;
+    int rc = 1;
+    if (ab::ReadLuaFile(path, bytes)) rc = luaL_loadbuffer(L_, (const char*)bytes.data(), bytes.size(), ("@" + path).c_str());
+    else lua_pushstring(L_, ("cannot open " + path).c_str());
     if (rc == 0) {
         lua_getfield(L_, LUA_REGISTRYINDEX, "ab.env");
         lua_setfenv(L_, -2);

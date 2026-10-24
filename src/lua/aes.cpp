@@ -1,4 +1,6 @@
 #include "lua/aes.h"
+#include <fstream>
+#include <iterator>
 
 namespace ab {
 
@@ -84,6 +86,22 @@ bool AesDecryptCbc(const uint8_t key[32], const std::vector<uint8_t>& in, std::v
     if (pad == 0 || pad > 16) return false;
     for (int i = 0; i < pad; i++) if (out[out.size() - 1 - i] != pad) return false;
     out.resize(out.size() - pad);
+    return true;
+}
+
+bool ReadLuaFile(const std::string& path, std::vector<uint8_t>& bytes) {
+    std::ifstream f(path.c_str(), std::ios::binary);
+    if (!f) return false;
+    bytes.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+    std::vector<uint8_t> plain;
+    if (AesDecryptCbc((const uint8_t*)kLevelKey, bytes, plain) && plain.size() > 4) {
+        // the decrypted file is either bytecode (starts with 0x1b) or plain Lua text; a file that was
+        // not encrypted at all turns into noise, which has control characters near the start
+        bool text = true;
+        for (size_t i = 0; i < plain.size() && i < 64; i++)
+            if (plain[i] < 0x20 && plain[i] != '\t' && plain[i] != '\n' && plain[i] != '\r') text = false;
+        if (plain[0] == 0x1b || text) bytes = plain;
+    }
     return true;
 }
 
