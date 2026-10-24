@@ -1,6 +1,6 @@
 # Angry Birds 1.6.2 engine (unofficial, C++)
 
-An unofficial reimplementation of the engine of the Angry Birds 1.6.2 PC build in C++ (SDL2, OpenGL 1.x, Lua 5.1, Box2D 2.1). It runs the game's original Lua scripts.
+An unofficial reimplementation of the engine of the Angry Birds 1.6.2 PC build in C++ (SDL2, OpenGL 1.x, Lua 5.1, Box2D 2.1). It runs the game's original Lua scripts. Tested with 1.0.0 PC and 1.6.3 PC; both are functional, though 1.0.0 PC draws no background and is in Polish (?).
 
 **Not affiliated with, endorsed by or connected to Rovio Entertainment.** "Angry Birds" and everything in the game belong to their owners. This repository contains no game files: no scripts, images, sounds, levels or executables. To run it you need your own legally obtained copy of the game's `data` folder.
 
