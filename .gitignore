@@ -1,0 +1,4 @@
+build/
+settings.lua
+highscores.lua
+tests/data/
