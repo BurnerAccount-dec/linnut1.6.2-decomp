@@ -171,7 +171,17 @@ void GamePlatform::RunFrame(float dt) {
     UpdateZoom(dt);
     if (host_) UpdateFrame(physics_.Frame(), *host_, dt);
     // 0x40a8cb: the particles move only while the physics is enabled
-    if (physics_.Frame().running) UpdateParticles(dt);
+    if (physics_.Frame().running) UpdateParticles(dt, true);
+    // Seasons: the menus switch their own particles on with the global enableMenuParticles
+    if (scripts_) {
+        lua_State* L = scripts_->State();
+        int top = lua_gettop(L);
+        lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+        lua_getfield(L, -1, "enableMenuParticles");
+        bool menu = lua_toboolean(L, -1) != 0;
+        lua_settop(L, top);
+        if (menu) UpdateParticles(dt, false);
+    }
 }
 
 void GamePlatform::Print(const std::string& text) {
@@ -185,7 +195,57 @@ void GamePlatform::BeginLevelLoad() {
     physics_.Clear();
     // a new level (or a restart) starts without the old one's particles and bird trails
     particles_.clear();
+    themeSprites_.clear();
     for (int i = 0; i < 6; i++) { trajDots_[i].clear(); trajPuffs_[i].clear(); }
+}
+
+void GamePlatform::CreateThemeSprite(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, float speedX, int layer) {
+    themeSprites_.push_back({name, sprite, x, y, scaleX, scaleY, angle, speedX, layer});
+}
+
+void GamePlatform::ModifyThemeSprite(const std::string& name, float x, float y, float scaleX, float scaleY, float angle, int layer) {
+    for (ThemeSprite& t : themeSprites_)
+        if (t.name == name) { t.x = x; t.y = y; t.scaleX = scaleX; t.scaleY = scaleY; t.angle = angle; t.layer = layer; }
+}
+
+void GamePlatform::RemoveThemeSprite(const std::string& name, int layer) {
+    for (size_t i = 0; i < themeSprites_.size(); i++)
+        if (themeSprites_[i].name == name && themeSprites_[i].layer == layer) { themeSprites_.erase(themeSprites_.begin() + (long)i); break; }
+}
+
+// updateThemeSprite (the exe's 0x417550): sprites of the background layers drift by speedX (physics units a second)
+// and wrap around the screen, left to right when moving left. The foreground layers are not updated.
+void GamePlatform::UpdateThemeSprites(float dt) {
+    for (ThemeSprite& t : themeSprites_) {
+        if (t.speedX == 0 || t.layer >= (int)bgLayers_.size()) continue;
+        const Sprite* sp = sprites_.Find(t.sprite);
+        if (!sp) continue;
+        float shift = bgLayers_[t.layer].speed * camX_;
+        float left = t.x * 20.0f - (float)sp->w * t.scaleX;
+        float leftBound = shift - (float)sp->h * t.scaleX * 1.1f;
+        float rightBound = screenWidth_ / worldScale_ + shift;
+        t.x += t.speedX * dt;
+        if (left < leftBound && t.speedX < 0) t.x = ((float)sp->w * t.scaleX + rightBound) / 20.0f;
+        else if (left > rightBound && t.speedX > 0) t.x = ((float)sp->w * t.scaleX + leftBound) / 20.0f;
+    }
+}
+
+// The sprites of one layer, placed in the same world as the physics objects (units * 20) and moved by the
+// layer's own camera shift. The size is the world scale times the sprite's own scale.
+void GamePlatform::DrawThemeSprites(int layer) {
+    RenderState layerState = state_;
+    for (const ThemeSprite& t : themeSprites_) {
+        if (t.layer != layer) continue;
+        const Sprite* sp = sprites_.Find(t.sprite);
+        float px = t.x * 20.0f * worldScale_ - themeShift_ * layerState.sx;
+        float py = t.y * 20.0f * worldScale_ + layerState.ty * layerState.sy;
+        state_ = RenderState();
+        state_.sx = worldScale_ * t.scaleX; state_.sy = worldScale_ * t.scaleY;
+        state_.angle = t.angle;
+        if (sp) { state_.pivotX = (float)sp->pivotX; state_.pivotY = (float)sp->pivotY; }
+        ResDrawSprite(t.sprite, px / state_.sx, py / state_.sy, 4, 3, false, 0, 0);
+    }
+    state_ = layerState;
 }
 
 std::string GamePlatform::ResolveDataFile(const std::string& path) {
@@ -461,7 +521,10 @@ void GamePlatform::DrawLine2D(float x1, float y1, float x2, float y2, float widt
 
 void GamePlatform::ResCreateSpriteSheet(const std::string& path) {
     std::string error;
-    if (!sprites_.Load(path, ResolveDataFile(path), &error)) Print("createSpriteSheet: " + error);
+    if (sprites_.Load(path, ResolveDataFile(path), &error)) return;
+    // Seasons lists its composite sprite files with the sheets
+    if (error == "no SPRT chunk" && sprites_.LoadCompoSet(path, ResolveDataFile(path), &error)) return;
+    Print("createSpriteSheet " + path + ": " + error);
 }
 
 void GamePlatform::ResReleaseSpriteSheet(const std::string& path) { sprites_.Release(path); }
@@ -564,12 +627,13 @@ void GamePlatform::ResDrawString(const std::string& group, const std::string& ke
     const std::string* words[2] = {&a1, &a2};
     for (int i = 0; i < 2; i++) {
         if (*words[i] == "TOP") v = 0; else if (*words[i] == "VCENTER") v = 1; else if (*words[i] == "BOTTOM") v = 2;
+        else if (*words[i] == "BASELINE" || *words[i] == "VPIVOT") v = 3;     // y is the baseline: no move
         else if (*words[i] == "LEFT") h = 0; else if (*words[i] == "HCENTER") h = 1; else if (*words[i] == "RIGHT") h = 2;
     }
     float width = font->StringWidth(text);
     if (v == 0) y += (float)font->maxAscent;
     else if (v == 1) y += (float)(font->maxAscent - (font->maxAscent + font->maxDescent) / 2);
-    else y -= (float)font->maxDescent;
+    else if (v == 2) y -= (float)font->maxDescent;
     if (h == 1) x -= (float)((int)width / 2);
     else if (h == 2) x -= width;
 
@@ -762,9 +826,14 @@ void GamePlatform::DrawBackground() {
     float place = 0;
     bool firstFixed = true;
     for (const BgLayer& layer : bgLayers_) {
+        // a layer is a sprite or a composite sprite (the Seasons hills are composites)
         const Sprite* sp = sprites_.Find(layer.sprite);
-        if (!sp || sp->w <= 0) continue;
-        float w = (float)sp->w, s = layer.scale, inv = 1.0f / s;
+        const CompoSprite* compo = sp ? nullptr : sprites_.FindCompo(layer.sprite);
+        int cw = 0, ch = 0, ox = 0, oy = 0;
+        if (compo) sprites_.CompoExtent(*compo, cw, ch, ox, oy);
+        float w = sp ? (float)sp->w : (float)cw, pivotX = sp ? (float)sp->pivotX : (float)ox;
+        if (w <= 0) continue;
+        float s = layer.scale, inv = 1.0f / s;
         float shift = layer.speed * camX_;
         state_ = RenderState();
         state_.ty = -camY_ * inv;
@@ -773,7 +842,7 @@ void GamePlatform::DrawBackground() {
             float m = std::fmod(shift, w * s);
             float x0 = -(m + w * s) * inv;
             state_.tx = x0 - std::trunc(x0);
-            float right = screenWidth_ * inv / worldScale_ + (float)sp->pivotX;
+            float right = screenWidth_ * inv / worldScale_ + pivotX;
             for (float x = std::trunc(x0); x <= right; x += w) ResDrawSprite(layer.sprite, x, 0, 4, 3, false, 0, 0);
         } else {
             place += firstFixed ? startX * 0.0625f * w : w * 0.5f;
@@ -781,6 +850,8 @@ void GamePlatform::DrawBackground() {
             state_.tx = place - std::trunc(place);
             ResDrawSprite(layer.sprite, place - shift * inv, 0, 4, 3, false, 0, 0);
         }
+        themeShift_ = shift * inv;
+        DrawThemeSprites((int)(&layer - &bgLayers_[0]));
     }
     state_ = RenderState();
 }
@@ -795,7 +866,9 @@ void GamePlatform::DrawForeground() {
         if (sp) height = (float)(sp->h - sp->pivotY);
     }
     DrawRect(groundR_ / 255.0f, groundG_ / 255.0f, groundB_ / 255.0f, 1, 0, -(camY_ - height * 1.5f) * worldScale_, (float)screenWidth_, (float)screenHeight_ + 1, false);
+    int fgIndex = -1;
     for (const std::string& name : fgLayers_) {
+        fgIndex++;
         const Sprite* sp = sprites_.Find(name);
         if (!sp || sp->w <= 0) continue;
         float w = (float)sp->w;
@@ -807,6 +880,8 @@ void GamePlatform::DrawForeground() {
         state_.sx = state_.sy = worldScale_ * 1.5f;
         float right = screenWidth_ / (worldScale_ * 1.5f) + (float)sp->pivotX;
         for (float x = std::trunc(x0); x <= right; x += w) ResDrawSprite(name, x, 0, 4, 3, false, 0, 0);
+        themeShift_ = camX_ / 1.5f;
+        DrawThemeSprites((int)bgLayers_.size() + fgIndex);
     }
     state_ = RenderState();
 }
@@ -878,8 +953,21 @@ const GamePlatform::ParticleDef* GamePlatform::ParticleDefFor(const std::string&
     ParticleDef d;
     GetNumber(L, t, "gravityX", d.gravityX);
     GetNumber(L, t, "gravityY", d.gravityY);
-    GetNumber(L, t, "minVel", d.minVel);
-    GetNumber(L, t, "maxVel", d.maxVel);
+    // 1.x has one speed range for both axes, Seasons has one for each
+    d.seasons = GetNumber(L, t, "minVelX", d.minVelX);
+    GetNumber(L, t, "maxVelX", d.maxVelX);
+    GetNumber(L, t, "minVelY", d.minVelY);
+    GetNumber(L, t, "maxVelY", d.maxVelY);
+    if (!d.seasons) {
+        GetNumber(L, t, "minVel", d.minVelX);
+        GetNumber(L, t, "maxVel", d.maxVelX);
+        d.minVelY = d.minVelX; d.maxVelY = d.maxVelX;
+    }
+    lua_getfield(L, t, "randomizeBirthPosition");
+    if (lua_isboolean(L, -1)) d.randomizeBirth = lua_toboolean(L, -1) != 0;
+    lua_pop(L, 1);
+    if (!GetNumber(L, t, "angleMinEmitter", d.angleMinEmitter) || !GetNumber(L, t, "angleMaxEmitter", d.angleMaxEmitter))
+        d.angleMinEmitter = d.angleMaxEmitter = 0;
     GetNumber(L, t, "minAngleVel", d.minAngleVel);
     GetNumber(L, t, "maxAngleVel", d.maxAngleVel);
     GetNumber(L, t, "minScaleBegin", d.minScaleBegin);
@@ -906,24 +994,33 @@ const GamePlatform::ParticleDef* GamePlatform::ParticleDefFor(const std::string&
 // MSVC's rand() gives 0..32767
 static float Rand01() { return (float)(std::rand() & 0x7fff) * 3.0517578e-05f; }
 
-void GamePlatform::AddParticles(const std::string& type, float amount, float x, float y, float w, float h, float angle) {
-    int count = (int)particles_.size();
-    if ((float)softLimit_ < amount + (float)count) amount *= softFactor_;
-    if ((float)hardLimit_ < (float)count + amount) amount = (float)(hardLimit_ - count);
-    if (!(amount > 0)) return;
+void GamePlatform::AddParticles(const std::string& type, float amount, float x, float y, float w, float h, float angle, bool ignoreLimits, bool second) {
+    if (!ignoreLimits) {
+        int count = 0;
+        for (const Particle& q : particles_) if (q.second == second) count++;
+        if ((float)softLimit_ < amount + (float)count) amount *= softFactor_;
+        if ((float)hardLimit_ < (float)count + amount) amount = (float)(hardLimit_ - count);
+        if (!(amount > 0)) return;
+    }
     const ParticleDef* d = ParticleDefFor(type);
     if (!d || d->sprites.empty()) return;
     float s = std::sin(angle), c = std::cos(angle);
     for (int i = 0; (float)i < amount; i++) {
         Particle p;
         p.def = d;
-        float a = (Rand01() - 0.5f) * w;
-        float b = (Rand01() - 0.5f) * h;
-        p.x = (x + a * c) - b * s;
-        p.y = c * b + s * a + y;
-        p.vx = (d->maxVel - d->minVel) * Rand01() + d->minVel;
-        p.vy = (d->maxVel - d->minVel) * Rand01() + d->minVel;
-        p.angle = Rand01() * 3.1415927f + Rand01() * 3.1415927f;   // the exe uses one random number twice
+        p.second = second;
+        if (d->randomizeBirth) {
+            float a = (Rand01() - 0.5f) * w;
+            float b = (Rand01() - 0.5f) * h;
+            p.x = (x + a * c) - b * s;
+            p.y = c * b + s * a + y;
+        } else {
+            p.x = x; p.y = y;
+        }
+        p.vx = (d->maxVelX - d->minVelX) * Rand01() + d->minVelX;
+        p.vy = (d->maxVelY - d->minVelY) * Rand01() + d->minVelY;
+        if (d->seasons) p.angle = ((d->angleMaxEmitter - d->angleMinEmitter) * Rand01() + d->angleMinEmitter) * 0.017453292f;
+        else p.angle = Rand01() * 3.1415927f + Rand01() * 3.1415927f;   // 1.x: the exe uses one random number twice
         p.angleVel = (d->maxAngleVel - d->minAngleVel) * Rand01() + d->minAngleVel;
         p.scaleBegin = (d->maxScaleBegin - d->minScaleBegin) * Rand01() + d->minScaleBegin;
         p.scaleEnd = (d->maxScaleEnd - d->minScaleEnd) * Rand01() + d->minScaleEnd;
@@ -936,11 +1033,12 @@ void GamePlatform::AddParticles(const std::string& type, float amount, float x, 
     }
 }
 
-void GamePlatform::UpdateParticles(float dt) {
+// Below the ground (y > 0) a particle is removed only in the level; menu particles (enableMenuParticles) stay.
+void GamePlatform::UpdateParticles(float dt, bool removeBelowGround) {
     for (size_t i = 0; i < particles_.size();) {
         Particle& p = particles_[i];
         p.age += dt;
-        if (p.lifeTime < p.age || 0.0f < p.y) { particles_.erase(particles_.begin() + i); continue; }
+        if (p.lifeTime < p.age || (removeBelowGround && 0.0f < p.y)) { particles_.erase(particles_.begin() + i); continue; }
         const ParticleDef& d = *p.def;
         p.vx += d.gravityX * dt;
         p.vy += d.gravityY * dt;
@@ -962,15 +1060,17 @@ void GamePlatform::UpdateParticles(float dt) {
 
 // Each particle: a sprite at (x, y) / scale, scaled by scale * worldScale, rotated about the
 // sprite's pivot, positioned like the blocks (anchors 4 and 3).
-void GamePlatform::DrawParticles() {
+// world = false is the menu call (drawParticlesNative): the particles sit in screen coordinates, no camera
+void GamePlatform::DrawParticles(bool world) {
     if (!backend_) return;
     for (const Particle& p : particles_) {
         const SpriteSheet* sheet = nullptr;
         const Sprite* sp = sprites_.Find(p.sprite, &sheet);
         if (!sp) continue;
         state_ = RenderState();
-        state_.tx = -camX_ / p.scale; state_.ty = -camY_ / p.scale;
-        state_.sx = state_.sy = p.scale * worldScale_;
+        float cx = world ? camX_ : 0, cy = world ? camY_ : 0, ws = world ? worldScale_ : 1;
+        state_.tx = -cx / p.scale; state_.ty = -cy / p.scale;
+        state_.sx = state_.sy = p.scale * ws;
         state_.angle = p.angle;
         state_.pivotX = (float)sp->pivotX;
         state_.pivotY = (float)sp->pivotY;

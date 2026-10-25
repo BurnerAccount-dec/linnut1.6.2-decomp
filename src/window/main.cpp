@@ -4,6 +4,12 @@
 // --screenshot runs that many frames at a fixed 1/30 s step, saves the last one and exits.
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
+#include <SDL_syswm.h>
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#include <shellapi.h>
+#endif
 
 #include <cmath>
 #include <cstdio>
@@ -63,6 +69,8 @@ static int MapKey(SDL_Keycode k) {
 // fullscreen and showCursor.
 struct WindowConfig {
     std::string name = "Angry Birds";
+    std::string imagePath = "images/pc_build", fontPath = "fonts/pc_build";   // Seasons: "images", "fonts"
+    std::string dataPath = "data";                  // config.lua datapath: Seasons uses "data_new"
     std::string product = "Angry Birds";          // names the save folder %APPDATA%\\Rovio\\<product>
     int width = 1280, height = 720;
     bool fullscreen = false, showCursor = true;
@@ -72,6 +80,9 @@ static void ReadConfigLua(const std::string& path, WindowConfig& out) {
     lua_State* L = luaL_newstate();
     if (luaL_loadfile(L, path.c_str()) == 0 && lua_pcall(L, 0, 0, 0) == 0) {
         lua_getglobal(L, "name"); if (lua_isstring(L, -1)) out.name = lua_tostring(L, -1); lua_pop(L, 1);
+        lua_getglobal(L, "imagePath"); if (lua_isstring(L, -1)) out.imagePath = lua_tostring(L, -1); lua_pop(L, 1);
+        lua_getglobal(L, "fontPath"); if (lua_isstring(L, -1)) out.fontPath = lua_tostring(L, -1); lua_pop(L, 1);
+        lua_getglobal(L, "datapath"); if (lua_isstring(L, -1)) out.dataPath = lua_tostring(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "product"); if (lua_isstring(L, -1)) out.product = lua_tostring(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "width"); if (lua_isnumber(L, -1)) out.width = (int)lua_tonumber(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "height"); if (lua_isnumber(L, -1)) out.height = (int)lua_tonumber(L, -1); lua_pop(L, 1);
@@ -82,6 +93,93 @@ static void ReadConfigLua(const std::string& path, WindowConfig& out) {
     lua_close(L);
 }
 
+#ifdef _WIN32
+// The title bar and the taskbar show the icon of the game's own exe (AngryBirds.exe / AngryBirdsSeasons.exe
+// in the game folder; nothing is shipped with the engine). The icon is built from the exe's icon group at
+// the exact size the title bar (small) and the taskbar (big) ask for.
+static BOOL CALLBACK FirstIconGroup(HMODULE, LPCSTR, LPSTR name, LONG_PTR param) {
+    *(LPSTR*)param = name;
+    return FALSE;                                    // the first one is the game's icon
+}
+static HICON IconOfSize(HMODULE module, LPSTR group, int size) {
+    HRSRC g = FindResourceA(module, group, MAKEINTRESOURCEA(14));
+    if (!g) return nullptr;
+    BYTE* dir = (BYTE*)LockResource(LoadResource(module, g));
+    int id = dir ? LookupIconIdFromDirectoryEx(dir, TRUE, size, size, LR_DEFAULTCOLOR) : 0;
+    HRSRC r = id ? FindResourceA(module, MAKEINTRESOURCEA(id), MAKEINTRESOURCEA(3)) : nullptr;
+    if (!r) return nullptr;
+    BYTE* bits = (BYTE*)LockResource(LoadResource(module, r));
+    return bits ? CreateIconFromResourceEx(bits, SizeofResource(module, r), TRUE, 0x00030000, size, size, LR_DEFAULTCOLOR) : nullptr;
+}
+static void SetGameIcon(SDL_Window* window, const std::string& gameName) {
+    std::string name;
+    for (char c : gameName) if (c != ' ') name += c;
+    const std::string candidates[] = {name + ".exe", "AngryBirds.exe", "AngryBirdsSeasons.exe"};
+    HICON large = nullptr, small = nullptr;
+    for (const std::string& file : candidates) {
+        HMODULE module = LoadLibraryExA(file.c_str(), nullptr, LOAD_LIBRARY_AS_DATAFILE);
+        if (!module) continue;
+        LPSTR group = nullptr;
+        EnumResourceNamesA(module, MAKEINTRESOURCEA(14), FirstIconGroup, (LONG_PTR)&group);
+        if (group) {
+            large = IconOfSize(module, group, GetSystemMetrics(SM_CXICON));
+            small = IconOfSize(module, group, GetSystemMetrics(SM_CXSMICON));
+        }
+        FreeLibrary(module);                         // the icons are copies, the module is not needed
+        if (!large && !small) ExtractIconExA(file.c_str(), 0, &large, &small, 1);   // the shell's own way as a fallback
+        std::printf("icon: %s -> %s\n", file.c_str(), (large || small) ? "found" : "no icon");
+        if (large || small) break;
+    }
+    if (!large && !small) { std::printf("icon: none of the game exes was found in the working folder\n"); return; }
+    if (!small) small = large;
+    if (!large) large = small;
+    // SDL's own way too: the icon's pixels go through SDL_SetWindowIcon, which sets the window's icons itself
+    ICONINFO ii;
+    if (GetIconInfo(large, &ii)) {
+        BITMAP bm;
+        if (ii.hbmColor && GetObject(ii.hbmColor, sizeof bm, &bm) && bm.bmWidth > 0 && bm.bmHeight > 0) {
+            std::vector<uint32_t> px((size_t)bm.bmWidth * bm.bmHeight);
+            BITMAPINFO bi = {};
+            bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+            bi.bmiHeader.biWidth = bm.bmWidth;
+            bi.bmiHeader.biHeight = -bm.bmHeight;                 // top-down
+            bi.bmiHeader.biPlanes = 1;
+            bi.bmiHeader.biBitCount = 32;
+            bi.bmiHeader.biCompression = BI_RGB;
+            HDC dc = GetDC(nullptr);
+            if (GetDIBits(dc, ii.hbmColor, 0, bm.bmHeight, px.data(), &bi, DIB_RGB_COLORS)) {
+                SDL_Surface* surface = SDL_CreateRGBSurfaceFrom(px.data(), bm.bmWidth, bm.bmHeight, 32, bm.bmWidth * 4,
+                                                                0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+                if (surface) { SDL_SetWindowIcon(window, surface); SDL_FreeSurface(surface); }
+            }
+            ReleaseDC(nullptr, dc);
+        }
+        if (ii.hbmColor) DeleteObject(ii.hbmColor);
+        if (ii.hbmMask) DeleteObject(ii.hbmMask);
+    }
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (!SDL_GetWindowWMInfo(window, &info)) { std::printf("icon: no window handle\n"); return; }
+    HWND hwnd = info.info.win.window;
+    SendMessageA(hwnd, WM_SETICON, ICON_BIG, (LPARAM)large);
+    SendMessageA(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)small);
+    SetClassLongPtr(hwnd, GCLP_HICON, (LONG_PTR)large);
+    SetClassLongPtr(hwnd, GCLP_HICONSM, (LONG_PTR)small);
+    // a window that was created fullscreen can come back to windowed without the system menu, and then
+    // the title bar has no place to draw the icon
+    LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
+    if ((style & WS_CAPTION) == WS_CAPTION) {
+        if (!(style & WS_SYSMENU)) SetWindowLongPtr(hwnd, GWL_STYLE, style | WS_SYSMENU);
+        // the title bar was laid out before the icon existed (and while the window was fullscreen): lay it out again
+        SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        RedrawWindow(hwnd, nullptr, nullptr, RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW);
+    }
+    std::printf("icon: set (style 0x%08lx, ex style 0x%08lx, small icon %p, big icon %p, read back %p / %p)\n",
+                (unsigned long)GetWindowLongPtr(hwnd, GWL_STYLE), (unsigned long)GetWindowLongPtr(hwnd, GWL_EXSTYLE),
+                (void*)small, (void*)large, (void*)SendMessageA(hwnd, WM_GETICON, ICON_SMALL, 0), (void*)SendMessageA(hwnd, WM_GETICON, ICON_BIG, 0));
+}
+#endif
+
 int main(int argc, char** argv) {
     std::string scripts, data, shot, configPath, userData;
     int shotFrames = 0;
@@ -89,11 +187,13 @@ int main(int argc, char** argv) {
     struct Click { int frame; float x, y, x2, y2; int length; };   // length 3 is a click, more is a drag to (x2, y2)
     std::vector<Click> clicks;
     std::vector<std::pair<int, int>> wheels;     // test: --wheel <frame> <notches>
+    std::vector<std::pair<int, std::string>> keys;   // test: --key <frame> <name>, a key press of 3 frames
     for (int i = 1; i < argc; i++) {
         if (!std::strcmp(argv[i], "--scripts") && i + 1 < argc) scripts = argv[++i];
         else if (!std::strcmp(argv[i], "--data") && i + 1 < argc) data = argv[++i];
         else if (!std::strcmp(argv[i], "--userdata") && i + 1 < argc) userData = argv[++i];
         else if (!std::strcmp(argv[i], "--config") && i + 1 < argc) configPath = argv[++i];
+        else if (!std::strcmp(argv[i], "--key") && i + 2 < argc) { keys.push_back({std::atoi(argv[i + 1]), argv[i + 2]}); i += 2; }
         else if (!std::strcmp(argv[i], "--wheel") && i + 2 < argc) { wheels.push_back({std::atoi(argv[i + 1]), std::atoi(argv[i + 2])}); i += 2; }
         else if (!std::strcmp(argv[i], "--click") && i + 3 < argc) { float x = (float)std::atof(argv[i + 2]), y = (float)std::atof(argv[i + 3]); clicks.push_back({std::atoi(argv[i + 1]), x, y, x, y, 3}); i += 3; }
         else if (!std::strcmp(argv[i], "--drag") && i + 5 < argc) { clicks.push_back({std::atoi(argv[i + 1]), (float)std::atof(argv[i + 2]), (float)std::atof(argv[i + 3]), (float)std::atof(argv[i + 4]), (float)std::atof(argv[i + 5]), 30}); i += 5; }
@@ -101,7 +201,11 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--screenshot") && i + 2 < argc) { shot = argv[++i]; shotFrames = std::atoi(argv[++i]); }
     }
     // without arguments the exe works like the original: put it next to the game's data folder
-    if (data.empty()) data = "data";
+    if (data.empty()) {
+        WindowConfig beside;                          // the game's own config.lua, next to the exe, names its data folder
+        ReadConfigLua("config.lua", beside);
+        data = beside.dataPath;
+    }
     if (scripts.empty()) scripts = data + "/scripts";
     FILE* probe = std::fopen((scripts + "/gamelogic.lua").c_str(), "rb");
     if (!probe) {
@@ -123,12 +227,12 @@ int main(int argc, char** argv) {
         if (f) { std::fclose(f); configPath = beside; } else configPath = "config.lua";
     }
     ReadConfigLua(configPath, wc);
-    if (shotFrames) wc = WindowConfig();               // test runs use the default window
+    if (shotFrames) { WindowConfig keep = wc; wc = WindowConfig(); wc.imagePath = keep.imagePath; wc.fontPath = keep.fontPath; }   // test runs use the default window
 
     BootConfig cfg;
     cfg.scriptPath = scripts;
-    cfg.imagePath = "images/pc_build";
-    cfg.fontPath = "fonts/pc_build";
+    cfg.imagePath = wc.imagePath;
+    cfg.fontPath = wc.fontPath;
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) { std::printf("SDL_Init: %s\n", SDL_GetError()); return 1; }
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
@@ -139,6 +243,9 @@ int main(int argc, char** argv) {
                                           SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI |
                                           (wc.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
     if (!window) { std::printf("SDL_CreateWindow: %s\n", SDL_GetError()); return 1; }
+#ifdef _WIN32
+    SetGameIcon(window, wc.name);
+#endif
     SDL_SetWindowMinimumSize(window, 1024, 600);
     SDL_ShowCursor(wc.showCursor ? SDL_ENABLE : SDL_DISABLE);   // the game draws its own hand cursor
     SDL_GLContext context = SDL_GL_CreateContext(window);
@@ -175,7 +282,7 @@ int main(int argc, char** argv) {
         want.freq = 44100; want.format = AUDIO_S16SYS; want.channels = 2; want.samples = 1024;
         want.userdata = &platform;
         want.callback = [](void* user, Uint8* stream, int len) {
-            ((GamePlatform*)user)->Audio().Mix((int16_t*)stream, len / 4);
+            ((GamePlatform*)user)->Audio().MixStereo((int16_t*)stream, len / 4, 44100);
         };
         audioDevice = audioOk ? SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0) : 0;
         if (audioDevice) {
@@ -207,7 +314,14 @@ int main(int argc, char** argv) {
             };
             switch (e.type) {
                 case SDL_QUIT: running = false; break;
-                case SDL_KEYDOWN: input.KeyDown(MapKey(e.key.keysym.sym)); break;
+                case SDL_KEYDOWN:
+                    // Alt+Enter switches between the window and full screen, like the original exes
+                    if (e.key.keysym.sym == SDLK_RETURN && (e.key.keysym.mod & KMOD_ALT)) {
+                        if (!e.key.repeat) platform.SetFullScreen(!platform.IsFullScreen());
+                        break;
+                    }
+                    input.KeyDown(MapKey(e.key.keysym.sym));
+                    break;
                 case SDL_KEYUP: input.KeyUp(MapKey(e.key.keysym.sym)); break;
                 case SDL_MOUSEMOTION: toScreen(e.motion.x, e.motion.y); break;
                 case SDL_MOUSEBUTTONDOWN:
@@ -244,10 +358,19 @@ int main(int argc, char** argv) {
         int rw, rh;
         if (platform.TakeResolutionRequest(rw, rh)) SDL_SetWindowSize(window, rw, rh);
         bool wantFull;
-        if (platform.TakeFullScreenRequest(wantFull)) SDL_SetWindowFullscreen(window, wantFull ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+        if (platform.TakeFullScreenRequest(wantFull)) {
+            SDL_SetWindowFullscreen(window, wantFull ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+#ifdef _WIN32
+            SetGameIcon(window, wc.name);           // the title bar exists again now: give it its icon
+#endif
+        }
         if (platform.ExitRequested()) running = false;
         for (size_t i = 0; i < wheels.size(); i++)
             if (wheels[i].first == frame) { input.Wheel((float)wheels[i].second); platform.Wheel(wheels[i].second); }
+        for (size_t i = 0; i < keys.size(); i++) {
+            if (keys[i].first == frame) input.KeyDown(KeyIndex(keys[i].second));
+            if (keys[i].first + 3 == frame) input.KeyUp(KeyIndex(keys[i].second));
+        }
         for (size_t i = 0; i < clicks.size(); i++) {
             const Click& c = clicks[i];
             if (c.frame == frame) { input.MouseMove(c.x, c.y); input.KeyDown(KeyIndex("LBUTTON")); }
@@ -273,7 +396,7 @@ int main(int argc, char** argv) {
         if (!audioOut.empty()) {                          // test mode: one frame is 1/30 s of sound
             size_t at = audioCapture.size();
             audioCapture.resize(at + 1470 * 2);
-            platform.Audio().Mix(&audioCapture[at], 1470);
+            platform.Audio().MixStereo(&audioCapture[at], 1470, 44100);
         }
         if (!host.LastError().empty()) { std::printf("script error: %s\n", host.LastError().c_str()); return 1; }
         frame++;

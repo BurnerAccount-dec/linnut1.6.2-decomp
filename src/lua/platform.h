@@ -104,6 +104,8 @@ public:
     virtual void GetWorldPoint(const std::string& n, float lx, float ly, float& wx, float& wy) { (void)n; wx = lx; wy = ly; }
     virtual void SetObjectParameter(const std::string& n, int id, float value) { (void)n; (void)id; (void)value; }
     virtual void SetPhysicsSimulationScale(float s) { (void)s; }
+    virtual void SetWorldGravity(float x, float y) { (void)x; (void)y; }
+    virtual void ClearParticles() {}
     virtual void SetPhysicsEnabled(bool on) { physicsEnabled_ = on; }
     virtual bool IsPhysicsEnabled() { return physicsEnabled_; }
     virtual void SetLevelLimits(float minX, float minY, float maxX, float maxY) { (void)minX; (void)minY; (void)maxX; (void)maxY; }
@@ -129,7 +131,7 @@ public:
     virtual void DrawGame() {}
     virtual void DrawBackground() {}
     virtual void DrawForeground() {}
-    virtual void DrawParticles() {}
+    virtual void DrawParticles(bool world = true) { (void)world; }
     virtual void SetSprite(const std::string& n, const std::string& sprite) { (void)n; (void)sprite; }
     virtual void SetMaterial(const std::string& n, const std::string& material) { (void)n; (void)material; }
     virtual void SetTexture(const std::string& n, const std::string& texture) { (void)n; (void)texture; }
@@ -157,6 +159,14 @@ public:
     // drawSprite(name, x, y, [anchor], [anchor], [width, height]). Anchors (see Anchor in lua_api.cpp):
     // vertical 0 TOP, 1 VCENTER, 2 BOTTOM, 3 BASELINE, 4 VPIVOT; horizontal 0 LEFT, 1 HCENTER, 2 RIGHT, 3 HPIVOT.
     // The default is the pivot in both directions. width/height stretch the sprite when `sized` is set.
+    // Seasons: decorative sprites tied to a background or foreground layer (layer numbers count the
+    // background layers first, then the foreground ones). x and y are in the layer's own units.
+    virtual void CreateThemeSprite(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, float speedX, int layer) {
+        (void)name; (void)sprite; (void)x; (void)y; (void)scaleX; (void)scaleY; (void)angle; (void)speedX; (void)layer; }
+    virtual void ModifyThemeSprite(const std::string& name, float x, float y, float scaleX, float scaleY, float angle, int layer) {
+        (void)name; (void)x; (void)y; (void)scaleX; (void)scaleY; (void)angle; (void)layer; }
+    virtual void RemoveThemeSprite(const std::string& name, int layer) { (void)name; (void)layer; }
+    virtual void UpdateThemeSprites(float dt) { (void)dt; }
     virtual void ResDrawSprite(const std::string& sprite, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height) {
         (void)sprite; (void)x; (void)y; (void)vAnchor; (void)hAnchor; (void)sized; (void)width; (void)height; }
         // vAlign "TOP"/"BOTTOM"/..., hAlign "LEFT"/"HCENTER"/...; group "" = current font
@@ -189,7 +199,7 @@ public:
 
     // ---- particles.*
     // addParticles(type, amount, x, y, w, h, angle): type is the key in particleTable.particles
-    virtual void AddParticles(const std::string& type, float amount, float x, float y, float w, float h, float angle) {
+    virtual void AddParticles(const std::string& type, float amount, float x, float y, float w, float h, float angle, bool ignoreLimits = false, bool second = false) {
         (void)type; (void)amount; (void)x; (void)y; (void)w; (void)h; (void)angle; }
     virtual void SetParticleSoftLimit(float a, float b) { (void)a; (void)b; }
     virtual void SetParticleHardLimit(float n) { (void)n; }

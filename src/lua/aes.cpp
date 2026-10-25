@@ -5,7 +5,9 @@
 namespace ab {
 
 const char kLevelKey[33] = "USCaPQpA4TSNVxMI1v9SK9UC0yZuAnb2";
+const char kSeasonsKey[33] = "zePhest5faQuX2S2Apre@4reChAtEvUt";   // Game+0x31c in Angry Birds Seasons
 const char kSaveKey[33] = "44iUY5aTrlaYoet9lapRlaK1Ehlec5i0";
+const char kSeasonsSaveKey[33] = "brU4u=EbR4s_A3APu6U#7B!axAm*We#5";   // Seasons settings.lua / highscores.lua
 
 namespace {
 
@@ -126,15 +128,19 @@ void AesEncryptCbc(const uint8_t key[32], const std::vector<uint8_t>& in, std::v
     }
 }
 
-bool ReadSaveFile(const std::string& path, std::string& text, bool& encrypted) {
+bool ReadSaveFile(const std::string& path, std::string& text, bool& encrypted, const char** keyUsed) {
     std::ifstream f(path.c_str(), std::ios::binary);
     if (!f) return false;
     std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>()), plain;
     encrypted = false;
-    if (AesDecryptCbc((const uint8_t*)kSaveKey, bytes, plain)) {
+    if (keyUsed) *keyUsed = kSaveKey;
+    const char* keys[] = {kSaveKey, kSeasonsSaveKey};
+    for (size_t k = 0; k < 2 && !encrypted; k++) {
+        if (!AesDecryptCbc((const uint8_t*)keys[k], bytes, plain)) continue;
         encrypted = true;
         for (size_t i = 0; i < plain.size() && i < 64; i++)
             if (plain[i] < 0x20 && plain[i] != '\t' && plain[i] != '\n' && plain[i] != '\r') encrypted = false;
+        if (encrypted && keyUsed) *keyUsed = keys[k];
     }
     if (encrypted) bytes = plain;
     text.assign(bytes.begin(), bytes.end());
@@ -146,13 +152,15 @@ bool ReadLuaFile(const std::string& path, std::vector<uint8_t>& bytes) {
     if (!f) return false;
     bytes.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
     std::vector<uint8_t> plain;
-    if (AesDecryptCbc((const uint8_t*)kLevelKey, bytes, plain) && plain.size() > 4) {
+    const char* keys[] = {kLevelKey, kSeasonsKey};
+    for (size_t k = 0; k < 2; k++) {
+        if (!AesDecryptCbc((const uint8_t*)keys[k], bytes, plain) || plain.size() <= 4) continue;
         // the decrypted file is either bytecode (starts with 0x1b) or plain Lua text; a file that was
-        // not encrypted at all turns into noise, which has control characters near the start
+        // not encrypted at all (or a wrong key) turns into noise, which has control characters near the start
         bool text = true;
         for (size_t i = 0; i < plain.size() && i < 64; i++)
             if (plain[i] < 0x20 && plain[i] != '\t' && plain[i] != '\n' && plain[i] != '\r') text = false;
-        if (plain[0] == 0x1b || text) bytes = plain;
+        if (plain[0] == 0x1b || text) { bytes = plain; break; }
     }
     return true;
 }

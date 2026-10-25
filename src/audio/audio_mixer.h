@@ -45,6 +45,9 @@ public:
     bool Started() const { std::lock_guard<std::mutex> l(m_); return started_; }
     int Rate() const { return rate_; }
     int Channels() const { return channels_; }
+    // Stereo at outRate for the sound device. The mixer itself runs at the rate and channel count the scripts
+    // asked for with createAudioOutput (Seasons: mono, 16000 Hz); this converts with cubic interpolation.
+    void MixStereo(int16_t* out, int frames, int outRate);
 
     // The clip is read from disk the first time it is played (the scripts register several hundred).
     void AddClip(const std::string& name, const std::string& path);
@@ -86,6 +89,9 @@ private:
     std::map<std::string, Entry> clips_;
     std::vector<Voice> active_, waiting_;
     std::vector<int> sum_;
+    std::vector<float> feed_;            // MixStereo: mixed frames not yet used (interleaved, channels_ wide)
+    double feedPos_ = 1;
+    int feedCh_ = 0, feedRate_ = 0;
 };
 
 }  // namespace ab

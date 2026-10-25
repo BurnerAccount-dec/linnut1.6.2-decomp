@@ -65,14 +65,20 @@ bool SpriteLibrary::LoadCompoSet(const std::string& key, const std::string& file
     std::vector<CompoSprite> set;
     if (!ParseCompoSpriteSet(bytes, set, error)) return false;
     compoSets_[key] = std::move(set);
+    compoOrder_[key] = ++loaded_;
     return true;
 }
 
 const CompoSprite* SpriteLibrary::FindCompo(const std::string& name) const {
+    const CompoSprite* found = nullptr;
+    int foundOrder = -1;
     for (const auto& set : compoSets_)
         for (const CompoSprite& c : set.second)
-            if (c.name == name) return &c;
-    return nullptr;
+            if (c.name == name && compoOrder_.at(set.first) > foundOrder) {
+                found = &c;
+                foundOrder = compoOrder_.at(set.first);
+            }
+    return found;
 }
 
 void SpriteLibrary::CompoExtent(const CompoSprite& c, int& width, int& height, int& originX, int& originY) const {
@@ -123,24 +129,37 @@ bool SpriteLibrary::Load(const std::string& key, const std::string& file, std::s
     if (!ParseSpriteSheet(bytes, sheet, error)) return false;
     size_t slash = file.find_last_of("/\\");
     sheet.directory = slash == std::string::npos ? std::string(".") : file.substr(0, slash);
+    sheet.order = ++loaded_;
+    cache_.clear();
     sheets_[key] = std::move(sheet);
     return true;
 }
 
-void SpriteLibrary::Release(const std::string& key) { sheets_.erase(key); }
+void SpriteLibrary::Release(const std::string& key) { sheets_.erase(key); cache_.clear(); }
 
 const Sprite* SpriteLibrary::Find(const std::string& sprite) const {
     return Find(sprite, nullptr);
 }
 
 const Sprite* SpriteLibrary::Find(const std::string& sprite, const SpriteSheet** sheet) const {
+    // The Seasons PC data has the same sprite names in a full size sheet (INGAME_PARALLAX_21) and a half size
+    // theme sheet (THEME_SUMMER_PARALLAX_1): the sheet loaded last is the one the game uses.
+    auto hit = cache_.find(sprite);
+    if (hit != cache_.end()) {
+        if (sheet) *sheet = hit->second.second;
+        return hit->second.first;
+    }
+    const Sprite* found = nullptr;
+    const SpriteSheet* foundSheet = nullptr;
     for (const auto& sh : sheets_)
         for (const Sprite& s : sh.second.sprites)
-            if (s.name == sprite) {
-                if (sheet) *sheet = &sh.second;
-                return &s;
+            if (s.name == sprite && (!foundSheet || sh.second.order > foundSheet->order)) {
+                found = &s;
+                foundSheet = &sh.second;
             }
-    return nullptr;
+    if (found) cache_[sprite] = {found, foundSheet};
+    if (sheet && found) *sheet = foundSheet;
+    return found;
 }
 
 }  // namespace ab
