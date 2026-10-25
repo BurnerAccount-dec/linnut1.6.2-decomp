@@ -32,7 +32,8 @@ bool ParseCompoSpriteSet(const std::vector<uint8_t>& bytes, std::vector<CompoSpr
         uint32_t size = r.U32();
         size_t next = r.pos + size;
         if (tag == "COMP") {
-            if (r.U16() != 1) return fail("unknown COMP version");
+            uint16_t ver = r.U16();
+            if (ver != 1 && ver != 2) return fail("unknown COMP version");
             int count = r.S16();
             for (int i = 0; i < count && r.ok; i++) {
                 CompoSprite c;
@@ -45,6 +46,7 @@ bool ParseCompoSpriteSet(const std::vector<uint8_t>& bytes, std::vector<CompoSpr
                     p.y = r.S16();
                     c.parts.push_back(p);
                 }
+                if (ver == 2) r.S16();                 // v2 adds one 16-bit value per composite (0 in the shipped files)
                 out.push_back(c);
             }
         }

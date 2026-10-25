@@ -12,6 +12,13 @@ An unofficial reimplementation of the engine of the Angry Birds 1.6.2 PC build i
 
 For a release build add `--config Release`. SDL2 is downloaded and built on the first configure if CMake cannot find it (internet needed). Or put the built exe (released as `AngryBirdsEngine.exe`) next to the game's `data` folder, where the original `AngryBirds.exe` sits, and run it without arguments. Do not name it `angrybirds.exe`: Windows treats that as the same name as the original and would overwrite it. The window reads `config.lua` (title, size, fullscreen, cursor) from the folder above `--data`, or from `--config <file>`.
 
+## Controls (added by the engine, not in the original games)
+
+- Alt+Enter: window / full screen.
+- Hold Shift: the game runs at twice the speed.
+- Ctrl+minus / Ctrl+plus: slow down / speed up by 0.25x (between 0.25x and 8x) until the game is closed. The speed is set in the C++ window code, so the scripts do not need to change; the console prints `speed: ...x`.
+- Angry Birds Seasons is supported: start the engine in the Seasons folder (it reads that folder's `config.lua`).
+
 ## Saves
 
 Without options the engine keeps `settings.lua` and `highscores.lua` in the game's own save folder, `%APPDATA%\Rovio\<product>` (the product name comes from `config.lua`), so it shares progress with the original game. It reads the original files in both of their formats, encrypted and plain, and writes an existing file back in the same format. The first time it overwrites a file it keeps a copy next to it as `<file>.original-backup`. If a file does not exist yet, the engine writes its own plain format.

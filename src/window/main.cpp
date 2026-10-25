@@ -9,6 +9,12 @@
 #define NOMINMAX
 #include <windows.h>
 #include <shellapi.h>
+#include <io.h>
+#include <dbghelp.h>
+#include <crtdbg.h>
+#pragma comment(lib, "dbghelp.lib")
+#else
+#include <unistd.h>
 #endif
 
 #include <cmath>
@@ -292,6 +298,8 @@ static int GameMain(int argc, char** argv) {
         }
         else std::printf("no sound: %s\n", SDL_GetError());
     }
+    // the audio thread uses the platform: the device is closed before the platform goes, on every way out
+    struct AudioCloser { SDL_AudioDeviceID id; ~AudioCloser() { if (id) SDL_CloseAudioDevice(id); } } audioCloser{audioDevice};
     std::vector<int16_t> audioCapture;
     platform.SetBackend(&backend, pw, ph);
     ScriptHost host(platform, cfg);
@@ -437,14 +445,52 @@ static int GameMain(int argc, char** argv) {
 // A crash must not close the console window before the message can be read: after an unhandled exception,
 // an uncaught C++ exception or a failed start the console waits for Enter.
 static void WaitForEnter() {
+#ifdef _WIN32
+    if (!_isatty(_fileno(stdin))) return;                     // output is redirected: nobody is there to press Enter
+#else
+    if (!isatty(0)) return;
+#endif
     std::printf("\nPress Enter to close this window.\n");
     std::fflush(stdout);
     int c;
     while ((c = std::getchar()) != '\n' && c != EOF) {}
 }
 #ifdef _WIN32
+// Prints the calling functions (needs the .pdb next to the exe, which a Debug build has)
+static void PrintStack() {
+    HANDLE proc = GetCurrentProcess();
+    SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
+    SymInitialize(proc, nullptr, TRUE);
+    void* frames[48];
+    int n = CaptureStackBackTrace(0, 48, frames, nullptr);
+    std::printf("Stack:\n");
+    for (int i = 0; i < n; i++) {
+        char buf[sizeof(SYMBOL_INFO) + 256] = {};
+        SYMBOL_INFO* sym = (SYMBOL_INFO*)buf;
+        sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+        sym->MaxNameLen = 255;
+        DWORD64 addr = (DWORD64)frames[i], disp = 0;
+        DWORD lineDisp = 0;
+        IMAGEHLP_LINE64 line = {};
+        line.SizeOfStruct = sizeof(line);
+        if (SymFromAddr(proc, addr, &disp, sym)) {
+            if (SymGetLineFromAddr64(proc, addr, &lineDisp, &line)) std::printf("  %s  (%s:%lu)\n", sym->Name, line.FileName, line.LineNumber);
+            else std::printf("  %s\n", sym->Name);
+        } else std::printf("  %p\n", frames[i]);
+    }
+    std::fflush(stdout);
+}
+static int OnCrtReport(int type, char* message, int* returnValue) {
+    std::printf("\n%s\n", message);
+    PrintStack();
+    WaitForEnter();
+    std::exit(3);
+    (void)type; (void)returnValue;
+    return TRUE;
+}
 static LONG WINAPI OnCrash(EXCEPTION_POINTERS* info) {
     std::printf("\nThe game crashed: exception 0x%08lx at %p\n", (unsigned long)info->ExceptionRecord->ExceptionCode, info->ExceptionRecord->ExceptionAddress);
+    PrintStack();
     WaitForEnter();
     return EXCEPTION_EXECUTE_HANDLER;
 }
@@ -453,6 +499,9 @@ static LONG WINAPI OnCrash(EXCEPTION_POINTERS* info) {
 int main(int argc, char** argv) {
 #ifdef _WIN32
     SetUnhandledExceptionFilter(OnCrash);
+#ifdef _DEBUG
+    _CrtSetReportHook2(_CRT_RPTHOOK_INSTALL, OnCrtReport);
+#endif
 #endif
     int result = 1;
     try {

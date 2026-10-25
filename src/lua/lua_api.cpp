@@ -1,3 +1,11 @@
+#ifdef _WIN32
+#define NOMINMAX
+#include <winsock2.h>
+#include <iphlpapi.h>
+#pragma comment(lib, "iphlpapi.lib")
+#endif
+#include <algorithm>
+#include <ctime>
 #include <fstream>
 #include <iterator>
 #include <vector>
@@ -123,13 +131,30 @@ int l_loadLuaFileToObject(lua_State* L) {
     else lua_pushstring(L, ("cannot open " + path).c_str());
     if (rc == 0) {
         if (toObject) {
-            lua_newtable(L);                            // the file's table
-            lua_newtable(L);                            // its metatable { __index = object }
-            lua_pushvalue(L, 2);
+            if (*lua_tostring(L, 3) == 0) {
+                lua_pushvalue(L, 2);                    // 2.0.0, name "": the file runs in the object itself
+            } else {
+                lua_newtable(L);                        // the file's table
+                lua_newtable(L);                        // its metatable { __index = object }
+                lua_pushvalue(L, 2);
+                lua_setfield(L, -2, "__index");
+                lua_setmetatable(L, -2);
+                lua_pushvalue(L, -1);
+                lua_setfield(L, 2, lua_tostring(L, 3)); // object[name] = the file's table
+            }
+            lua_setfenv(L, -2);
+        } else if (lua_isstring(L, 2) && *lua_tostring(L, 2)) {
+            // loadLuaFile(path, name): the file runs in a table of its own (names it does not define come from
+            // the globals) and that table becomes the global `name`, e.g. cutscenes
+            PushEnv(L);                                 // the globals
+            lua_newtable(L);
+            lua_newtable(L);
+            lua_pushvalue(L, -3);
             lua_setfield(L, -2, "__index");
             lua_setmetatable(L, -2);
             lua_pushvalue(L, -1);
-            lua_setfield(L, 2, lua_tostring(L, 3));     // object[name] = the file's table
+            lua_setfield(L, -3, lua_tostring(L, 2));    // globals[name] = the file's table
+            lua_remove(L, -2);
             lua_setfenv(L, -2);
         } else {
             PushEnv(L);
@@ -138,7 +163,7 @@ int l_loadLuaFileToObject(lua_State* L) {
         rc = lua_pcall(L, 0, 0, 0);
     }
     if (rc != 0) {
-        P(L)->Print("loadLuaFileToObject failed: " + std::string(lua_tostring(L, -1)));
+        P(L)->Print("loadLuaFileToObject failed: " + path + ": " + std::string(lua_tostring(L, -1)));
         lua_pop(L, 1);
     }
     return 0;
@@ -596,9 +621,9 @@ int l_setMaxTranslation(lua_State* L) { P(L)->SetMaxTranslation(N(L, 1)); return
 
 // ---- drawing
 int l_setRenderState(lua_State* L) {
-    float a[7] = {0, 0, 1, 1, 0, 0, 0};
+    float a[8] = {0, 0, 1, 1, 0, 0, 0, 1};
     int argc = lua_gettop(L);
-    for (int i = 0; i < argc && i < 7; i++) a[i] = N(L, i + 1);
+    for (int i = 0; i < argc && i < 8; i++) a[i] = N(L, i + 1);
     P(L)->SetRenderState(argc, a);
     return 0;
 }
@@ -619,6 +644,160 @@ int l_drawRectLines(lua_State* L) {
     P(L)->DrawLine2D(x1, y2, x1, y1, w, r, g, b, a);
     return 0;
 }
+// 2.0.0 asks the device about itself and has an ads / notification layer this engine does not have
+int l_osName(lua_State* L) { lua_pushstring(L, "Windows"); return 1; }
+int l_osVersion(lua_State* L) { lua_pushstring(L, "6.1"); return 1; }
+int l_deviceModel(lua_State* L) { lua_pushstring(L, "PC"); return 1; }
+int l_deviceManufacturer(lua_State* L) { lua_pushstring(L, "PC"); return 1; }
+int l_currentLocale(lua_State* L) { lua_pushstring(L, "en"); return 1; }
+
+// ---- 2.0.0 additions
+// drawBoxNative(components, x, y, width, height, hanchor, vanchor): a 3x3 (or 3x1) box of sprites. The
+// corners keep their size, the edges and the middle stretch to fill the rest.
+void ParseAnchor(const char* word, int& v, int& h);
+int l_drawBoxNative(lua_State* L) {
+    if (!lua_istable(L, 1)) return 0;
+    auto comp = [&](const char* key) -> std::string {
+        lua_getfield(L, 1, key);
+        std::string v = lua_isstring(L, -1) ? lua_tostring(L, -1) : "";
+        lua_pop(L, 1);
+        return v;
+    };
+    float x = N(L, 2), y = N(L, 3), w = N(L, 4), h = N(L, 5);
+    int v = 0, hh = 0;
+    if (lua_isstring(L, 6)) ParseAnchor(lua_tostring(L, 6), v, hh);
+    if (lua_isstring(L, 7)) ParseAnchor(lua_tostring(L, 7), v, hh);
+    float left = hh == 1 ? x - w / 2 : hh == 2 ? x - w : x;
+    float top = v == 1 ? y - h / 2 : v == 2 ? y - h : y;
+    auto bounds = [&](const std::string& n, float& bw, float& bh) {
+        bw = bh = 0;
+        if (!n.empty()) P(L)->ResGetSpriteBounds("", n, bw, bh);
+    };
+    auto draw = [&](const std::string& n, float dx, float dy, float dw, float dh) {
+        if (n.empty() || dw <= 0 || dh <= 0) return;
+        P(L)->ResDrawSprite(n, dx, dy, 0, 0, true, dw, dh);
+    };
+    std::string tl = comp("topLeft"), tm = comp("topMiddle"), tr = comp("topRight");
+    std::string l = comp("left"), c = comp("center"), r = comp("right");
+    std::string bl = comp("bottomLeft"), bm = comp("bottomMiddle"), br = comp("bottomRight");
+    float lw, lh, rw, rh, th = 0, bh2 = 0, tw, bw2, unused;
+    bounds(l, lw, unused); bounds(r, rw, unused);
+    if (tl.empty() && tm.empty() && tr.empty() && bl.empty() && bm.empty() && br.empty()) {
+        // three pieces in a row
+        float cw = w - lw - rw;
+        draw(l, left, top, lw, h);
+        draw(c, left + lw, top, cw, h);
+        draw(r, left + w - rw, top, rw, h);
+        return 0;
+    }
+    float tlw, tlh, trw, trh, blw, blh, brw, brh;
+    bounds(tl, tlw, tlh); bounds(tr, trw, trh); bounds(bl, blw, blh); bounds(br, brw, brh);
+    bounds(tm, tw, th); bounds(bm, bw2, bh2);
+    float topH = std::max(tlh, std::max(trh, th)), botH = std::max(blh, std::max(brh, bh2));
+    float leftW = std::max(tlw, std::max(lw, blw)), rightW = std::max(trw, std::max(rw, brw));
+    float midW = w - leftW - rightW, midH = h - topH - botH;
+    draw(tl, left, top, leftW, topH);
+    draw(tm, left + leftW, top, midW, topH);
+    draw(tr, left + w - rightW, top, rightW, topH);
+    draw(l, left, top + topH, leftW, midH);
+    draw(c, left + leftW, top + topH, midW, midH);
+    draw(r, left + w - rightW, top + topH, rightW, midH);
+    draw(bl, left, top + h - botH, leftW, botH);
+    draw(bm, left + leftW, top + h - botH, midW, botH);
+    draw(br, left + w - rightW, top + h - botH, rightW, botH);
+    return 0;
+}
+// getCurrentTime() -> {year, month, day, hour, min, sec}; getTimeDifference(a, b) -> {days, hours, minutes, seconds}
+// where a is the later time
+int l_getCurrentTime(lua_State* L) {
+    time_t t = time(nullptr);
+    struct tm* m = localtime(&t);
+    lua_newtable(L);
+    auto set = [&](const char* k, int v) { lua_pushinteger(L, v); lua_setfield(L, -2, k); };
+    set("year", m->tm_year + 1900); set("month", m->tm_mon + 1); set("day", m->tm_mday);
+    set("hour", m->tm_hour); set("minutes", m->tm_min); set("seconds", m->tm_sec);
+    return 1;
+}
+int l_getTimeDifference(lua_State* L) {
+    auto toTime = [&](int idx) -> double {
+        struct tm m = {};
+        auto get = [&](const char* k, int def) { lua_getfield(L, idx, k); int v = lua_isnumber(L, -1) ? (int)lua_tonumber(L, -1) : def; lua_pop(L, 1); return v; };
+        if (!lua_istable(L, idx)) return 0;
+        m.tm_year = get("year", 1970) - 1900; m.tm_mon = get("month", 1) - 1; m.tm_mday = get("day", 1);
+        m.tm_hour = get("hour", 0); m.tm_min = get("minutes", 0); m.tm_sec = get("seconds", 0); m.tm_isdst = -1;
+        return (double)mktime(&m);
+    };
+    // 0x420c30: the absolute difference split into days, hours, minutes and seconds
+    long total = (long)std::fabs(toTime(1) - toTime(2));
+    lua_newtable(L);
+    auto set = [&](const char* k, long v) { lua_pushnumber(L, (double)v); lua_setfield(L, -2, k); };
+    set("days", total / 86400); set("hours", total / 3600 % 24);
+    set("minutes", total / 60 % 60); set("seconds", total % 60);
+    return 1;
+}
+int l_setAlpha(lua_State* L) { P(L)->SetAlpha(N(L, 1)); return 0; }
+
+// drawUITextNative(text, x, y [, scaleX, scaleY [, angle [, scale]]]) is Text.draw (0x41adf0). A clipped text
+// calls draw on each of its lines; any other text sets the font and the render state and draws its string.
+int l_drawUITextNative(lua_State* L) {
+    if (!lua_istable(L, 1)) return 0;
+    auto num = [&](const char* k, float def) { lua_getfield(L, 1, k); float v = lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : def; lua_pop(L, 1); return v; };
+    auto flag = [&](const char* k) { lua_getfield(L, 1, k); bool v = lua_toboolean(L, -1) != 0; lua_pop(L, 1); return v; };
+    auto str = [&](const char* k, const char* def) { lua_getfield(L, 1, k); std::string v = lua_isstring(L, -1) ? lua_tostring(L, -1) : def; lua_pop(L, 1); return v; };
+    int argc = lua_gettop(L);
+    float ox = N(L, 2), oy = N(L, 3);
+    float sx = argc >= 5 ? N(L, 4) : 1.0f, sy = argc >= 5 ? N(L, 5) : 1.0f;
+    float angle = argc >= 6 ? N(L, 6) : 0.0f;
+    float scale = argc >= 7 ? N(L, 7) : 1.0f;
+    if (!flag("visible")) return 0;
+    sx *= num("scaleX", 1) * scale;
+    sy *= num("scaleY", 1) * scale;
+    float x = num("x", 0) * scale + ox, y = num("y", 0) * scale + oy;
+    if (flag("clipped")) {
+        lua_getfield(L, 1, "lines");
+        int n = (int)lua_objlen(L, -1);
+        for (int i = 1; i <= n; i++) {
+            lua_rawgeti(L, -1, i);
+            lua_getfield(L, -1, "draw");
+            lua_pushvalue(L, -2);
+            lua_pushnumber(L, x); lua_pushnumber(L, y); lua_pushnumber(L, sx); lua_pushnumber(L, sy); lua_pushnumber(L, angle);
+            if (lua_pcall(L, 6, 0, 0) != 0) { lua_pop(L, 1); }
+            lua_pop(L, 1);
+        }
+        lua_pop(L, 1);
+        return 0;
+    }
+    P(L)->ResUseFont(str("font", "FONT_BASIC"));
+    float pivotX = 0, pivotY = 0;
+    lua_getfield(L, 1, "rotationPivotX"); lua_getfield(L, 1, "rotationPivotY");
+    if (lua_isnumber(L, -2) && lua_isnumber(L, -1)) { pivotX = (float)lua_tonumber(L, -2); pivotY = (float)lua_tonumber(L, -1); }
+    lua_pop(L, 2);
+    float a[8] = {0, 0, sx, sy, angle, pivotX, pivotY, 1};
+    lua_getfield(L, 1, "alpha");
+    if (lua_isnumber(L, -1) && lua_tonumber(L, -1) < 1.0) a[7] = (float)lua_tonumber(L, -1);
+    lua_pop(L, 1);
+    P(L)->SetRenderState(8, a);
+    x /= sx; y /= sy;
+    if (flag("floorCoordinates")) { x = std::floor(x); y = std::floor(y); }
+    P(L)->ResDrawString(str("group", ""), str("text", ""), x, y, str("hanchor", "LEFT"), str("vanchor", "TOP"));
+    float reset[8] = {0, 0, 1, 1, 0, 0, 0, 1};
+    P(L)->SetRenderState(8, reset);
+    return 0;
+}
+int l_emptyString(lua_State* L) { lua_pushstring(L, ""); return 1; }
+int l_getTimeDifferenceInSeconds(lua_State* L) {
+    lua_getglobal(L, "getTimeDifference");
+    lua_pushvalue(L, 1); lua_pushvalue(L, 2);
+    lua_call(L, 2, 1);
+    double total = 0;
+    const char* keys[4] = {"days", "hours", "minutes", "seconds"};
+    const double mult[4] = {86400, 3600, 60, 1};
+    for (int i = 0; i < 4; i++) { lua_getfield(L, -1, keys[i]); total += lua_tonumber(L, -1) * mult[i]; lua_pop(L, 1); }
+    lua_pushnumber(L, total);
+    return 1;
+}
+int l_drawLevelParticlesNative(lua_State* L) { P(L)->DrawLevelParticles((int)N(L, 1)); return 0; }
+int l_noop(lua_State*) { return 0; }   // setAlpha, drawLevelParticlesNative (the game view already draws its particles)
 int l_setWorldGravity(lua_State* L) { P(L)->SetWorldGravity(N(L, 1), N(L, 2)); return 0; }
 int l_clearParticlesNative(lua_State* L) { P(L)->ClearParticles(); return 0; }
 int l_drawGameNative(lua_State* L) { P(L)->DrawGame(); return 0; }
@@ -662,11 +841,49 @@ int l_clipText(lua_State* L) {
 // ---- platform services that a new engine answers with constants
 int l_nothing(lua_State*) { return 0; }
 int l_false(lua_State* L) { lua_pushboolean(L, 0); return 1; }
-int l_getDeviceID(lua_State* L) { lua_pushstring(L, "ab-device-0"); return 1; }
+// The exe's device id (0x499860): the MAC address of each network adapter as AA-BB-CC-DD-EE-FF, joined by ';'.
+// The registration the game keeps in its save file is tied to this id, so it has to be the same text.
+std::string DeviceId() {
+    std::string id;
+#ifdef _WIN32
+    ULONG size = 0;
+    GetAdaptersInfo(nullptr, &size);
+    if (size == 0) return "ab-device-0";
+    std::vector<unsigned char> buf(size);
+    IP_ADAPTER_INFO* a = (IP_ADAPTER_INFO*)buf.data();
+    if (GetAdaptersInfo(a, &size) != NO_ERROR) return "ab-device-0";
+    for (; a; a = a->Next) {
+        static const char* hex = "0123456789ABCDEF";
+        if (!id.empty() || a != (IP_ADAPTER_INFO*)buf.data()) id += ';';
+        for (UINT i = 0; i < a->AddressLength; i++) {
+            id += hex[a->Address[i] >> 4];
+            id += hex[a->Address[i] & 15];
+            if (i + 1 < a->AddressLength) id += '-';
+        }
+    }
+#else
+    id = "ab-device-0";
+#endif
+    return id;
+}
+int l_getDeviceID(lua_State* L) { lua_pushstring(L, DeviceId().c_str()); return 1; }
 int l_areDeviceIDsEqual(lua_State* L) {
     const char* a = lua_tostring(L, 1);
     const char* b = lua_tostring(L, 2);
     lua_pushboolean(L, a && b && std::string(a) == b);
+    return 1;
+}
+
+// 2.0.0 (0x499ac0): the id the save file kept matches when any one of its adapters is also one of this machine's
+int l_verifyDeviceID(lua_State* L) {
+    const char* kept = lua_tostring(L, 1);
+    bool match = false;
+    if (kept && *kept) {
+        auto split = [](const std::string& s) { std::vector<std::string> v; size_t p = 0; while (p <= s.size()) { size_t q = s.find(';', p); if (q == std::string::npos) q = s.size(); if (q > p) v.push_back(s.substr(p, q - p)); p = q + 1; } return v; };
+        std::vector<std::string> a = split(kept), b = split(DeviceId());
+        for (const std::string& x : a) for (const std::string& y : b) if (x == y) match = true;
+    }
+    lua_pushboolean(L, match);
     return 1;
 }
 
@@ -764,6 +981,11 @@ int p_addParticles(lua_State* L) {
     P(L)->AddParticles(S(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), lua_toboolean(L, 8) != 0, lua_toboolean(L, 9) != 0);
     return 0;
 }
+// 0x42cae0: addLevelParticles(type, amount, x, y, w, h, angle, ignoreLimits) -> first list
+int p_addLevelParticles(lua_State* L) {
+    P(L)->AddLevelParticles(S(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), lua_toboolean(L, 8) != 0);
+    return 0;
+}
 int p_setSoftLimit(lua_State* L) { P(L)->SetParticleSoftLimit(N(L, 1), N(L, 2)); return 0; }
 int p_setHardLimit(lua_State* L) { P(L)->SetParticleHardLimit(N(L, 1)); return 0; }
 
@@ -792,7 +1014,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"setIsMultitouchMouseWheelSimulationEnabled", l_setIsMultitouchMouseWheelSimulationEnabled},
         {"doesMouseClickSetsTouchCount", l_doesMouseClickSetsTouchCount},
         {"setEditing", l_setEditing}, {"setGameOn", l_setGameOn},
-        {"loadLuaFileToObject", l_loadLuaFileToObject},
+        {"loadLuaFileToObject", l_loadLuaFileToObject}, {"loadLuaFile", l_loadLuaFileToObject},   // 2.0.0: the same without an object
         {"loadLevel", l_loadLevel}, {"saveLevel", l_saveLevel}, {"saveLuaFile", l_saveLuaFile},
         {"createDirectory", l_createDirectory}, {"checkDirectory", l_checkDirectory}, {"checkForLuaFile", l_checkForLuaFile},
         {"createBox", l_createBox}, {"createCircle", l_createCircle}, {"createPolygon", l_createPolygon},
@@ -816,7 +1038,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"startNewTrajectory", l_startNewTrajectory}, {"addToTrajectory", l_addToTrajectory},
         {"addPuffToTrajectory", l_addPuffToTrajectory},
         // platform services
-        {"openRegistrationDialog", l_nothing}, {"getDeviceID", l_getDeviceID}, {"areDeviceIDsEqual", l_areDeviceIDsEqual},
+        {"openRegistrationDialog", l_nothing}, {"registerKey", l_nothing}, {"getDeviceID", l_getDeviceID}, {"verifyDeviceID", l_verifyDeviceID}, {"areDeviceIDsEqual", l_areDeviceIDsEqual},
         {"requestLatestVersionNumber", l_nothing}, {"checkForUpdates", l_nothing}, {"callVersionUpdater", l_nothing},
         {"goToTaskSwitcherLua", l_nothing}, {"activateCrystalUI", l_nothing}, {"activateCrystalUIAtProfile", l_nothing},
         {"deactivateCrystalUI", l_nothing}, {"showCrystalSplash", l_nothing}, {"isCrystalSplashShowing", l_false},
@@ -833,8 +1055,16 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"removeThemeSprite", l_removeThemeSprite},
         {"updateThemeSprite", l_updateThemeSprite},
         {"drawLayer", l_nothing},
-        {"drawRectLines", l_drawRectLines},
+        {"drawRectLines", l_drawRectLines}, {"drawBoxNative", l_drawBoxNative}, {"getCurrentTime", l_getCurrentTime},
+        {"getTimeDifference", l_getTimeDifference}, {"setAlpha", l_setAlpha}, {"drawUITextNative", l_drawUITextNative},
+        {"getTImeDifferenceInSeconds", l_getTimeDifferenceInSeconds}, {"checkRegistrationResult", l_false}, {"getClipboardText", l_emptyString},
+        {"canOpenProgram", l_false}, {"openProgram", l_nothing}, {"hasLocationCapability", l_false}, {"drawLevelParticlesNative", l_drawLevelParticlesNative},
         {"setWorldGravity", l_setWorldGravity},
+        {"getOSName", l_osName}, {"getOSVersion", l_osVersion}, {"getModel", l_deviceModel},
+        {"getManufacturer", l_deviceManufacturer}, {"getCurrentLocale", l_currentLocale},
+        {"setNotificationCallback", l_nothing}, {"requestAd", l_nothing}, {"showAd", l_nothing}, {"hideAd", l_nothing},
+        {"requestExpandableAd", l_nothing}, {"showExpandableAd", l_nothing}, {"stopAds", l_nothing},
+        {"clearParticles", l_clearParticlesNative},
         {"iapBuyItem", l_nothing},
         {"iapGetItemAt", l_nothing},
         {"iapGetItemCount", l_nothing},
@@ -879,7 +1109,7 @@ void RegisterApi(lua_State* L, Platform* p) {
     lua_setglobal(L, "res");   // real global table, reached by scripts as _G.res
 
     static const Entry particles[] = {
-        {"addParticles", p_addParticles}, {"setSoftLimit", p_setSoftLimit}, {"setHardLimit", p_setHardLimit},
+        {"addParticles", p_addParticles}, {"addLevelParticles", p_addLevelParticles}, {"setSoftLimit", p_setSoftLimit}, {"setHardLimit", p_setHardLimit},
     };
     lua_newtable(L);
     Register(L, p, lua_gettop(L), particles, sizeof(particles) / sizeof(particles[0]));

@@ -62,10 +62,10 @@ void InputBridge::Apply(lua_State* L) {
     if (lua_istable(L, -1)) {
         lua_pushnumber(L, cursorX_); lua_setfield(L, -2, "x");
         lua_pushnumber(L, cursorY_); lua_setfield(L, -2, "y");
-        if (wheel_ != 0) {
-            lua_pushnumber(L, wheel_); lua_setfield(L, -2, "wheel");
-            lua_pushboolean(L, 1); lua_setfield(L, -2, "wheelTriggered");   // the script clears it
-        }
+        // both fields are reset every frame: 2.0.0's menus only clear wheelTriggered in the editor, so a flag left
+        // true kept sending WHEEL events (the credits page, then every page after it, scrolled by itself)
+        lua_pushnumber(L, wheel_); lua_setfield(L, -2, "wheel");
+        lua_pushboolean(L, wheel_ != 0); lua_setfield(L, -2, "wheelTriggered");   // true for the one frame of the notch
     }
     lua_pop(L, 1);
 
