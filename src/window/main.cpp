@@ -13,6 +13,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <exception>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -180,7 +181,7 @@ static void SetGameIcon(SDL_Window* window, const std::string& gameName) {
 }
 #endif
 
-int main(int argc, char** argv) {
+static int GameMain(int argc, char** argv) {
     std::string scripts, data, shot, configPath, userData;
     int shotFrames = 0;
     std::string audioOut;                 // test: write the mixed sound of the --screenshot run to this .wav
@@ -431,4 +432,36 @@ int main(int argc, char** argv) {
     SDL_DestroyWindow(window);
     SDL_Quit();
     return 0;
+}
+
+// A crash must not close the console window before the message can be read: after an unhandled exception,
+// an uncaught C++ exception or a failed start the console waits for Enter.
+static void WaitForEnter() {
+    std::printf("\nPress Enter to close this window.\n");
+    std::fflush(stdout);
+    int c;
+    while ((c = std::getchar()) != '\n' && c != EOF) {}
+}
+#ifdef _WIN32
+static LONG WINAPI OnCrash(EXCEPTION_POINTERS* info) {
+    std::printf("\nThe game crashed: exception 0x%08lx at %p\n", (unsigned long)info->ExceptionRecord->ExceptionCode, info->ExceptionRecord->ExceptionAddress);
+    WaitForEnter();
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+#endif
+
+int main(int argc, char** argv) {
+#ifdef _WIN32
+    SetUnhandledExceptionFilter(OnCrash);
+#endif
+    int result = 1;
+    try {
+        result = GameMain(argc, argv);
+    } catch (const std::exception& e) {
+        std::printf("\nThe game stopped: %s\n", e.what());
+    } catch (...) {
+        std::printf("\nThe game stopped with an unknown error.\n");
+    }
+    if (result != 0) WaitForEnter();
+    return result;
 }
