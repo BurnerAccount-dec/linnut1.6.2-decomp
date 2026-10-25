@@ -207,6 +207,7 @@ private:
         // Seasons: the emitter angle in degrees gives the particle's start angle; the birth position may be left exact
         bool seasons = false, randomizeBirth = true;
         bool v2Emitter = false;   // 2.0.0: minAngleEmitter/maxAngleEmitter (degrees) give the direction of the velocity, and the spin start
+        bool roundExplosions = false;   // Seasons 2.2.0 (0x428658): minVelX..maxVelX is a speed and the direction is random over the full circle
         float angleMinEmitter = 0, angleMaxEmitter = 0;
         float minScaleBegin = 0, maxScaleBegin = 0, minScaleEnd = 0, maxScaleEnd = 0, lifeTime = 0;
         bool animated = false;
@@ -239,6 +240,7 @@ private:
     void DrawThemeSprites(int layer);
     float themeShift_ = 0;
     std::vector<std::string> fgLayers_;
+    std::vector<float> fgSpeed_, fgScale_;      // per foreground layer: parallax speed and scale (entries 3 and 4; 1 and 1.5 when absent)
     float groundR_ = 0, groundG_ = 0, groundB_ = 0;
     std::string themeTexture_;
     std::vector<TrajectoryPoint> trajDots_[6], trajPuffs_[6];
@@ -247,6 +249,7 @@ private:
 
     RenderBackend* backend_ = nullptr;
     int screenWidth_ = 1024, screenHeight_ = 768;
+    bool sizeKnown_ = false;
     int reqW_ = 0, reqH_ = 0;
     bool hasReq_ = false;
     float bgR_ = 1, bgG_ = 1, bgB_ = 1;           // 0..1; white until the scripts set it (the first splash is on white)

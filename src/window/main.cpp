@@ -78,7 +78,8 @@ struct WindowConfig {
     std::string name = "Angry Birds";
     std::string imagePath = "images/pc_build", fontPath = "fonts/pc_build";   // Seasons: "images", "fonts"
     std::string dataPath = "data";                  // config.lua datapath: Seasons uses "data_new"
-    std::string product = "Angry Birds";          // names the save folder %APPDATA%\\Rovio\\<product>
+    std::string product = "Angry Birds";          // names the save folder %APPDATA%\\<publisher>\\<product>
+    std::string publisher = "Rovio";
     int width = 1280, height = 720;
     bool fullscreen = false, showCursor = true;
 };
@@ -91,6 +92,7 @@ static void ReadConfigLua(const std::string& path, WindowConfig& out) {
         lua_getglobal(L, "fontPath"); if (lua_isstring(L, -1)) out.fontPath = lua_tostring(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "datapath"); if (lua_isstring(L, -1)) out.dataPath = lua_tostring(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "product"); if (lua_isstring(L, -1)) out.product = lua_tostring(L, -1); lua_pop(L, 1);
+        lua_getglobal(L, "publisher"); if (lua_isstring(L, -1)) out.publisher = lua_tostring(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "width"); if (lua_isnumber(L, -1)) out.width = (int)lua_tonumber(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "height"); if (lua_isnumber(L, -1)) out.height = (int)lua_tonumber(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "fullscreen"); if (lua_isboolean(L, -1)) out.fullscreen = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
@@ -189,7 +191,7 @@ static void SetGameIcon(SDL_Window* window, const std::string& gameName) {
 
 static int GameMain(int argc, char** argv) {
     std::string scripts, data, shot, configPath, userData;
-    int shotFrames = 0;
+    int shotFrames = 0; int testW = 0, testH = 0;
     std::string audioOut;                 // test: write the mixed sound of the --screenshot run to this .wav
     struct Click { int frame; float x, y, x2, y2; int length; };   // length 3 is a click, more is a drag to (x2, y2)
     std::vector<Click> clicks;
@@ -206,6 +208,7 @@ static int GameMain(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--drag") && i + 5 < argc) { clicks.push_back({std::atoi(argv[i + 1]), (float)std::atof(argv[i + 2]), (float)std::atof(argv[i + 3]), (float)std::atof(argv[i + 4]), (float)std::atof(argv[i + 5]), 30}); i += 5; }
         else if (!std::strcmp(argv[i], "--audio-out") && i + 1 < argc) audioOut = argv[++i];
         else if (!std::strcmp(argv[i], "--screenshot") && i + 2 < argc) { shot = argv[++i]; shotFrames = std::atoi(argv[++i]); }
+        else if (!std::strcmp(argv[i], "--size") && i + 2 < argc) { testW = std::atoi(argv[++i]); testH = std::atoi(argv[++i]); }
     }
     // without arguments the exe works like the original: put it next to the game's data folder
     if (data.empty()) {
@@ -234,13 +237,27 @@ static int GameMain(int argc, char** argv) {
         if (f) { std::fclose(f); configPath = beside; } else configPath = "config.lua";
     }
     ReadConfigLua(configPath, wc);
-    if (shotFrames) { WindowConfig keep = wc; wc = WindowConfig(); wc.imagePath = keep.imagePath; wc.fontPath = keep.fontPath; }   // test runs use the default window
+    if (shotFrames) { WindowConfig keep = wc; wc = WindowConfig(); if (testW > 0) { wc.width = testW; wc.height = testH; } wc.imagePath = keep.imagePath; wc.fontPath = keep.fontPath; wc.showCursor = keep.showCursor; }   // test runs use the default window
 
     BootConfig cfg;
     cfg.scriptPath = scripts;
     cfg.imagePath = wc.imagePath;
     cfg.fontPath = wc.fontPath;
+    cfg.showCursor = wc.showCursor;
 
+#ifdef _WIN32
+    // like the exes (dpiAware in their manifest): a 125% / 150% desktop gets the real pixel size, not a smaller
+    // window that Windows stretches. Per-monitor v2 first (the newest call wins over the compatibility settings), then the old call.
+    {
+        typedef BOOL (WINAPI *SetCtxFn)(HANDLE);
+        SetCtxFn setCtx = (SetCtxFn)GetProcAddress(GetModuleHandleA("user32.dll"), "SetProcessDpiAwarenessContext");
+        bool ok = setCtx && setCtx((HANDLE)-4);            // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+        if (!ok) ok = SetProcessDPIAware() != 0;
+        std::printf("dpi awareness: %s\n", ok ? "on" : "not set (already fixed by the system or the exe's compatibility settings)");
+        SDL_SetHint("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2");
+        SDL_SetHint("SDL_WINDOWS_DPI_SCALING", "0");
+    }
+#endif
     if (SDL_Init(SDL_INIT_VIDEO) != 0) { std::printf("SDL_Init: %s\n", SDL_GetError()); return 1; }
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
@@ -273,7 +290,7 @@ static int GameMain(int argc, char** argv) {
     if (userData.empty() && !shotFrames) userData = "original";     // like the game itself; --userdata . keeps saves in the working folder
     if (userData == "original") {
         const char* appData = std::getenv("APPDATA");
-        if (appData) userData = std::string(appData) + "\\Rovio\\" + wc.product;
+        if (appData) userData = std::string(appData) + "\\" + wc.publisher + "\\" + wc.product;
         else { std::printf("--userdata original: APPDATA is not set, using the working folder\n"); userData.clear(); }
     }
     platform.SetUserDir(userData);
@@ -369,6 +386,18 @@ static int GameMain(int argc, char** argv) {
         float dt = shotFrames ? 1.0f / 30.0f : (float)((now - last) / (double)SDL_GetPerformanceFrequency());
         last = now;
         if (dt > 0.1f) dt = 0.1f;                    // after a stall, do not jump ahead
+        // Frame times from the timer jitter by a millisecond or two even when the display is steady, which shows as
+        // stutter in the motion. Short frames are averaged over the last four; a real stall is passed on as it is.
+        if (!shotFrames) {
+            static float recent[4] = {0, 0, 0, 0};
+            static int recentAt = 0, recentCount = 0;
+            if (dt < 0.05f) {
+                recent[recentAt] = dt; recentAt = (recentAt + 1) % 4; if (recentCount < 4) recentCount++;
+                float sum = 0; for (int i = 0; i < recentCount; i++) sum += recent[i];
+                dt = sum / recentCount;
+            } else recentCount = 0;
+        }
+        Uint64 frameStart = now;
 
         int rw, rh;
         if (platform.TakeResolutionRequest(rw, rh)) SDL_SetWindowSize(window, rw, rh);
@@ -434,7 +463,13 @@ static int GameMain(int argc, char** argv) {
             }
             break;
         }
+        Uint64 beforeSwap = SDL_GetPerformanceCounter();
         SDL_GL_SwapWindow(window);
+        if (!shotFrames && std::getenv("AB_SLOWFRAMES")) {       // set AB_SLOWFRAMES=1 to list frames that took long and where the time went
+            double f = (double)SDL_GetPerformanceFrequency(), end = (double)SDL_GetPerformanceCounter();
+            double total = (end - frameStart) / f * 1000.0;
+            if (total > 25.0) std::printf("slow frame %d: %.1f ms (game %.1f, swap %.1f)\n", frame, total, (beforeSwap - frameStart) / f * 1000.0, (end - beforeSwap) / f * 1000.0);
+        }
     }
     SDL_GL_DeleteContext(context);
     SDL_DestroyWindow(window);
