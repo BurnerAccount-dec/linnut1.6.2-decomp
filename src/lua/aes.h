@@ -13,6 +13,9 @@ extern const char kLevelKey[33];
 // Key of the save files (settings.lua, highscores.lua written with saveLuaFile(..., appData = true)):
 // the string the Game constructor writes at this+0x2b8.
 extern const char kSaveKey[33];
+// Script key of Angry Birds Seasons.
+extern const char kSeasonsKey[33];
+extern const char kSeasonsSaveKey[33];
 
 // Returns false when the size is not a multiple of 16 or the padding is wrong.
 bool AesDecryptCbc(const uint8_t key[32], const std::vector<uint8_t>& in, std::vector<uint8_t>& out);
@@ -22,7 +25,7 @@ void AesEncryptCbc(const uint8_t key[32], const std::vector<uint8_t>& in, std::v
 
 // Reads a save file. `encrypted` tells whether it was an original encrypted one (decrypts with kSaveKey
 // to text); otherwise the text is the file as it is. Returns false when the file cannot be opened.
-bool ReadSaveFile(const std::string& path, std::string& text, bool& encrypted);
+bool ReadSaveFile(const std::string& path, std::string& text, bool& encrypted, const char** keyUsed = nullptr);
 
 // Reads a Lua file. If it is an encrypted one (it decrypts with kLevelKey to Lua bytecode or to plain
 // Lua text) the decrypted content is returned, otherwise the file as it is (plain text or plain

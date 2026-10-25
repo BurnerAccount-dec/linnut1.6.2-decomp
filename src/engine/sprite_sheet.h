@@ -10,6 +10,8 @@
 #pragma once
 #include <cstdint>
 #include <map>
+#include <unordered_map>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -24,6 +26,7 @@ struct SpriteSheet {
     std::string image;                 // the png this sheet cuts from
     std::string directory;             // the folder the .dat was loaded from (the png is beside it)
     std::vector<Sprite> sprites;
+    int order = 0;                     // load order: when two sheets have a sprite of one name, the later one wins
 };
 
 // One composite sprite (a "COMP" entry of a *_composprites.dat file): sprites placed relative to one
@@ -51,7 +54,7 @@ public:
 
     // Composite sprites, looked up by name in the loaded sets.
     bool LoadCompoSet(const std::string& key, const std::string& file, std::string* error);
-    void ReleaseCompoSet(const std::string& key) { compoSets_.erase(key); }
+    void ReleaseCompoSet(const std::string& key) { compoSets_.erase(key); compoOrder_.erase(key); }
     const CompoSprite* FindCompo(const std::string& name) const;
     // Size and origin of a composite: the union of its parts' rectangles (each part's sprite is placed
     // at (x, y) minus its pivot). width/height are the extent, originX/originY the distance of the
@@ -59,7 +62,11 @@ public:
     void CompoExtent(const CompoSprite& c, int& width, int& height, int& originX, int& originY) const;
 private:
     std::map<std::string, SpriteSheet> sheets_;
+    int loaded_ = 0;
+    // name -> sprite and sheet, filled by Find, cleared whenever a sheet is loaded or released
+    mutable std::unordered_map<std::string, std::pair<const Sprite*, const SpriteSheet*>> cache_;
     std::map<std::string, std::vector<CompoSprite>> compoSets_;
+    std::map<std::string, int> compoOrder_;   // load order of each set, the latest wins like the sheets
 };
 
 }  // namespace ab

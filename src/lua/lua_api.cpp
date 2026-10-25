@@ -25,7 +25,7 @@ namespace {
 Platform* P(lua_State* L) { return static_cast<Platform*>(lua_touserdata(L, lua_upvalueindex(1))); }
 float N(lua_State* L, int i) { return (float)luaL_checknumber(L, i); }
 float NOpt(lua_State* L, int i, float def) { return (float)luaL_optnumber(L, i, def); }
-std::string S(lua_State* L, int i) { return std::string(luaL_checkstring(L, i)); }
+std::string S(lua_State* L, int i) { return lua_isnoneornil(L, i) ? std::string() : std::string(luaL_checkstring(L, i)); }   // a nil name is an empty one
 bool B(lua_State* L, int i) { return lua_toboolean(L, i) != 0; }
 // The script environment table (registry["ab.env"]); engine functions and values live there.
 void PushEnv(lua_State* L) { lua_getfield(L, LUA_REGISTRYINDEX, "ab.env"); }
@@ -91,16 +91,50 @@ int l_doesMouseClickSetsTouchCount(lua_State* L) { lua_pushboolean(L, P(L)->Mous
 int l_setEditing(lua_State* L) { P(L)->SetEditing(B(L, 1)); return 0; }
 int l_setGameOn(lua_State* L) { P(L)->SetGameOn(B(L, 1)); return 0; }
 
+// createThemeSprite(name, sprite, x, y, scaleX, scaleY, angle, speedX, layer) and friends
+int l_createThemeSprite(lua_State* L) {
+    P(L)->CreateThemeSprite(S(L, 1), S(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), N(L, 8), (int)N(L, 9));
+    return 0;
+}
+int l_modifyThemeSprite(lua_State* L) {
+    P(L)->ModifyThemeSprite(S(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), (int)N(L, 7));
+    return 0;
+}
+int l_removeThemeSprite(lua_State* L) { P(L)->RemoveThemeSprite(S(L, 1), (int)N(L, 2)); return 0; }
+int l_updateThemeSprite(lua_State* L) { P(L)->UpdateThemeSprites(N(L, 1)); return 0; }
+
+// Seasons: loadLevelFile(path, date) asked a server for a level of that date and getLoadStatus() reported
+// {status = ...} until the answer came. Levels are local here, so the answer is ready at once (status 1).
+int l_getLoadStatus(lua_State* L) {
+    lua_newtable(L);
+    lua_pushnumber(L, 1);
+    lua_setfield(L, -2, "status");
+    return 1;
+}
+
 int l_loadLuaFileToObject(lua_State* L) {
-    // loadLuaFileToObject(path, this, name): runs the file; its globals land in the shared global table
+    // loadLuaFileToObject(path, object, name): runs the file in a table of its own that falls back to
+    // `object` for names it does not define, then stores that table as object[name]
     std::string path = S(L, 1);
+    bool toObject = lua_istable(L, 2) && lua_isstring(L, 3);
     std::vector<uint8_t> bytes;
     int rc = 1;
     if (ab::ReadLuaFile(path, bytes)) rc = luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), ("@" + path).c_str());
     else lua_pushstring(L, ("cannot open " + path).c_str());
     if (rc == 0) {
-        PushEnv(L);
-        lua_setfenv(L, -2);
+        if (toObject) {
+            lua_newtable(L);                            // the file's table
+            lua_newtable(L);                            // its metatable { __index = object }
+            lua_pushvalue(L, 2);
+            lua_setfield(L, -2, "__index");
+            lua_setmetatable(L, -2);
+            lua_pushvalue(L, -1);
+            lua_setfield(L, 2, lua_tostring(L, 3));     // object[name] = the file's table
+            lua_setfenv(L, -2);
+        } else {
+            PushEnv(L);
+            lua_setfenv(L, -2);
+        }
         rc = lua_pcall(L, 0, 0, 0);
     }
     if (rc != 0) {
@@ -222,7 +256,8 @@ int l_saveLuaFile(lua_State* L) {
     // (some originals are not encrypted: their text starts with an entry, not with `tableName = {`)
     std::string old;
     bool encrypted = false;
-    ab::ReadSaveFile(path, old, encrypted);
+    const char* saveKey = ab::kSaveKey;
+    ab::ReadSaveFile(path, old, encrypted, &saveKey);   // 1.x and Seasons saves have their own keys
     size_t start = old.find_first_not_of(" \t\r\n");
     bool original = encrypted || (start != std::string::npos && old.compare(start, name.size() + 3, name + " = ") != 0);
     std::string text;
@@ -257,7 +292,7 @@ int l_saveLuaFile(lua_State* L) {
         }
         if (encrypted) {
             std::vector<uint8_t> enc;
-            ab::AesEncryptCbc((const uint8_t*)ab::kSaveKey, bytes, enc);
+            ab::AesEncryptCbc((const uint8_t*)saveKey, bytes, enc);
             bytes = enc;
         }
     }
@@ -575,10 +610,21 @@ int l_drawLine2D(lua_State* L) {
     P(L)->DrawLine2D(N(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), N(L, 8), N(L, 9));
     return 0;
 }
+// drawRectLines(left, top, right, bottom, width, r, g, b, a): the four edges of a rectangle
+int l_drawRectLines(lua_State* L) {
+    float x1 = N(L, 1), y1 = N(L, 2), x2 = N(L, 3), y2 = N(L, 4), w = N(L, 5), r = N(L, 6), g = N(L, 7), b = N(L, 8), a = N(L, 9);
+    P(L)->DrawLine2D(x1, y1, x2, y1, w, r, g, b, a);
+    P(L)->DrawLine2D(x2, y1, x2, y2, w, r, g, b, a);
+    P(L)->DrawLine2D(x2, y2, x1, y2, w, r, g, b, a);
+    P(L)->DrawLine2D(x1, y2, x1, y1, w, r, g, b, a);
+    return 0;
+}
+int l_setWorldGravity(lua_State* L) { P(L)->SetWorldGravity(N(L, 1), N(L, 2)); return 0; }
+int l_clearParticlesNative(lua_State* L) { P(L)->ClearParticles(); return 0; }
 int l_drawGameNative(lua_State* L) { P(L)->DrawGame(); return 0; }
 int l_drawBackgroundNative(lua_State* L) { P(L)->DrawBackground(); return 0; }
 int l_drawForegroundNative(lua_State* L) { P(L)->DrawForeground(); return 0; }
-int l_drawParticlesNative(lua_State* L) { P(L)->DrawParticles(); return 0; }
+int l_drawParticlesNative(lua_State* L) { P(L)->DrawParticles(false); return 0; }
 int l_setSprite(lua_State* L) { P(L)->SetSprite(S(L, 1), S(L, 2)); return 0; }
 int l_setMaterial(lua_State* L) { P(L)->SetMaterial(S(L, 1), S(L, 2)); return 0; }
 int l_setTexture(lua_State* L) { P(L)->SetTexture(S(L, 1), S(L, 2)); return 0; }
@@ -646,6 +692,7 @@ void ParseAnchor(const char* word, int& v, int& h) {
 int r_drawSprite(lua_State* L) {
     // drawSprite(sprite, x, y [, vAnchor, hAnchor [, width, height]]) or, with a sheet name in front,
     // drawSprite(sheet, sprite, x, y, ...): a string as the second argument means the sheet form ("" = any sheet)
+    if (lua_isnil(L, 1) && lua_type(L, 2) == LUA_TSTRING) { lua_pushstring(L, ""); lua_replace(L, 1); }   // a nil sheet means any sheet
     int o = lua_type(L, 2) == LUA_TSTRING ? 1 : 0;
     int argc = lua_gettop(L) - o;
     int v = 4, h = 3;                       // default: draw so that the sprite's pivot is at (x, y)
@@ -664,6 +711,7 @@ int r_drawString(lua_State* L) {
 int r_setClipRect(lua_State* L) { P(L)->ResSetClipRect(N(L, 1), N(L, 2), N(L, 3), N(L, 4)); return 0; }
 // getSpriteBounds(sheet, sprite) or getSpriteBounds(sprite): "" as the sheet means any sheet
 int r_getSpriteBounds(lua_State* L) {
+    if (lua_isnil(L, 1) && lua_gettop(L) >= 2) { lua_pushstring(L, ""); lua_replace(L, 1); }   // a nil sheet means any sheet
     float w, h;
     if (lua_gettop(L) >= 2) P(L)->ResGetSpriteBounds(S(L, 1), S(L, 2), w, h);
     else P(L)->ResGetSpriteBounds("", S(L, 1), w, h);
@@ -672,6 +720,7 @@ int r_getSpriteBounds(lua_State* L) {
     return 2;
 }
 int r_getSpritePivot(lua_State* L) {
+    if (lua_isnil(L, 1) && lua_gettop(L) >= 2) { lua_pushstring(L, ""); lua_replace(L, 1); }   // a nil sheet means any sheet
     float x, y;
     if (lua_gettop(L) >= 2) P(L)->ResGetSpritePivot(S(L, 1), S(L, 2), x, y);
     else P(L)->ResGetSpritePivot("", S(L, 1), x, y);
@@ -680,6 +729,7 @@ int r_getSpritePivot(lua_State* L) {
     return 2;
 }
 int r_getCompoSpriteBounds(lua_State* L) {
+    if (lua_isnil(L, 1) && lua_gettop(L) >= 2) { lua_pushstring(L, ""); lua_replace(L, 1); }   // a nil sheet means any sheet
     float x1, y1, x2, y2;
     if (lua_gettop(L) >= 2) P(L)->ResGetCompoSpriteBounds(S(L, 1), S(L, 2), x1, y1, x2, y2);
     else P(L)->ResGetCompoSpriteBounds("", S(L, 1), x1, y1, x2, y2);
@@ -710,7 +760,8 @@ int r_openURL(lua_State* L) { P(L)->ResOpenURL(S(L, 1)); return 0; }
 
 // ---- particles.*
 int p_addParticles(lua_State* L) {
-    P(L)->AddParticles(S(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7));
+    // Seasons adds two booleans: ignore the particle limits, and put the particles in the second list
+    P(L)->AddParticles(S(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), lua_toboolean(L, 8) != 0, lua_toboolean(L, 9) != 0);
     return 0;
 }
 int p_setSoftLimit(lua_State* L) { P(L)->SetParticleSoftLimit(N(L, 1), N(L, 2)); return 0; }
@@ -775,6 +826,35 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"postHighscore", l_nothing}, {"unlockAchievement", l_nothing},
         {"logFlurryEvent", l_nothing}, {"logFlurryEventWithParam", l_nothing}, {"logFlurryEventWithParams", l_nothing},
         {"playVideo", l_nothing},
+        // Angry Birds Seasons additions (not implemented yet)
+        {"clearParticlesNative", l_clearParticlesNative}, {"loadLevelFile", l_nothing}, {"getLoadStatus", l_getLoadStatus},
+        {"createThemeSprite", l_createThemeSprite},
+        {"modifyThemeSprite", l_modifyThemeSprite},
+        {"removeThemeSprite", l_removeThemeSprite},
+        {"updateThemeSprite", l_updateThemeSprite},
+        {"drawLayer", l_nothing},
+        {"drawRectLines", l_drawRectLines},
+        {"setWorldGravity", l_setWorldGravity},
+        {"iapBuyItem", l_nothing},
+        {"iapGetItemAt", l_nothing},
+        {"iapGetItemCount", l_nothing},
+        {"iapInitItemPurchase", l_nothing},
+        {"iapInitTimeOut", l_nothing},
+        {"requestAd", l_nothing},
+        {"showAdvertisement", l_nothing},
+        {"hideAdvertisement", l_nothing},
+        {"requestInterstitial", l_nothing},
+        {"showInterstitial", l_nothing},
+        {"requestVideoAd", l_nothing},
+        {"requestAndShowVideo", l_nothing},
+        {"showVideoAdvertisement", l_nothing},
+        {"enableiAds", l_nothing},
+        {"disableiAds", l_nothing},
+        {"addNotificationAfter", l_nothing},
+        {"removeNotification", l_nothing},
+        {"isWebViewLoading", l_false},
+        {"videoReady", l_false},
+        {"iAdsSupported", l_false},
     };
     Register(L, p, 0, globals, sizeof(globals) / sizeof(globals[0]));
 

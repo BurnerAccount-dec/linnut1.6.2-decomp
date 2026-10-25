@@ -84,6 +84,7 @@ if(AB_BUILD_WINDOW)
   target_link_libraries(ab_input PUBLIC lua51)
   add_executable(angrybirds src/window/main.cpp src/window/gl_backend.cpp)
   target_link_libraries(angrybirds PRIVATE ab_engine ab_input)
+  set_target_properties(angrybirds PROPERTIES OUTPUT_NAME AngryBirdsEngine)   # the file is AngryBirdsEngine.exe, the target keeps its name
   if(TARGET SDL2::SDL2-static)
     target_link_libraries(angrybirds PRIVATE SDL2::SDL2-static)
   elseif(TARGET SDL2-static)

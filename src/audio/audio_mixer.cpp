@@ -225,4 +225,31 @@ void AudioMixer::Mix(int16_t* out, int frames) {
     for (size_t i = 0; i < count; i++) out[i] = (int16_t)std::min(32767, std::max(-32768, sum_[i]));
 }
 
+void AudioMixer::MixStereo(int16_t* out, int frames, int outRate) {
+    int ch = channels_, rate = rate_;
+    if (ch == 2 && rate == outRate) { Mix(out, frames); return; }
+    if (ch != feedCh_ || rate != feedRate_) { feed_.assign((size_t)ch, 0.0f); feedPos_ = 1; feedCh_ = ch; feedRate_ = rate; }
+    double step = (double)rate / outRate;
+    for (int i = 0; i < frames; i++) {
+        // the four source frames around the position: floor(pos) - 1 .. floor(pos) + 2
+        size_t base = (size_t)feedPos_;
+        while ((base + 3) * ch >= feed_.size()) {
+            int16_t block[512];
+            int n = 512 / ch;
+            Mix(block, n);
+            for (int k = 0; k < n * ch; k++) feed_.push_back(block[k] / 32768.0f);
+        }
+        float t = (float)(feedPos_ - base);
+        for (int side = 0; side < 2; side++) {
+            int c = ch == 2 ? side : 0;
+            float p0 = feed_[(base - 1) * ch + c], p1 = feed_[base * ch + c], p2 = feed_[(base + 1) * ch + c], p3 = feed_[(base + 2) * ch + c];
+            float v = p1 + 0.5f * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));   // Catmull-Rom
+            out[i * 2 + side] = (int16_t)(std::min(1.0f, std::max(-1.0f, v)) * 32767.0f);
+        }
+        feedPos_ += step;
+    }
+    size_t drop = (size_t)feedPos_ - 1;                  // keep one frame before the position
+    if (drop > 0) { feed_.erase(feed_.begin(), feed_.begin() + (std::ptrdiff_t)(drop * ch)); feedPos_ -= (double)drop; }
+}
+
 }  // namespace ab

@@ -126,6 +126,12 @@ public:
     void SetFullScreen(bool on) override { Platform::SetFullScreen(on); fullScreenReq_ = true; }
     void SetRenderState(int argc, const float* args) override;
     void ResDrawSprite(const std::string& sprite, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height) override;
+    void SetWorldGravity(float x, float y) override { physics_.World().SetGravity(b2Vec2(x, y)); }
+    void ClearParticles() override { particles_.clear(); }
+    void CreateThemeSprite(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, float speedX, int layer) override;
+    void ModifyThemeSprite(const std::string& name, float x, float y, float scaleX, float scaleY, float angle, int layer) override;
+    void RemoveThemeSprite(const std::string& name, int layer) override;
+    void UpdateThemeSprites(float dt) override;
     void ResSetClipRect(float x, float y, float w, float h) override;
     void DrawRect(float r, float g, float b, float a, float x1, float y1, float x2, float y2, bool inWorld) override;
     void DrawLine2D(float x1, float y1, float x2, float y2, float width, float r, float g, float b, float a) override;
@@ -151,10 +157,10 @@ public:
     void AddPuffToTrajectory(float i, float x, float y) override { int n = (int)i + trajSet_; if (n >= 1 && n <= 6) trajPuffs_[n - 1].push_back({x, y}); }
 
     // ---- particles (the exe's Particles class, 0x41c260)
-    void AddParticles(const std::string& type, float amount, float x, float y, float w, float h, float angle) override;
+    void AddParticles(const std::string& type, float amount, float x, float y, float w, float h, float angle, bool ignoreLimits = false, bool second = false) override;
     void SetParticleSoftLimit(float limit, float factor) override { softLimit_ = (int)limit; softFactor_ = factor; }
     void SetParticleHardLimit(float limit) override { hardLimit_ = (int)limit; }
-    void DrawParticles() override;
+    void DrawParticles(bool world = true) override;
 
     void SetObjectParameter(const std::string& n, int id, float v) override { physics_.SetObjectParameter(n, id, v); }
     void SetMaterial(const std::string& n, const std::string& m) override { physics_.SetMaterial(n, m); }
@@ -184,7 +190,10 @@ private:
     struct TrajectoryPoint { float x, y; };
     // What particleTable.particles[type] says (read once per type).
     struct ParticleDef {
-        float gravityX = 0, gravityY = 0, minVel = 0, maxVel = 0, minAngleVel = 0, maxAngleVel = 0;
+        float gravityX = 0, gravityY = 0, minVelX = 0, maxVelX = 0, minVelY = 0, maxVelY = 0, minAngleVel = 0, maxAngleVel = 0;
+        // Seasons: the emitter angle in degrees gives the particle's start angle; the birth position may be left exact
+        bool seasons = false, randomizeBirth = true;
+        float angleMinEmitter = 0, angleMaxEmitter = 0;
         float minScaleBegin = 0, maxScaleBegin = 0, minScaleEnd = 0, maxScaleEnd = 0, lifeTime = 0;
         bool animated = false;
         std::vector<std::string> sprites;
@@ -195,9 +204,10 @@ private:
         float x = 0, y = 0, vx = 0, vy = 0, angle = 0, angleVel = 0;
         float scaleBegin = 0, scaleEnd = 0, scale = 0, age = 0, lifeTime = 0;
         int frame = 1;
+        bool second = false;                    // Seasons keeps two lists of particles with their own counts
     };
     const ParticleDef* ParticleDefFor(const std::string& type);
-    void UpdateParticles(float dt);
+    void UpdateParticles(float dt, bool removeBelowGround = true);
     std::map<std::string, ParticleDef> particleDefs_;
     std::vector<Particle> particles_;
     int softLimit_ = 40, hardLimit_ = 125;     // constructor defaults (0x41c2fb)
@@ -208,6 +218,10 @@ private:
     float zoom_ = 1, zoomPrev_ = 1, zoomMax_ = 1, zoomStart_ = 1, zoomTarget_ = 1, zoomT_ = -1, zoomDur_ = 0.5f;
     bool exitRequested_ = false, fullScreenReq_ = false;
     std::vector<BgLayer> bgLayers_;
+    struct ThemeSprite { std::string name, sprite; float x, y, scaleX, scaleY, angle, speedX; int layer; };
+    std::vector<ThemeSprite> themeSprites_;
+    void DrawThemeSprites(int layer);
+    float themeShift_ = 0;
     std::vector<std::string> fgLayers_;
     float groundR_ = 0, groundG_ = 0, groundB_ = 0;
     std::string themeTexture_;
