@@ -34,6 +34,10 @@ public:
 
     void Attach(ScriptHost& scripts);
     void RunFrame(float dt);
+    // Speed: the time step of every frame is multiplied by the speed (Ctrl+minus / Ctrl+plus change it
+    // until the game is closed) and by 2 while Shift is held.
+    void SetSpeedBoost(bool on) { speedBoost_ = on; }
+    void AddSpeed(float step);
 
     // Drawing. Without a backend all draw calls are ignored (the tests run that way).
     // BeginFrame clears to the colour the scripts set with setBGColor; call EndFrame after RunFrame.
@@ -127,6 +131,8 @@ public:
     void SetRenderState(int argc, const float* args) override;
     void ResDrawSprite(const std::string& sprite, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height) override;
     void SetWorldGravity(float x, float y) override { physics_.World().SetGravity(b2Vec2(x, y)); }
+    void SetTimeScale(float s) override { speed_ = s < 0.1f ? 0.1f : (s > 8.0f ? 8.0f : s); }
+    float GetTimeScale() override { return speed_; }
     void ClearParticles() override { particles_.clear(); }
     void CreateThemeSprite(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, float speedX, int layer) override;
     void ModifyThemeSprite(const std::string& name, float x, float y, float scaleX, float scaleY, float angle, int layer) override;
@@ -247,6 +253,8 @@ private:
     std::unique_ptr<Host> host_;
     std::vector<std::string> log_;
     std::string userDir_;
+    float speed_ = 1.0f;
+    bool speedBoost_ = false;
 };
 
 }  // namespace ab

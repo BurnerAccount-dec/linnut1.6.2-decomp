@@ -105,6 +105,9 @@ public:
     virtual void SetObjectParameter(const std::string& n, int id, float value) { (void)n; (void)id; (void)value; }
     virtual void SetPhysicsSimulationScale(float s) { (void)s; }
     virtual void SetWorldGravity(float x, float y) { (void)x; (void)y; }
+    // engine extension (not in the original exes): the time step of every frame is multiplied by this
+    virtual void SetTimeScale(float s) { (void)s; }
+    virtual float GetTimeScale() { return 1.0f; }
     virtual void ClearParticles() {}
     virtual void SetPhysicsEnabled(bool on) { physicsEnabled_ = on; }
     virtual bool IsPhysicsEnabled() { return physicsEnabled_; }

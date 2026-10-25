@@ -133,6 +133,23 @@ static void SetGameIcon(SDL_Window* window, const std::string& gameName) {
     if (!large && !small) { std::printf("icon: none of the game exes was found in the working folder\n"); return; }
     if (!small) small = large;
     if (!large) large = small;
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (!SDL_GetWindowWMInfo(window, &info)) { std::printf("icon: no window handle\n"); return; }
+    HWND hwnd = info.info.win.window;
+    SendMessageA(hwnd, WM_SETICON, ICON_BIG, (LPARAM)large);
+    SendMessageA(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)small);
+    SetClassLongPtr(hwnd, GCLP_HICON, (LONG_PTR)large);
+    SetClassLongPtr(hwnd, GCLP_HICONSM, (LONG_PTR)small);
+    // a window that was created fullscreen can come back to windowed without the system menu, and then
+    // the title bar has no place to draw the icon
+    LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
+    if ((style & WS_CAPTION) == WS_CAPTION) {
+        if (!(style & WS_SYSMENU)) SetWindowLongPtr(hwnd, GWL_STYLE, style | WS_SYSMENU);
+        // the title bar was laid out before the icon existed (and while the window was fullscreen): lay it out again
+        SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        RedrawWindow(hwnd, nullptr, nullptr, RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW);
+    }
     // SDL's own way too: the icon's pixels go through SDL_SetWindowIcon, which sets the window's icons itself
     ICONINFO ii;
     if (GetIconInfo(large, &ii)) {
@@ -156,23 +173,6 @@ static void SetGameIcon(SDL_Window* window, const std::string& gameName) {
         }
         if (ii.hbmColor) DeleteObject(ii.hbmColor);
         if (ii.hbmMask) DeleteObject(ii.hbmMask);
-    }
-    SDL_SysWMinfo info;
-    SDL_VERSION(&info.version);
-    if (!SDL_GetWindowWMInfo(window, &info)) { std::printf("icon: no window handle\n"); return; }
-    HWND hwnd = info.info.win.window;
-    SendMessageA(hwnd, WM_SETICON, ICON_BIG, (LPARAM)large);
-    SendMessageA(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)small);
-    SetClassLongPtr(hwnd, GCLP_HICON, (LONG_PTR)large);
-    SetClassLongPtr(hwnd, GCLP_HICONSM, (LONG_PTR)small);
-    // a window that was created fullscreen can come back to windowed without the system menu, and then
-    // the title bar has no place to draw the icon
-    LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
-    if ((style & WS_CAPTION) == WS_CAPTION) {
-        if (!(style & WS_SYSMENU)) SetWindowLongPtr(hwnd, GWL_STYLE, style | WS_SYSMENU);
-        // the title bar was laid out before the icon existed (and while the window was fullscreen): lay it out again
-        SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-        RedrawWindow(hwnd, nullptr, nullptr, RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW);
     }
     std::printf("icon: set (style 0x%08lx, ex style 0x%08lx, small icon %p, big icon %p, read back %p / %p)\n",
                 (unsigned long)GetWindowLongPtr(hwnd, GWL_STYLE), (unsigned long)GetWindowLongPtr(hwnd, GWL_EXSTYLE),
@@ -320,6 +320,12 @@ int main(int argc, char** argv) {
                         if (!e.key.repeat) platform.SetFullScreen(!platform.IsFullScreen());
                         break;
                     }
+                    // Ctrl+minus / Ctrl+plus slow down / speed up the game until it is closed
+                    if (e.key.keysym.mod & KMOD_CTRL) {
+                        SDL_Keycode k = e.key.keysym.sym;
+                        if (k == SDLK_MINUS || k == SDLK_KP_MINUS) platform.AddSpeed(-0.25f);
+                        else if (k == SDLK_EQUALS || k == SDLK_PLUS || k == SDLK_KP_PLUS) platform.AddSpeed(0.25f);
+                    }
                     input.KeyDown(MapKey(e.key.keysym.sym));
                     break;
                 case SDL_KEYUP: input.KeyUp(MapKey(e.key.keysym.sym)); break;
@@ -390,6 +396,7 @@ int main(int argc, char** argv) {
         platform.Resize(pw, ph);                        // the screen is the window
         input.Apply(host.State());
         platform.BeginFrame();
+        platform.SetSpeedBoost((SDL_GetModState() & KMOD_SHIFT) != 0);     // holding Shift doubles the speed
         platform.RunFrame(dt);
         platform.EndFrame();
         input.EndFrame();

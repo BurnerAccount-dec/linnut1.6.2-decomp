@@ -154,7 +154,24 @@ void GamePlatform::Attach(ScriptHost& scripts) {
 
 // Game::update (0x408980) starts the sound output by itself whenever settings.audioEnabled is true and
 // the output exists but is not running; the scripts only ever call stopAudioOutput.
+void GamePlatform::AddSpeed(float step) {
+    speed_ += step;
+    if (speed_ < 0.25f) speed_ = 0.25f;
+    if (speed_ > 8.0f) speed_ = 8.0f;
+    Print("speed: " + std::to_string(speed_) + "x");
+}
+
 void GamePlatform::RunFrame(float dt) {
+    dt *= speed_ * (speedBoost_ ? 2.0f : 1.0f);
+    // later versions (3.2.0 and up) scale the time with the script global physicsSpeedFactor
+    if (scripts_) {
+        lua_State* L = scripts_->State();
+        int top = lua_gettop(L);
+        lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+        lua_getfield(L, -1, "physicsSpeedFactor");
+        if (lua_isnumber(L, -1) && lua_tonumber(L, -1) > 0) dt *= (float)lua_tonumber(L, -1);
+        lua_settop(L, top);
+    }
     std::string audioError = audio_.TakeError();
     if (!audioError.empty()) Print("audio: " + audioError);
     if (scripts_ && audio_.Created() && !audio_.Started()) {
