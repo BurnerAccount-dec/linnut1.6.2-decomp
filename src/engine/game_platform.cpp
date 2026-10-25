@@ -405,6 +405,8 @@ void GamePlatform::SetBackend(RenderBackend* backend, int screenWidth, int scree
 }
 
 void GamePlatform::Resize(int screenWidth, int screenHeight) {
+    bool changed = sizeKnown_ && (screenWidth != screenWidth_ || screenHeight != screenHeight_);
+    sizeKnown_ = true;
     screenWidth_ = screenWidth;
     screenHeight_ = screenHeight;
     if (!scripts_) return;
@@ -413,6 +415,8 @@ void GamePlatform::Resize(int screenWidth, int screenHeight) {
     lua_pushnumber(L, screenWidth); lua_setfield(L, -2, "screenWidth");
     lua_pushnumber(L, screenHeight); lua_setfield(L, -2, "screenHeight");
     lua_pop(L, 1);
+    // the exe tells the scripts when the window is resized: they lay the cameras and pages out again
+    if (changed) scripts_->ResolutionChanged((float)screenWidth, (float)screenHeight);
 }
 
 bool GamePlatform::TakeResolutionRequest(int& w, int& h) {
@@ -774,7 +778,7 @@ namespace ab {
 
 // setTheme (reads blockTable.themes[name]): colour, groundColor, bgLayers, fgLayers, texture.
 void GamePlatform::SetTheme(const std::string& theme) {
-    bgLayers_.clear(); fgLayers_.clear(); themeTexture_.clear();
+    bgLayers_.clear(); fgLayers_.clear(); fgSpeed_.clear(); fgScale_.clear(); themeTexture_.clear();
     if (!scripts_) return;
     lua_State* L = scripts_->State();
     int top = lua_gettop(L);
@@ -835,7 +839,15 @@ void GamePlatform::SetTheme(const std::string& theme) {
                         lua_rawgeti(L, -1, i);
                         if (lua_istable(L, -1)) {
                             lua_rawgeti(L, -1, 2);
-                            if (lua_isstring(L, -1)) fgLayers_.push_back(lua_tostring(L, -1));
+                            if (lua_isstring(L, -1)) {
+                                fgLayers_.push_back(lua_tostring(L, -1));
+                                lua_pop(L, 1);
+                                lua_rawgeti(L, -1, 3);
+                                fgSpeed_.push_back(lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : 1.0f);
+                                lua_pop(L, 1);
+                                lua_rawgeti(L, -1, 4);
+                                fgScale_.push_back(lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : 1.5f);
+                            }
                             lua_pop(L, 1);
                         }
                         lua_pop(L, 1);
@@ -943,27 +955,38 @@ void GamePlatform::DrawBackground() {
 // sprites repeated at 1.5 times the world scale.
 void GamePlatform::DrawForeground() {
     if (!backend_) return;
+    // a foreground layer is a sprite or a composite sprite (the Ham 'o' Ween menu draws its trees and pumpkins as composites)
+    auto extent = [&](const std::string& name, float& w, float& pivotX, float& h, float& pivotY) {
+        const Sprite* sp = sprites_.Find(name);
+        if (sp) { w = (float)sp->w; pivotX = (float)sp->pivotX; h = (float)sp->h; pivotY = (float)sp->pivotY; return true; }
+        const CompoSprite* compo = sprites_.FindCompo(name);
+        if (!compo) return false;
+        int cw = 0, ch = 0, ox = 0, oy = 0;
+        sprites_.CompoExtent(*compo, cw, ch, ox, oy);
+        w = (float)cw; pivotX = (float)ox; h = (float)ch; pivotY = (float)oy;
+        return true;
+    };
     float height = 0;
     if (!fgLayers_.empty()) {
-        const Sprite* sp = sprites_.Find(fgLayers_[0]);
-        if (sp) height = (float)(sp->h - sp->pivotY);
+        float w, px, h, py;
+        if (extent(fgLayers_[0], w, px, h, py)) height = (h - py) * fgScale_[0] / 1.5f;
     }
     DrawRect(groundR_ / 255.0f, groundG_ / 255.0f, groundB_ / 255.0f, 1, 0, -(camY_ - height * 1.5f) * worldScale_, (float)screenWidth_, (float)screenHeight_ + 1, false);
     int fgIndex = -1;
     for (const std::string& name : fgLayers_) {
         fgIndex++;
-        const Sprite* sp = sprites_.Find(name);
-        if (!sp || sp->w <= 0) continue;
-        float w = (float)sp->w;
-        float m = std::fmod(camX_, 1.5f * w);
-        float x0 = -(m + 1.5f * w) / 1.5f;
+        float w, px, h, py;
+        if (!extent(name, w, px, h, py) || w <= 0) continue;
+        float c = fgScale_[fgIndex], shift = fgSpeed_[fgIndex] * camX_;
+        float m = std::fmod(shift, c * w);
+        float x0 = -(m + c * w) / c;
         state_ = RenderState();
         state_.tx = x0 - std::trunc(x0);
-        state_.ty = -camY_ / 1.5f;
-        state_.sx = state_.sy = worldScale_ * 1.5f;
-        float right = screenWidth_ / (worldScale_ * 1.5f) + (float)sp->pivotX;
+        state_.ty = -camY_ / c;
+        state_.sx = state_.sy = worldScale_ * c;
+        float right = screenWidth_ / (worldScale_ * c) + px;
         for (float x = std::trunc(x0); x <= right; x += w) ResDrawSprite(name, x, 0, 4, 3, false, 0, 0);
-        themeShift_ = camX_ / 1.5f;
+        themeShift_ = shift / c;
         DrawThemeSprites((int)bgLayers_.size() + fgIndex);
     }
     state_ = RenderState();
@@ -1065,6 +1088,9 @@ const GamePlatform::ParticleDef* GamePlatform::ParticleDefFor(const std::string&
         d.angleMinEmitter = d.angleMaxEmitter = 0;
     // 0x42ad10 (2.0.0) reads minAngleEmitter / maxAngleEmitter; without them the angle range is 0..360
     if (!d.seasons && GetNumber(L, t, "minAngleEmitter", d.angleMinEmitter) && GetNumber(L, t, "maxAngleEmitter", d.angleMaxEmitter)) d.v2Emitter = true;
+    lua_getfield(L, t, "roundExplosions");
+    if (lua_isboolean(L, -1)) d.roundExplosions = lua_toboolean(L, -1) != 0;
+    lua_pop(L, 1);
     GetNumber(L, t, "minAngleVel", d.minAngleVel);
     GetNumber(L, t, "maxAngleVel", d.maxAngleVel);
     GetNumber(L, t, "minScaleBegin", d.minScaleBegin);
@@ -1121,7 +1147,12 @@ void GamePlatform::AddParticles(const std::string& type, float amount, float x, 
         } else {
             p.x = x; p.y = y;
         }
-        if (d->v2Emitter) {
+        if (d->roundExplosions) {
+            float speed = (d->maxVelX - d->minVelX) * Rand01() + d->minVelX;
+            float a = Rand01() * 6.2831855f;
+            p.vx = std::cos(a) * speed;
+            p.vy = std::sin(a) * speed;
+        } else if (d->v2Emitter) {
             float speed = (d->maxVelX - d->minVelX) * Rand01() + d->minVelX;
             float a = ((d->angleMaxEmitter - d->angleMinEmitter) * Rand01() + d->angleMinEmitter) * 0.017453292f;
             p.vx = std::cos(a) * speed;

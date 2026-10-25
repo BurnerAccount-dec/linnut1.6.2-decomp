@@ -1062,7 +1062,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"setWorldGravity", l_setWorldGravity},
         {"getOSName", l_osName}, {"getOSVersion", l_osVersion}, {"getModel", l_deviceModel},
         {"getManufacturer", l_deviceManufacturer}, {"getCurrentLocale", l_currentLocale},
-        {"setNotificationCallback", l_nothing}, {"requestAd", l_nothing}, {"showAd", l_nothing}, {"hideAd", l_nothing},
+        {"initLocales", l_nothing}, {"setNotificationCallback", l_nothing}, {"requestAd", l_nothing}, {"showAd", l_nothing}, {"hideAd", l_nothing},
         {"requestExpandableAd", l_nothing}, {"showExpandableAd", l_nothing}, {"stopAds", l_nothing},
         {"clearParticles", l_clearParticlesNative},
         {"iapBuyItem", l_nothing},

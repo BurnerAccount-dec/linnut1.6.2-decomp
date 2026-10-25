@@ -58,6 +58,8 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
     SetString("deviceModel", config_.deviceModel);
     lua_pushboolean(L_, config_.isLiteVersion);
     SetEnvField("isLiteVersion");
+    lua_pushboolean(L_, config_.showCursor);
+    SetEnvField("showCursor");
     lua_pushboolean(L_, config_.isBetaVersion);
     SetEnvField("isBetaVersion");
     lua_pushboolean(L_, 0);
