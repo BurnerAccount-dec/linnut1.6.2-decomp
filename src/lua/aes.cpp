@@ -12,6 +12,7 @@ const char kSeasonsSaveKey[33] = "brU4u=EbR4s_A3APu6U#7B!axAm*We#5";   // Season
 namespace {
 
 uint8_t sbox[256], inv[256];
+uint8_t m9[256], m11[256], m13[256], m14[256];   // InvMixColumns multipliers (decrypting 90 KB of blocks.lua took seconds without them)
 
 uint8_t Mul2(uint8_t x) { return (uint8_t)((x << 1) ^ ((x & 0x80) ? 0x1b : 0)); }
 
@@ -37,6 +38,9 @@ void InitTables() {
         s ^= 0x63;
         sbox[i] = s;
         inv[s] = (uint8_t)i;
+    }
+    for (int i = 0; i < 256; i++) {
+        m9[i] = Mul((uint8_t)i, 9); m11[i] = Mul((uint8_t)i, 11); m13[i] = Mul((uint8_t)i, 13); m14[i] = Mul((uint8_t)i, 14);
     }
     done = true;
 }
@@ -80,10 +84,10 @@ bool AesDecryptCbc(const uint8_t key[32], const std::vector<uint8_t>& in, std::v
             if (round > 0) {
                 for (int c = 0; c < 4; c++) {
                     uint8_t a0 = s[c * 4], a1 = s[c * 4 + 1], a2 = s[c * 4 + 2], a3 = s[c * 4 + 3];
-                    s[c * 4]     = (uint8_t)(Mul(a0, 14) ^ Mul(a1, 11) ^ Mul(a2, 13) ^ Mul(a3, 9));
-                    s[c * 4 + 1] = (uint8_t)(Mul(a0, 9) ^ Mul(a1, 14) ^ Mul(a2, 11) ^ Mul(a3, 13));
-                    s[c * 4 + 2] = (uint8_t)(Mul(a0, 13) ^ Mul(a1, 9) ^ Mul(a2, 14) ^ Mul(a3, 11));
-                    s[c * 4 + 3] = (uint8_t)(Mul(a0, 11) ^ Mul(a1, 13) ^ Mul(a2, 9) ^ Mul(a3, 14));
+                    s[c * 4]     = (uint8_t)(m14[a0] ^ m11[a1] ^ m13[a2] ^ m9[a3]);
+                    s[c * 4 + 1] = (uint8_t)(m9[a0] ^ m14[a1] ^ m11[a2] ^ m13[a3]);
+                    s[c * 4 + 2] = (uint8_t)(m13[a0] ^ m9[a1] ^ m14[a2] ^ m11[a3]);
+                    s[c * 4 + 3] = (uint8_t)(m11[a0] ^ m13[a1] ^ m9[a2] ^ m14[a3]);
                 }
             }
         }
@@ -153,14 +157,16 @@ bool ReadLuaFile(const std::string& path, std::vector<uint8_t>& bytes) {
     bytes.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
     std::vector<uint8_t> plain;
     const char* keys[] = {kLevelKey, kSeasonsKey};
-    for (size_t k = 0; k < 2; k++) {
+    static size_t firstKey = 0;                  // the key that worked last time goes first: a wrong key costs a whole file
+    for (size_t n = 0; n < 2; n++) {
+        size_t k = (n + firstKey) % 2;
         if (!AesDecryptCbc((const uint8_t*)keys[k], bytes, plain) || plain.size() <= 4) continue;
         // the decrypted file is either bytecode (starts with 0x1b) or plain Lua text; a file that was
         // not encrypted at all (or a wrong key) turns into noise, which has control characters near the start
         bool text = true;
         for (size_t i = 0; i < plain.size() && i < 64; i++)
             if (plain[i] < 0x20 && plain[i] != '\t' && plain[i] != '\n' && plain[i] != '\r') text = false;
-        if (plain[0] == 0x1b || text) { bytes = plain; break; }
+        if (plain[0] == 0x1b || text) { bytes = plain; firstKey = k; break; }
     }
     return true;
 }

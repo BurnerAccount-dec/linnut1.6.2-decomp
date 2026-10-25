@@ -97,6 +97,7 @@ bool ParseTextGroup(const std::vector<uint8_t>& bytes, TextGroup& out, std::stri
     r.U32();
     r.U16();
     std::vector<std::string> ids;
+    bool gotGroup = false;               // 2.0.0 has one TXGP per locale (en_EN first); the first is used
     out.strings.clear();
     while (r.ok && r.pos + 8 <= bytes.size()) {
         std::string tag = r.Bytes(4);
@@ -105,7 +106,8 @@ bool ParseTextGroup(const std::vector<uint8_t>& bytes, TextGroup& out, std::stri
         if (tag == "LIDS") {
             unsigned n = r.U16();
             for (unsigned i = 0; i < n && r.ok; i++) ids.push_back(r.Bytes(r.U16()));
-        } else if (tag == "TXGP") {
+        } else if (tag == "TXGP" && !gotGroup) {
+            gotGroup = true;
             for (size_t i = 0; i < ids.size() && r.ok && r.pos < end; i++) out.strings[ids[i]] = r.Bytes(r.U16());
         }
         r.pos = end;

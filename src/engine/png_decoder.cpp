@@ -254,6 +254,41 @@ bool DecodePng(const std::vector<uint8_t>& f, Image& out, std::string* error) {
     return true;
 }
 
+// 2.0.0 keeps some textures (all its fonts) as PowerVR v2 files: a 52 byte header, then the pixels. Only
+// the plain 16 and 32 bit formats are read (4444, 5551, 565, 8888), top row first, not twiddled.
+bool DecodePvr(const std::vector<uint8_t>& file, Image& out, std::string* error) {
+    auto u32 = [&](size_t at) { return (uint32_t)file[at] | (uint32_t)file[at + 1] << 8 | (uint32_t)file[at + 2] << 16 | (uint32_t)file[at + 3] << 24; };
+    uint32_t height = u32(4), width = u32(8), flags = u32(16), format = flags & 0xFF;
+    if (width == 0 || height == 0 || width > 8192 || height > 8192) { if (error) *error = "bad .pvr size"; return false; }
+    if (flags & 0x200) { if (error) *error = ".pvr: twiddled textures are not supported"; return false; }
+    size_t bytesPerPixel = format == 0x12 ? 4 : 2;
+    if (format != 0x10 && format != 0x11 && format != 0x12 && format != 0x13) {
+        if (error) *error = ".pvr: pixel format " + std::to_string(format) + " is not supported (only 4444, 5551, 8888 and 565)";
+        return false;
+    }
+    if (file.size() < 52 + (size_t)width * height * bytesPerPixel) { if (error) *error = "truncated .pvr"; return false; }
+    out.width = (int)width;
+    out.height = (int)height;
+    out.rgba.assign((size_t)width * height * 4, 255);
+    const uint8_t* src = &file[52];
+    for (size_t i = 0; i < (size_t)width * height; i++) {
+        uint8_t* d = &out.rgba[i * 4];
+        if (format == 0x12) { d[0] = src[i * 4]; d[1] = src[i * 4 + 1]; d[2] = src[i * 4 + 2]; d[3] = src[i * 4 + 3]; continue; }
+        unsigned v = src[i * 2] | (src[i * 2 + 1] << 8);
+        if (format == 0x10) {                         // RGBA 4444
+            d[0] = (uint8_t)(((v >> 12) & 15) * 17); d[1] = (uint8_t)(((v >> 8) & 15) * 17);
+            d[2] = (uint8_t)(((v >> 4) & 15) * 17);  d[3] = (uint8_t)((v & 15) * 17);
+        } else if (format == 0x11) {                  // RGBA 5551
+            d[0] = (uint8_t)(((v >> 11) & 31) * 255 / 31); d[1] = (uint8_t)(((v >> 6) & 31) * 255 / 31);
+            d[2] = (uint8_t)(((v >> 1) & 31) * 255 / 31);  d[3] = (v & 1) ? 255 : 0;
+        } else {                                      // RGB 565
+            d[0] = (uint8_t)(((v >> 11) & 31) * 255 / 31); d[1] = (uint8_t)(((v >> 5) & 63) * 255 / 63);
+            d[2] = (uint8_t)((v & 31) * 255 / 31);
+        }
+    }
+    return true;
+}
+
 bool LoadPngFile(const std::string& path, Image& out, std::string* error) {
     FILE* f = fopen(path.c_str(), "rb");
     if (!f) { if (error) *error = "cannot open " + path; return false; }
@@ -262,6 +297,7 @@ bool LoadPngFile(const std::string& path, Image& out, std::string* error) {
     size_t n;
     while ((n = fread(buf, 1, sizeof buf, f)) > 0) bytes.insert(bytes.end(), buf, buf + n);
     fclose(f);
+    if (bytes.size() > 52 && std::memcmp(&bytes[44], "PVR!", 4) == 0) return DecodePvr(bytes, out, error);
     return DecodePng(bytes, out, error);
 }
 

@@ -129,15 +129,18 @@ public:
     void RequestExit() override { exitRequested_ = true; }
     void SetFullScreen(bool on) override { Platform::SetFullScreen(on); fullScreenReq_ = true; }
     void SetRenderState(int argc, const float* args) override;
+    bool levelParticlesByScript_ = false;
+    bool pauseGuard_ = false;
+    bool menuParticlesByScript_ = false;      // 2.0.0 draws the level's particles itself, in two layers (drawLevelParticlesNative)
+    void SetAlpha(float a) override { state_.alpha = a; }
     void ResDrawSprite(const std::string& sprite, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height) override;
     void SetWorldGravity(float x, float y) override { physics_.World().SetGravity(b2Vec2(x, y)); }
-    void SetTimeScale(float s) override { speed_ = s < 0.1f ? 0.1f : (s > 8.0f ? 8.0f : s); }
-    float GetTimeScale() override { return speed_; }
     void ClearParticles() override { particles_.clear(); }
     void CreateThemeSprite(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, float speedX, int layer) override;
     void ModifyThemeSprite(const std::string& name, float x, float y, float scaleX, float scaleY, float angle, int layer) override;
     void RemoveThemeSprite(const std::string& name, int layer) override;
     void UpdateThemeSprites(float dt) override;
+    bool IsSeasonsScripts();
     void ResSetClipRect(float x, float y, float w, float h) override;
     void DrawRect(float r, float g, float b, float a, float x1, float y1, float x2, float y2, bool inWorld) override;
     void DrawLine2D(float x1, float y1, float x2, float y2, float width, float r, float g, float b, float a) override;
@@ -167,6 +170,9 @@ public:
     void SetParticleSoftLimit(float limit, float factor) override { softLimit_ = (int)limit; softFactor_ = factor; }
     void SetParticleHardLimit(float limit) override { hardLimit_ = (int)limit; }
     void DrawParticles(bool world = true) override;
+    void DrawLevelParticles(int layer) override;
+    void AddLevelParticles(const std::string& type, float amount, float x, float y, float w, float h, float angle, bool ignoreLimits) override;
+    void DrawParticlesOf(bool world, int second, int levelLayer = 0);          // second: -1 both lists, 0 the first, 1 the second
 
     void SetObjectParameter(const std::string& n, int id, float v) override { physics_.SetObjectParameter(n, id, v); }
     void SetMaterial(const std::string& n, const std::string& m) override { physics_.SetMaterial(n, m); }
@@ -182,6 +188,7 @@ private:
     // The persistent state set by setRenderState (0x408630): translation, scale, angle, pivot.
     struct RenderState {
         float tx = 0, ty = 0, sx = 1, sy = 1, angle = 0, pivotX = 0, pivotY = 0;
+        float alpha = 1;                 // 2.0.0: setRenderState's 8th value and setAlpha (render state +0x40)
     };
     struct TextureInfo { int handle = -1, width = 0, height = 0; };
     const TextureInfo* TextureFor(const SpriteSheet& sheet);
@@ -199,6 +206,7 @@ private:
         float gravityX = 0, gravityY = 0, minVelX = 0, maxVelX = 0, minVelY = 0, maxVelY = 0, minAngleVel = 0, maxAngleVel = 0;
         // Seasons: the emitter angle in degrees gives the particle's start angle; the birth position may be left exact
         bool seasons = false, randomizeBirth = true;
+        bool v2Emitter = false;   // 2.0.0: minAngleEmitter/maxAngleEmitter (degrees) give the direction of the velocity, and the spin start
         float angleMinEmitter = 0, angleMaxEmitter = 0;
         float minScaleBegin = 0, maxScaleBegin = 0, minScaleEnd = 0, maxScaleEnd = 0, lifeTime = 0;
         bool animated = false;
@@ -210,10 +218,12 @@ private:
         float x = 0, y = 0, vx = 0, vy = 0, angle = 0, angleVel = 0;
         float scaleBegin = 0, scaleEnd = 0, scale = 0, age = 0, lifeTime = 0;
         int frame = 1;
-        bool second = false;                    // Seasons keeps two lists of particles with their own counts
+        bool second = false;                    // the menu list (0x24)
+        bool level = false;                     // the level list (0x30), drawn by drawLevelParticlesNative(layer)
+        int layer = 1;
     };
     const ParticleDef* ParticleDefFor(const std::string& type);
-    void UpdateParticles(float dt, bool removeBelowGround = true);
+    void UpdateParticles(float dt, bool removeBelowGround = true, int which = -1);   // which: -1 all, 0 world+level lists, 1 menu list
     std::map<std::string, ParticleDef> particleDefs_;
     std::vector<Particle> particles_;
     int softLimit_ = 40, hardLimit_ = 125;     // constructor defaults (0x41c2fb)

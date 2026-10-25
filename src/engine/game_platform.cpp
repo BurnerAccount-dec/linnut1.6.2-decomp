@@ -186,9 +186,41 @@ void GamePlatform::RunFrame(float dt) {
         lua_settop(L, top);
     }
     UpdateZoom(dt);
+    // Seasons restart (R key): the script makes the pause page the current page while the level loads and the
+    // page's offset is still 0 from before it was laid out, so it shows next to "Loading..." until the game
+    // mode takes over. The page is hidden (animation at 0) then, so keep it off screen for those frames.
+    if (scripts_ && !pauseGuard_ && IsSeasonsScripts()) {
+        lua_State* L = scripts_->State();
+        int top = lua_gettop(L);
+        lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+        lua_getfield(L, -1, "drawMenu");
+        if (lua_isfunction(L, -1)) {
+            pauseGuard_ = true;
+            const char* code =
+                "local orig = drawMenu\n"
+                "drawMenu = function(...)\n"
+                "  local pp = pausePage\n"
+                "  if pp and currentGameMode == updateLoading and currentMenuPage == pp and pp.offsetX == 0 and (pauseBGw or 0) > 0 then\n"
+                "    local a = elementAnimations and elementAnimations.ingamePausePageScroll\n"
+                "    if a and (a.percentage or 0) <= 0 then\n"
+                "      pp.offsetX = -pauseBGw\n"
+                "      if pp.backgroundOverlay then pp.backgroundOverlay.shade = 0 end\n"
+                "    end\n"
+                "  end\n"
+                "  return orig(...)\n"
+                "end\n";
+            if (luaL_loadstring(L, code) == 0) {
+                lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+                lua_setfenv(L, -2);
+                if (lua_pcall(L, 0, 0, 0) != 0) std::fprintf(stderr, "pause guard: %s\n", lua_tostring(L, -1));
+            }
+        }
+        lua_settop(L, top);
+    }
     if (host_) UpdateFrame(physics_.Frame(), *host_, dt);
     // 0x40a8cb: the particles move only while the physics is enabled
-    if (physics_.Frame().running) UpdateParticles(dt, true);
+    bool seasons = IsSeasonsScripts();
+    if (physics_.Frame().running) UpdateParticles(dt, true, seasons ? -1 : 0);
     // Seasons: the menus switch their own particles on with the global enableMenuParticles
     if (scripts_) {
         lua_State* L = scripts_->State();
@@ -199,6 +231,8 @@ void GamePlatform::RunFrame(float dt) {
         lua_settop(L, top);
         if (menu) UpdateParticles(dt, false);
     }
+    // 2.0.0 (0x40a8cb): the menu list always moves
+    if (!seasons) UpdateParticles(dt, false, 1);
 }
 
 void GamePlatform::Print(const std::string& text) {
@@ -232,12 +266,36 @@ void GamePlatform::RemoveThemeSprite(const std::string& name, int layer) {
 
 // updateThemeSprite (the exe's 0x417550): sprites of the background layers drift by speedX (physics units a second)
 // and wrap around the screen, left to right when moving left. The foreground layers are not updated.
+bool GamePlatform::IsSeasonsScripts() {
+    if (!scripts_) return false;
+    lua_State* L = scripts_->State();
+    int top = lua_gettop(L);
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    lua_getfield(L, -1, "enableMenuParticles");
+    bool yes = !lua_isnil(L, -1);
+    lua_settop(L, top);
+    return yes;
+}
+
 void GamePlatform::UpdateThemeSprites(float dt) {
     for (ThemeSprite& t : themeSprites_) {
         if (t.speedX == 0 || t.layer >= (int)bgLayers_.size()) continue;
         const Sprite* sp = sprites_.Find(t.sprite);
         if (!sp) continue;
         float shift = bgLayers_[t.layer].speed * camX_;
+        if (IsSeasonsScripts()) {
+            // Seasons: a sprite goes round only once it is wholly off the screen (its full width, from its pivot)
+            // and comes back wholly off the other side, so it never shows up out of nowhere
+            float sw = (float)sp->w * t.scaleX, pivot = (float)sp->pivotX * t.scaleX;
+            float margin = sw * 0.5f;
+            float leftEdge = t.x * 20.0f - pivot, rightEdge = leftEdge + sw;
+            float lo = shift, hi = screenWidth_ / worldScale_ + shift;
+            t.x += t.speedX * dt;
+            leftEdge = t.x * 20.0f - pivot; rightEdge = leftEdge + sw;
+            if (t.speedX < 0 && rightEdge < lo - margin) t.x = (hi + margin + pivot) / 20.0f;
+            else if (t.speedX > 0 && leftEdge > hi + margin) t.x = (lo - margin - sw + pivot) / 20.0f;
+            continue;
+        }
         float left = t.x * 20.0f - (float)sp->w * t.scaleX;
         float leftBound = shift - (float)sp->h * t.scaleX * 1.1f;
         float rightBound = screenWidth_ / worldScale_ + shift;
@@ -373,6 +431,8 @@ void GamePlatform::BeginFrame() {
 }
 
 void GamePlatform::EndFrame() {
+    // 2.0.0 draws the menu list itself, in screen space, over everything (0x4161c0)
+    if (!menuParticlesByScript_ && !IsSeasonsScripts()) DrawParticlesOf(false, 1);
     if (backend_) backend_->EndFrame();
 }
 
@@ -388,6 +448,7 @@ void GamePlatform::SetRenderState(int argc, const float* a) {
     if (argc >= 4) { state_.sx = a[2]; state_.sy = a[3]; }
     if (argc >= 5) state_.angle = a[4];
     if (argc >= 7) { state_.pivotX = a[5]; state_.pivotY = a[6]; }
+    if (argc >= 8) state_.alpha = a[7];
 }
 
 void GamePlatform::ResSetClipRect(float x, float y, float w, float h) {
@@ -505,10 +566,15 @@ void GamePlatform::DrawSpriteAt(const SpriteSheet& sheet, const Sprite& spr, flo
     }
     float u0 = (float)sp->x / tex->width, v0 = (float)sp->y / tex->height;
     float u1 = (float)(sp->x + sp->w) / tex->width, v1 = (float)(sp->y + sp->h) / tex->height;
+    // 2.0.0's tutorial sheet is packed tight, so the smooth filter picks up the next sprite's pixels along the
+    // edges (thin coloured lines); keep the samples half a texel inside the sprite
+    if ((sized || sheet.image.find("TUTORIALS") != std::string::npos) && sp->w > 1 && sp->h > 1) {
+        u0 += 0.5f / tex->width; u1 -= 0.5f / tex->width; v0 += 0.5f / tex->height; v1 -= 0.5f / tex->height;
+    }
     const float us[4] = {u0, u1, u1, u0}, vs[4] = {v0, v0, v1, v1};
     for (int i = 0; i < 4; i++) { uv[i * 2] = us[i]; uv[i * 2 + 1] = vs[i]; }
     if (tileTexture_) backend_->DrawMaskedQuad(tileTexture_->handle, tex->handle, xy, tileUV, uv);
-    else backend_->DrawQuad(tex->handle, xy, uv, 1, 1, 1, 1);
+    else backend_->DrawQuad(tex->handle, xy, uv, 1, 1, 1, state_.alpha);
 }
 
 // 0x40abd0: colour 0..1, corners are whole numbers. Without inWorld the render state is first reset.
@@ -915,7 +981,18 @@ void GamePlatform::DrawPhysObject(PhysObject& o) {
         const TextureInfo* t = TextureFile(sheet->directory + "/" + o.texture + ".png", true);
         if (t) tileTexture_ = t;
     }
-    DrawSpriteAt(*sheet, *sp, o.interpX * 20.0f, o.interpY * 20.0f, 4, 3, false, 0, 0);
+    if (o.scaled && o.scaleX != 0 && o.scaleY != 0) {
+        // 0x4165xx: the sprite shrinks about its pivot, the pivot stays where it was on the screen
+        float x = o.interpX * 20.0f, y = o.interpY * 20.0f;
+        RenderState saved = state_;
+        state_.sx *= o.scaleX; state_.sy *= o.scaleY;
+        state_.tx = (x + saved.tx) / o.scaleX - x;
+        state_.ty = (y + saved.ty) / o.scaleY - y;
+        DrawSpriteAt(*sheet, *sp, x, y, 4, 3, false, 0, 0);
+        state_ = saved;
+    } else {
+        DrawSpriteAt(*sheet, *sp, o.interpX * 20.0f, o.interpY * 20.0f, 4, 3, false, 0, 0);
+    }
     tileTexture_ = nullptr;
 }
 
@@ -946,7 +1023,8 @@ void GamePlatform::DrawGame() {
     }
     for (auto& o : objects) if ((o->isBird || o->drawWithBirds) && o->zOrder < 5) DrawPhysObject(*o);
     for (auto& o : objects) if (o->zOrder >= 5) DrawPhysObject(*o);
-    DrawParticles();
+    if (IsSeasonsScripts()) { if (!levelParticlesByScript_) DrawParticles(); }
+    else DrawParticlesOf(true, 0);
     state_ = RenderState();
 }
 
@@ -985,6 +1063,8 @@ const GamePlatform::ParticleDef* GamePlatform::ParticleDefFor(const std::string&
     lua_pop(L, 1);
     if (!GetNumber(L, t, "angleMinEmitter", d.angleMinEmitter) || !GetNumber(L, t, "angleMaxEmitter", d.angleMaxEmitter))
         d.angleMinEmitter = d.angleMaxEmitter = 0;
+    // 0x42ad10 (2.0.0) reads minAngleEmitter / maxAngleEmitter; without them the angle range is 0..360
+    if (!d.seasons && GetNumber(L, t, "minAngleEmitter", d.angleMinEmitter) && GetNumber(L, t, "maxAngleEmitter", d.angleMaxEmitter)) d.v2Emitter = true;
     GetNumber(L, t, "minAngleVel", d.minAngleVel);
     GetNumber(L, t, "maxAngleVel", d.maxAngleVel);
     GetNumber(L, t, "minScaleBegin", d.minScaleBegin);
@@ -1011,10 +1091,17 @@ const GamePlatform::ParticleDef* GamePlatform::ParticleDefFor(const std::string&
 // MSVC's rand() gives 0..32767
 static float Rand01() { return (float)(std::rand() & 0x7fff) * 3.0517578e-05f; }
 
+void GamePlatform::AddLevelParticles(const std::string& type, float amount, float x, float y, float w, float h, float angle, bool ignoreLimits) {
+    size_t before = particles_.size();
+    AddParticles(type, amount, x, y, w, h, angle, ignoreLimits, false);
+    // 0x42a850 draws a random layer (1 behind the foreground, 2 in front) for each emit
+    for (size_t i = before; i < particles_.size(); i++) { particles_[i].level = true; particles_[i].layer = (std::rand() & 1) + 1; }
+}
+
 void GamePlatform::AddParticles(const std::string& type, float amount, float x, float y, float w, float h, float angle, bool ignoreLimits, bool second) {
     if (!ignoreLimits) {
         int count = 0;
-        for (const Particle& q : particles_) if (q.second == second) count++;
+        for (const Particle& q : particles_) if (q.second == second && !q.level) count++;
         if ((float)softLimit_ < amount + (float)count) amount *= softFactor_;
         if ((float)hardLimit_ < (float)count + amount) amount = (float)(hardLimit_ - count);
         if (!(amount > 0)) return;
@@ -1034,9 +1121,16 @@ void GamePlatform::AddParticles(const std::string& type, float amount, float x, 
         } else {
             p.x = x; p.y = y;
         }
-        p.vx = (d->maxVelX - d->minVelX) * Rand01() + d->minVelX;
-        p.vy = (d->maxVelY - d->minVelY) * Rand01() + d->minVelY;
-        if (d->seasons) p.angle = ((d->angleMaxEmitter - d->angleMinEmitter) * Rand01() + d->angleMinEmitter) * 0.017453292f;
+        if (d->v2Emitter) {
+            float speed = (d->maxVelX - d->minVelX) * Rand01() + d->minVelX;
+            float a = ((d->angleMaxEmitter - d->angleMinEmitter) * Rand01() + d->angleMinEmitter) * 0.017453292f;
+            p.vx = std::cos(a) * speed;
+            p.vy = std::sin(a) * speed;
+        } else {
+            p.vx = (d->maxVelX - d->minVelX) * Rand01() + d->minVelX;
+            p.vy = (d->maxVelY - d->minVelY) * Rand01() + d->minVelY;
+        }
+        if (d->seasons || d->v2Emitter) p.angle = ((d->angleMaxEmitter - d->angleMinEmitter) * Rand01() + d->angleMinEmitter) * 0.017453292f;
         else p.angle = Rand01() * 3.1415927f + Rand01() * 3.1415927f;   // 1.x: the exe uses one random number twice
         p.angleVel = (d->maxAngleVel - d->minAngleVel) * Rand01() + d->minAngleVel;
         p.scaleBegin = (d->maxScaleBegin - d->minScaleBegin) * Rand01() + d->minScaleBegin;
@@ -1051,9 +1145,11 @@ void GamePlatform::AddParticles(const std::string& type, float amount, float x, 
 }
 
 // Below the ground (y > 0) a particle is removed only in the level; menu particles (enableMenuParticles) stay.
-void GamePlatform::UpdateParticles(float dt, bool removeBelowGround) {
+void GamePlatform::UpdateParticles(float dt, bool removeBelowGround, int which) {
     for (size_t i = 0; i < particles_.size();) {
         Particle& p = particles_[i];
+        if (which == 0 && p.second) { i++; continue; }
+        if (which == 1 && !p.second) { i++; continue; }
         p.age += dt;
         if (p.lifeTime < p.age || (removeBelowGround && 0.0f < p.y)) { particles_.erase(particles_.begin() + i); continue; }
         const ParticleDef& d = *p.def;
@@ -1078,9 +1174,23 @@ void GamePlatform::UpdateParticles(float dt, bool removeBelowGround) {
 // Each particle: a sprite at (x, y) / scale, scaled by scale * worldScale, rotated about the
 // sprite's pivot, positioned like the blocks (anchors 4 and 3).
 // world = false is the menu call (drawParticlesNative): the particles sit in screen coordinates, no camera
+// 0x42a9f0: layer 1 is the first list of particles (behind the foreground), layer 2 the second
+void GamePlatform::DrawLevelParticles(int layer) {
+    levelParticlesByScript_ = true;
+    if (IsSeasonsScripts()) DrawParticlesOf(true, layer == 2);
+    else DrawParticlesOf(true, -1, layer);
+}
+
 void GamePlatform::DrawParticles(bool world) {
+    if (!world) menuParticlesByScript_ = true;
+    DrawParticlesOf(world, -1);
+}
+
+void GamePlatform::DrawParticlesOf(bool world, int second, int levelLayer) {
     if (!backend_) return;
     for (const Particle& p : particles_) {
+        if (levelLayer > 0 ? (!p.level || p.layer != levelLayer) : p.level) continue;
+        if (second >= 0 && p.second != (second == 1)) continue;
         const SpriteSheet* sheet = nullptr;
         const Sprite* sp = sprites_.Find(p.sprite, &sheet);
         if (!sp) continue;
@@ -1091,7 +1201,14 @@ void GamePlatform::DrawParticles(bool world) {
         state_.angle = p.angle;
         state_.pivotX = (float)sp->pivotX;
         state_.pivotY = (float)sp->pivotY;
-        DrawSpriteAt(*sheet, *sp, p.x / p.scale, p.y / p.scale, 4, 3, false, 0, 0);
+        if (levelLayer > 0) {
+            // 0x42a9f0 (2.0.0): the level particles keep their position, so the camera moves them by
+            // (position * scale - camera): a smaller particle trails the camera, and layer 2 is twice as near
+            state_.sx = state_.sy = p.scale * ws * (float)levelLayer;
+            DrawSpriteAt(*sheet, *sp, p.x, p.y, 4, 3, false, 0, 0);
+        } else {
+            DrawSpriteAt(*sheet, *sp, p.x / p.scale, p.y / p.scale, 4, 3, false, 0, 0);
+        }
     }
     state_ = RenderState();
 }

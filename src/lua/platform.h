@@ -105,9 +105,6 @@ public:
     virtual void SetObjectParameter(const std::string& n, int id, float value) { (void)n; (void)id; (void)value; }
     virtual void SetPhysicsSimulationScale(float s) { (void)s; }
     virtual void SetWorldGravity(float x, float y) { (void)x; (void)y; }
-    // engine extension (not in the original exes): the time step of every frame is multiplied by this
-    virtual void SetTimeScale(float s) { (void)s; }
-    virtual float GetTimeScale() { return 1.0f; }
     virtual void ClearParticles() {}
     virtual void SetPhysicsEnabled(bool on) { physicsEnabled_ = on; }
     virtual bool IsPhysicsEnabled() { return physicsEnabled_; }
@@ -127,6 +124,7 @@ public:
     // writes translation when it got at least 2 values, scale with 4, angle with 5, pivot with 7. Values
     // that were not passed keep their previous setting. argc is the number of Lua arguments.
     virtual void SetRenderState(int argc, const float* args) { (void)argc; (void)args; }
+    virtual void SetAlpha(float a) { (void)a; }
     virtual void DrawRect(float r, float g, float b, float a, float x1, float y1, float x2, float y2, bool flag) {
         (void)r; (void)g; (void)b; (void)a; (void)x1; (void)y1; (void)x2; (void)y2; (void)flag; }
     virtual void DrawLine2D(float x1, float y1, float x2, float y2, float width, float r, float g, float b, float a) {
@@ -135,6 +133,7 @@ public:
     virtual void DrawBackground() {}
     virtual void DrawForeground() {}
     virtual void DrawParticles(bool world = true) { (void)world; }
+    virtual void DrawLevelParticles(int layer) { (void)layer; }
     virtual void SetSprite(const std::string& n, const std::string& sprite) { (void)n; (void)sprite; }
     virtual void SetMaterial(const std::string& n, const std::string& material) { (void)n; (void)material; }
     virtual void SetTexture(const std::string& n, const std::string& texture) { (void)n; (void)texture; }
@@ -202,6 +201,7 @@ public:
 
     // ---- particles.*
     // addParticles(type, amount, x, y, w, h, angle): type is the key in particleTable.particles
+    virtual void AddLevelParticles(const std::string& type, float amount, float x, float y, float w, float h, float angle, bool ignoreLimits) { (void)type; (void)amount; (void)x; (void)y; (void)w; (void)h; (void)angle; (void)ignoreLimits; }
     virtual void AddParticles(const std::string& type, float amount, float x, float y, float w, float h, float angle, bool ignoreLimits = false, bool second = false) {
         (void)type; (void)amount; (void)x; (void)y; (void)w; (void)h; (void)angle; }
     virtual void SetParticleSoftLimit(float a, float b) { (void)a; (void)b; }

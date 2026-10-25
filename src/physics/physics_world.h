@@ -37,6 +37,8 @@ struct PhysObject : FrameObject {
     bool drawWithBirds = false;  // +0x89  setObjectParameter(n, 1, 1): drawGameNative draws it in the bird pass
     std::string sprite;          // +0x68  setSprite, the name (the exe stores the sprite record)
     std::string texture;         // +0x6c  setTexture, the name (the exe stores the texture id)
+    bool scaled = false;         // +0x94  setObjectParameter(n, 6, 1): drawn with scaleX/scaleY
+    float scaleX = 1, scaleY = 1;  // +0x98..+0xa4  setObjectParameter(n, 5, v)
     bool special999 = false;     // +0x8a  circles created with z_order 999 (see ShouldCollide)
     float zOrder = 0;            // +0x80
     std::unique_ptr<Body> adapter;
@@ -72,7 +74,7 @@ public:
     float GetAngle(const std::string& n) const;                              // interpolated angle
     void GetWorldPoint(const std::string& n, float lx, float ly, float& wx, float& wy) const;
     // setObjectParameter (0x40ec00): id 1 -> drawWithBirds = (value == 1); id 2 -> body type static if
-    // value is 0, dynamic otherwise. Other ids do nothing.
+    // value is 0, dynamic otherwise. id 5 -> the draw scale; id 6 -> use that scale (value == 1). Other ids do nothing.
     void SetObjectParameter(const std::string& n, int id, float value);
     // setMaterial (0x4125f0): "wood*" -> 1, "rock*" -> 2, "light*" -> 3 (a prefix test); anything else leaves it unchanged.
     void SetMaterial(const std::string& n, const std::string& material);

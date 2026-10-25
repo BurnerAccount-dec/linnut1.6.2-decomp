@@ -446,6 +446,10 @@ void PhysicsWorld::SetObjectParameter(const std::string& n, int id, float value)
         o->drawWithBirds = (int)value == 1;
     } else if (id == 2) {
         o->b2->SetType(value == 0.0f ? b2_staticBody : b2_dynamicBody);
+    } else if (id == 5) {
+        o->scaleX = o->scaleY = value;
+    } else if (id == 6) {
+        o->scaled = (int)value == 1;
     }
 }
 
