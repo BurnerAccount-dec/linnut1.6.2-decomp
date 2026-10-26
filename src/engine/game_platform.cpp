@@ -2,6 +2,7 @@
 #include <fstream>
 #include <iterator>
 #include "engine/game_platform.h"
+#include "engine/level_writer.h"
 
 #include <cmath>
 #include <algorithm>
@@ -17,12 +18,21 @@ namespace ab {
 
 class GamePlatform::Host : public LuaFrameHost {
 public:
-    Host(ScriptHost& scripts, PhysicsWorld& physics) : LuaFrameHost(scripts), physics_(physics) {
-        objectNameOf = [this](int id) { return physics_.NameOf(id); };
-        jointNameOf = [this](int index) { return physics_.JointName(index); };
+    Host(ScriptHost& scripts, GamePlatform& platform) : LuaFrameHost(scripts), platform_(platform) {
+        objectNameOf = [this](int id) { return platform_.Physics().NameOf(id); };
+        jointNameOf = [this](int index) { return platform_.Physics().JointName(index); };
     }
-    void StepWorld(float dt, int velIter, int posIter) override { physics_.Step(dt, velIter, posIter); }
-    void ClearForces() override { physics_.ClearForces(); }
+    void StepWorld(float dt, int velIter, int posIter) override {
+        platform_.Physics().Step(dt, velIter, posIter);
+        static const char* dumpEvery = std::getenv("AB_BODYDUMP");   // debug: print every body each N steps
+        static int step = 0;
+        if (dumpEvery && ++step % std::atoi(dumpEvery) == 0) {
+            for (const auto& o : platform_.Physics().Objects())
+                if (o->pbody && !o->pbody->IsStatic())
+                    std::fprintf(stderr, "BD %d %s %.3f %.3f %.3f\n", step, o->name.c_str(), o->pbody->PosX(), o->pbody->PosY(), o->pbody->Angle());
+        }
+    }
+    void ClearForces() override { platform_.Physics().ClearForces(); }
     // Audio loops and the effects manager are not implemented yet.
     bool LoopActive(LoopSound) override { return false; }
     void StartLoop(LoopSound, float) override {}
@@ -31,7 +41,7 @@ public:
     void UpdateEffects(float) override {}
 
 private:
-    PhysicsWorld& physics_;
+    GamePlatform& platform_;
 };
 
 namespace {
@@ -128,10 +138,18 @@ void PushBlockScore(lua_State* L) {
 
 }  // namespace
 
-GamePlatform::GamePlatform(const std::string& dataRoot) : dataRoot_(dataRoot) {
-    physics_.onBeginContact = [this](PhysObject& a, PhysObject& b, b2Contact* c) { OnContact(a, b, c); };
+GamePlatform::GamePlatform(const std::string& dataRoot) : dataRoot_(dataRoot) {}
+
+// The physics world is made on first use, when the scripts have told which game this is: Rio uses Box2D 2.2.0, the others 2.1.x.
+PhysicsWorld& GamePlatform::Physics() {
+    if (physics_) return *physics_;
+    Box2DVersion ver = scripts_ && scripts_->IsRio() ? Box2DVersion::V22 : Box2DVersion::V21;
+    if (const char* f = std::getenv("AB_BOX2D")) ver = std::string(f) == "21" ? Box2DVersion::V21 : Box2DVersion::V22;  // test override
+    physics_ = MakePhysicsWorld(ver);
+    if (std::getenv("AB_PHYSDBG")) std::fprintf(stderr, "PHYS Box2D %s\n", physics_->Version() == Box2DVersion::V22 ? "2.2.0" : "2.1.1");
+    physics_->onBeginContact = [this](PhysObject& a, PhysObject& b, ContactHandle& c) { OnContact(a, b, c); };
     // the contact filter reads objects.world[name].material live
-    physics_.materialOf = [this](const PhysObject& o) {
+    physics_->materialOf = [this](const PhysObject& o) {
         std::string material;
         if (!scripts_) return material;
         lua_State* L = scripts_->State();
@@ -144,12 +162,13 @@ GamePlatform::GamePlatform(const std::string& dataRoot) : dataRoot_(dataRoot) {
         lua_pop(L, 1);
         return material;
     };
+    return *physics_;
 }
 GamePlatform::~GamePlatform() {}
 
 void GamePlatform::Attach(ScriptHost& scripts) {
     scripts_ = &scripts;
-    host_.reset(new Host(scripts, physics_));
+    host_.reset(new Host(scripts, *this));
 }
 
 // Game::update (0x408980) starts the sound output by itself whenever settings.audioEnabled is true and
@@ -217,10 +236,24 @@ void GamePlatform::RunFrame(float dt) {
         }
         lua_settop(L, top);
     }
-    if (host_) UpdateFrame(physics_.Frame(), *host_, dt);
+    if (host_) UpdateFrame(Physics().Frame(), *host_, dt);
+    {   // test hook: AB_EXEC_FRAME=n AB_EXEC="lua code" runs a snippet on frame n
+        static int execFrame = 0;
+        const char* at = std::getenv("AB_EXEC_FRAME");
+        const char* at2 = std::getenv("AB_EXEC2_FRAME");
+        ++execFrame;
+        if (scripts_ && at && execFrame == std::atoi(at) && std::getenv("AB_EXEC")) scripts_->RunString(std::getenv("AB_EXEC"));
+        if (scripts_ && at2 && execFrame == std::atoi(at2) && std::getenv("AB_EXEC2")) scripts_->RunString(std::getenv("AB_EXEC2"));
+    }
+    if (scripts_ && scripts_->IsRio() && dt > 0) {
+        if (Physics().Frame().running) UpdateRioGettingUp(dt);
+        SelectRioAnimations(dt);
+        if (Physics().Frame().running) { UpdateRioBirdFaces(dt); UpdateRioSquash(dt); }
+    }
+    if (scripts_ && scripts_->IsRio()) scripts_->Draw();      // Rio: the exe calls draw() after update()
     // 0x40a8cb: the particles move only while the physics is enabled
     bool seasons = IsSeasonsScripts();
-    if (physics_.Frame().running) UpdateParticles(dt, true, seasons ? -1 : 0);
+    if (Physics().Frame().running) UpdateParticles(dt, true, seasons ? -1 : 0);
     // Seasons: the menus switch their own particles on with the global enableMenuParticles
     if (scripts_) {
         lua_State* L = scripts_->State();
@@ -243,15 +276,46 @@ void GamePlatform::Print(const std::string& text) {
 
 // 0x40d2c0: the old level's bodies are destroyed and the step accumulator restarts
 void GamePlatform::BeginLevelLoad() {
-    physics_.Clear();
+    Physics().Clear();
     // a new level (or a restart) starts without the old one's particles and bird trails
     particles_.clear();
     themeSprites_.clear();
     for (int i = 0; i < 6; i++) { trajDots_[i].clear(); trajPuffs_[i].clear(); }
+    birdFaces_.clear();
 }
 
 void GamePlatform::CreateThemeSprite(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, float speedX, int layer) {
     themeSprites_.push_back({name, sprite, x, y, scaleX, scaleY, angle, speedX, layer});
+}
+
+// Angry Birds Rio (the exe's 0x4182a0 / 0x4185e0 / 0x418470): the angle is in radians, rotateThemeSprites turns it by angleVel a second
+void GamePlatform::CreateThemeSpriteRio(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, int layer, float angleVel, bool flipped) {
+    static const bool dbg = std::getenv("AB_THEMEDBG") != nullptr;
+    if (dbg) std::fprintf(stderr, "THEME create %s sprite=%s x=%g y=%g s=%g,%g a=%g layer=%d vel=%g flip=%d\n", name.c_str(), sprite.c_str(), x, y, scaleX, scaleY, angle, layer, angleVel, (int)flipped);
+    ThemeSprite t{name, sprite, x, y, scaleX, scaleY, angle, 0, layer};
+    t.angleVel = angleVel; t.flipped = flipped;
+    themeSprites_.push_back(t);
+}
+
+void GamePlatform::SetThemeSprite(const std::string& name, const std::string& sprite, int layer) {
+    for (ThemeSprite& t : themeSprites_)
+        if (t.name == name && t.layer == layer) { t.sprite = sprite; break; }
+}
+
+void GamePlatform::RotateThemeSprites(float dt) {
+    const float twoPi = 6.2831855f;
+    for (ThemeSprite& t : themeSprites_) {
+        if (t.angleVel == 0) continue;
+        t.angle = std::fmod(t.angle + t.angleVel * dt, twoPi);
+        if (t.angle < 0) t.angle += twoPi;
+    }
+}
+
+// updateBackgroundAndForegroundScrollingNative (0x41a450): every layer's offset grows by autoScroll * dt * 60
+void GamePlatform::ScrollThemeLayers(float dt, bool force) {
+    (void)force;
+    for (BgLayer& l : bgLayers_) l.offset += l.autoScroll * dt * 60.0f;
+    for (size_t i = 0; i < fgOffset_.size(); i++) fgOffset_[i] += fgAuto_[i] * dt * 60.0f;
 }
 
 void GamePlatform::ModifyThemeSprite(const std::string& name, float x, float y, float scaleX, float scaleY, float angle, int layer) {
@@ -266,6 +330,26 @@ void GamePlatform::RemoveThemeSprite(const std::string& name, int layer) {
 
 // updateThemeSprite (the exe's 0x417550): sprites of the background layers drift by speedX (physics units a second)
 // and wrap around the screen, left to right when moving left. The foreground layers are not updated.
+// Level paths come from the scripts without the extension (loadLevel adds it, so saveLevel does too).
+void GamePlatform::SaveLevel(const std::string& path) {
+    std::string file = path;
+    if (file.size() < 4 || file.compare(file.size() - 4, 4, ".lua") != 0) file += ".lua";
+    std::string error;
+    if (!scripts_ || !ab::WriteLevelFile(scripts_->State(), ResolveDataFile(file), IsSeasonsScripts(), error)) Print("saveLevel: " + error);
+}
+
+void GamePlatform::CreateDirectory(const std::string& path) {
+    std::string dir = ResolveDataFile(path);
+    while (!dir.empty() && (dir.back() == '/' || dir.back() == '\\')) dir.pop_back();
+    ab::MakeDirectory(dir);
+}
+
+bool GamePlatform::CheckDirectory(const std::string& path) {
+    std::string dir = ResolveDataFile(path);
+    while (!dir.empty() && (dir.back() == '/' || dir.back() == '\\')) dir.pop_back();
+    return ab::DirectoryExists(dir);
+}
+
 bool GamePlatform::IsSeasonsScripts() {
     if (!scripts_) return false;
     lua_State* L = scripts_->State();
@@ -315,8 +399,8 @@ void GamePlatform::DrawThemeSprites(int layer) {
         float px = t.x * 20.0f * worldScale_ - themeShift_ * layerState.sx;
         float py = t.y * 20.0f * worldScale_ + layerState.ty * layerState.sy;
         state_ = RenderState();
-        state_.sx = worldScale_ * t.scaleX; state_.sy = worldScale_ * t.scaleY;
-        state_.angle = t.angle;
+        state_.sx = worldScale_ * t.scaleX * (t.flipped ? -1.0f : 1.0f); state_.sy = worldScale_ * t.scaleY;
+        state_.angle = t.flipped ? -t.angle : t.angle;
         if (sp) { state_.pivotX = (float)sp->pivotX; state_.pivotY = (float)sp->pivotY; }
         ResDrawSprite(t.sprite, px / state_.sx, py / state_.sy, 4, 3, false, 0, 0);
     }
@@ -328,10 +412,61 @@ std::string GamePlatform::ResolveDataFile(const std::string& path) {
     return dataRoot_ + "/" + path;
 }
 
+// Angry Birds Rio: every frame the exe calls the script's selectObjectAnimation(name, speed, angle, dt) for each entry of
+// animatedObjects (marmosets, Nigel...). The script picks the animation whose trigger ranges contain the speed (physics
+// units per second) and the angle (degrees), starts it after its threshold time and, for animations marked destroyJoints
+// (a hanging marmoset that is hit hard enough), removes the object's joints.
+void GamePlatform::SelectRioAnimations(float dt) {
+    lua_State* L = scripts_->State();
+    int top = lua_gettop(L);
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    lua_getfield(L, -1, "animatedObjects");
+    lua_getfield(L, -2, "selectObjectAnimation");
+    if (!lua_istable(L, top + 2) || !lua_isfunction(L, top + 3)) { lua_settop(L, top); return; }
+    std::vector<std::string> names;
+    lua_pushnil(L);
+    while (lua_next(L, top + 2)) {
+        if (lua_type(L, -2) == LUA_TSTRING) names.push_back(lua_tostring(L, -2));
+        lua_pop(L, 1);
+    }
+    for (const std::string& name : names) {
+        PushWorldEntry(L, name);
+        bool alive = lua_istable(L, -1);
+        lua_pop(L, 1);
+        if (!alive) continue;
+        PhysObject* po = Physics().Find(name);
+        if (po && po->gettingUp) continue;           // 0x40b6xx: the script is not asked while the marmoset stands up
+        // the exe passes the direction the object moves in (atan2 of the velocity, in degrees) and its speed
+        float degrees = 0;
+        if (po && po->pbody) degrees = std::atan2(po->pbody->VelY(), po->pbody->VelX()) * 57.29578f;
+        lua_pushvalue(L, top + 3);
+        lua_pushstring(L, name.c_str());
+        lua_pushnumber(L, Physics().GetSpeed(name));
+        lua_pushnumber(L, degrees);
+        lua_pushnumber(L, dt);
+        if (lua_pcall(L, 4, 0, 0) != 0) {
+            std::fprintf(stderr, "selectObjectAnimation: %s\n", lua_tostring(L, -1));
+            lua_pop(L, 1);
+        }
+    }
+    lua_settop(L, top);
+}
+
 // Box2D BeginContact -> the exe's collision damage code (0x40b670). The rules are in ResolveContact;
 // this reads the Lua fields it needs, applies the result and calls birdCollision / blockCollision.
 // (The two skip flags at Game+0x1e9 / 0x1ea are only ever set to 0 in the exe, so they are left out.)
-void GamePlatform::OnContact(PhysObject& pa, PhysObject& pb, b2Contact* contact) {
+void GamePlatform::OnContact(PhysObject& pa, PhysObject& pb, ContactHandle& contact) {
+    if (scripts_ && scripts_->IsRio()) {         // Rio (0x40daa6): a hit starts the scale wobble of both objects that have a bounce multiplier
+        float dpx = pa.pbody->Mass() * pa.pbody->VelX() - pb.pbody->Mass() * pb.pbody->VelX();
+        float dpy = pa.pbody->Mass() * pa.pbody->VelY() - pb.pbody->Mass() * pb.pbody->VelY();
+        float dpLength = std::sqrt(dpx * dpx + dpy * dpy);
+        float wobble = std::min(dpLength / 10.0f * 0.02f, 0.1f);      // the momentum difference over the world scale, as for the damage
+        static const bool dbg = std::getenv("AB_WOBDBG") != nullptr;
+        if (dbg) std::fprintf(stderr, "DBG contact %s/%s dp=%.3f amps %.2f %.2f\n", pa.name.c_str(), pb.name.c_str(), dpLength, pa.bounceAmp, pb.bounceAmp);
+        for (PhysObject* o : {&pa, &pb}) {
+            if (o->bounceAmp > 0 && o->wobCur < wobble) { o->wobAmp0 = wobble; o->wobActive = true; }
+        }
+    }
     if (!scripts_) return;
     lua_State* L = scripts_->State();
     int top = lua_gettop(L);
@@ -375,8 +510,8 @@ void GamePlatform::OnContact(PhysObject& pa, PhysObject& pb, b2Contact* contact)
         }
         lua_pop(L, 2);
     }
-    if (r.hasVelocityChange) physics_.ApplyVelocityChange(r.velocityChange);
-    if (r.disableContact) contact->SetEnabled(false);
+    if (r.hasVelocityChange) Physics().ApplyVelocityChange(r.velocityChange);
+    if (r.disableContact) contact.SetEnabled(false);
     lua_settop(L, top);
 
     for (size_t i = 0; i < r.events.size(); i++) {
@@ -435,6 +570,13 @@ void GamePlatform::BeginFrame() {
 }
 
 void GamePlatform::EndFrame() {
+    // Rio: once the level is no longer drawn (exited to the menu or the loading screen) its particles are gone, and so are the result-screen stars (menu list) that were still alive
+    if (gameDrawnLast_ && !gameDrawn_ && scripts_ && scripts_->IsRio()) {
+        static const bool partDbg2 = std::getenv("AB_PARTDBG") != nullptr;
+        if (partDbg2) std::fprintf(stderr, "THEME level left: %d particles\n", (int)particles_.size());
+        particles_.clear();
+    }
+    gameDrawnLast_ = gameDrawn_; gameDrawn_ = false;
     // 2.0.0 draws the menu list itself, in screen space, over everything (0x4161c0)
     if (!menuParticlesByScript_ && !IsSeasonsScripts()) DrawParticlesOf(false, 1);
     if (backend_) backend_->EndFrame();
@@ -452,7 +594,8 @@ void GamePlatform::SetRenderState(int argc, const float* a) {
     if (argc >= 4) { state_.sx = a[2]; state_.sy = a[3]; }
     if (argc >= 5) state_.angle = a[4];
     if (argc >= 7) { state_.pivotX = a[5]; state_.pivotY = a[6]; }
-    if (argc >= 8) state_.alpha = a[7];
+    // setRenderState(tx, ty, sx, sy, angle, pivotX, pivotY, alpha): alpha is 0 (invisible) .. 1 (opaque); it stays until it is set again
+    if (argc >= 8) state_.alpha = a[7] < 0 ? 0 : (a[7] > 1 ? 1 : a[7]);
 }
 
 void GamePlatform::ResSetClipRect(float x, float y, float w, float h) {
@@ -484,8 +627,9 @@ const GamePlatform::TextureInfo* GamePlatform::TextureFile(const std::string& pa
 void GamePlatform::Transform(float x, float y, float cx, float cy, float& ox, float& oy) const {
     float c = std::cos(state_.angle), s = std::sin(state_.angle);
     float dx = x - cx, dy = y - cy;
-    ox = (cx + c * dx - s * dy + state_.tx) * state_.sx;
-    oy = (cy + s * dx + c * dy + state_.ty) * state_.sy;
+    float rx = c * dx - s * dy, ry = s * dx + c * dy;
+    ox = (cx + rx + state_.tx) * state_.sx;
+    oy = (cy + ry + state_.ty) * state_.sy;
 }
 
 // Sprite_handleEvent (0x43aab0) and drawSprite (0x434b30 / 0x434c60): the anchors move the sprite's
@@ -575,6 +719,7 @@ void GamePlatform::DrawSpriteAt(const SpriteSheet& sheet, const Sprite& spr, flo
     if ((sized || sheet.image.find("TUTORIALS") != std::string::npos) && sp->w > 1 && sp->h > 1) {
         u0 += 0.5f / tex->width; u1 -= 0.5f / tex->width; v0 += 0.5f / tex->height; v1 -= 0.5f / tex->height;
     }
+    if (state_.flipX) std::swap(u0, u1);
     const float us[4] = {u0, u1, u1, u0}, vs[4] = {v0, v0, v1, v1};
     for (int i = 0; i < 4; i++) { uv[i * 2] = us[i]; uv[i * 2 + 1] = vs[i]; }
     if (tileTexture_) backend_->DrawMaskedQuad(tileTexture_->handle, tex->handle, xy, tileUV, uv);
@@ -778,7 +923,7 @@ namespace ab {
 
 // setTheme (reads blockTable.themes[name]): colour, groundColor, bgLayers, fgLayers, texture.
 void GamePlatform::SetTheme(const std::string& theme) {
-    bgLayers_.clear(); fgLayers_.clear(); fgSpeed_.clear(); fgScale_.clear(); themeTexture_.clear();
+    bgLayers_.clear(); fgLayers_.clear(); fgSpeed_.clear(); fgScale_.clear(); fgAuto_.clear(); fgOffset_.clear(); themeTexture_.clear();
     if (!scripts_) return;
     lua_State* L = scripts_->State();
     int top = lua_gettop(L);
@@ -825,6 +970,7 @@ void GamePlatform::SetTheme(const std::string& theme) {
                             lua_pop(L, 1);
                             lua_rawgeti(L, -1, 5);
                             if (lua_isboolean(L, -1)) layer.looping = lua_toboolean(L, -1) != 0;
+                            else if (lua_isnumber(L, -1)) layer.autoScroll = (float)lua_tonumber(L, -1);     // Rio: the layer drifts by this many pixels a frame
                             lua_pop(L, 1);
                             bgLayers_.push_back(layer);
                         }
@@ -847,6 +993,10 @@ void GamePlatform::SetTheme(const std::string& theme) {
                                 lua_pop(L, 1);
                                 lua_rawgeti(L, -1, 4);
                                 fgScale_.push_back(lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : 1.5f);
+                                lua_pop(L, 1);
+                                lua_rawgeti(L, -1, 5);
+                                fgAuto_.push_back(lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : 0.0f);
+                                fgOffset_.push_back(0.0f);
                             }
                             lua_pop(L, 1);
                         }
@@ -929,7 +1079,7 @@ void GamePlatform::DrawBackground() {
         float w = sp ? (float)sp->w : (float)cw, pivotX = sp ? (float)sp->pivotX : (float)ox;
         if (w <= 0) continue;
         float s = layer.scale, inv = 1.0f / s;
-        float shift = layer.speed * camX_;
+        float baseShift = layer.speed * camX_, shift = layer.speed * (camX_ + layer.offset);   // 0x41a6e7: (offset + camera) * parallax
         state_ = RenderState();
         state_.ty = -camY_ * inv;
         state_.sx = state_.sy = s * worldScale_;
@@ -945,7 +1095,7 @@ void GamePlatform::DrawBackground() {
             state_.tx = place - std::trunc(place);
             ResDrawSprite(layer.sprite, place - shift * inv, 0, 4, 3, false, 0, 0);
         }
-        themeShift_ = shift * inv;
+        themeShift_ = baseShift * inv;
         DrawThemeSprites((int)(&layer - &bgLayers_[0]));
     }
     state_ = RenderState();
@@ -977,7 +1127,7 @@ void GamePlatform::DrawForeground() {
         fgIndex++;
         float w, px, h, py;
         if (!extent(name, w, px, h, py) || w <= 0) continue;
-        float c = fgScale_[fgIndex], shift = fgSpeed_[fgIndex] * camX_;
+        float c = fgScale_[fgIndex], baseShift = fgSpeed_[fgIndex] * camX_, shift = fgSpeed_[fgIndex] * (camX_ + fgOffset_[fgIndex]);
         float m = std::fmod(shift, c * w);
         float x0 = -(m + c * w) / c;
         state_ = RenderState();
@@ -986,7 +1136,7 @@ void GamePlatform::DrawForeground() {
         state_.sx = state_.sy = worldScale_ * c;
         float right = screenWidth_ / (worldScale_ * c) + px;
         for (float x = std::trunc(x0); x <= right; x += w) ResDrawSprite(name, x, 0, 4, 3, false, 0, 0);
-        themeShift_ = shift / c;
+        themeShift_ = baseShift / c;
         DrawThemeSprites((int)bgLayers_.size() + fgIndex);
     }
     state_ = RenderState();
@@ -996,40 +1146,77 @@ void GamePlatform::DrawForeground() {
 void GamePlatform::DrawPhysObject(PhysObject& o) {
     const SpriteSheet* sheet = nullptr;
     const Sprite* sp = sprites_.Find(o.sprite, &sheet);
-    if (!sp) return;
+    const CompoSprite* compo = sp ? nullptr : sprites_.FindCompo(o.sprite);
+    if (!sp && !compo) return;
+    float x = o.interpX * 20.0f, y = o.interpY * 20.0f;
     state_.angle = o.interpAngle;
-    state_.pivotX = (float)sp->pivotX;
-    state_.pivotY = (float)sp->pivotY;
-    if (!o.texture.empty()) {
+    if (!o.texture.empty() && sp) {
         const TextureInfo* t = TextureFile(sheet->directory + "/" + o.texture + ".png", true);
         if (t) tileTexture_ = t;
     }
-    if (o.scaled && o.scaleX != 0 && o.scaleY != 0) {
-        // 0x4165xx: the sprite shrinks about its pivot, the pivot stays where it was on the screen
-        float x = o.interpX * 20.0f, y = o.interpY * 20.0f;
-        RenderState saved = state_;
-        state_.sx *= o.scaleX; state_.sy *= o.scaleY;
-        state_.tx = (x + saved.tx) / o.scaleX - x;
-        state_.ty = (y + saved.ty) / o.scaleY - y;
-        DrawSpriteAt(*sheet, *sp, x, y, 4, 3, false, 0, 0);
-        state_ = saved;
-    } else {
-        DrawSpriteAt(*sheet, *sp, o.interpX * 20.0f, o.interpY * 20.0f, 4, 3, false, 0, 0);
+    // 0x4165xx: a scaled sprite shrinks about its pivot, the pivot stays where it was on the screen
+    RenderState saved = state_;
+    if (o.disableRotation) state_.angle = 0;     // 0x41b2c0: setObjectParameter 10 draws the sprite upright
+    // the draw scale is the object's own scale plus the wobble after a hit (0x40b2xx: x gets +sin, y gets -sin of the same phase)
+    float drawSX = (o.scaled ? o.scaleX : 1.0f) + o.wobDX, drawSY = (o.scaled ? o.scaleY : 1.0f) + o.wobDY;
+    if ((o.scaled || o.wobDX != 0 || o.wobDY != 0) && drawSX != 0 && drawSY != 0) {
+        state_.sx *= drawSX; state_.sy *= drawSY;
+        state_.tx = (x + saved.tx) / drawSX - x;
+        state_.ty = (y + saved.ty) / drawSY - y;
     }
+    if (sp && !o.flipX) {
+        state_.pivotX = (float)sp->pivotX;
+        state_.pivotY = (float)sp->pivotY;
+        DrawSpriteAt(*sheet, *sp, x, y, 4, 3, false, 0, 0);
+    } else {
+        // Angry Birds Rio draws its monkeys and caged birds as composite sprites (every part is drawn relative to the
+        // object's position and the whole thing turns about it), and some objects are mirrored: a mirrored part sits
+        // on the other side of the position
+        auto drawPart = [&](const SpriteSheet& sh, const Sprite& s, float left, float top) {
+            if (o.flipX) {
+                left = -(left + (float)s.w);
+                state_.flipX = true;
+            }
+            state_.pivotX = -left;
+            state_.pivotY = -top;
+            DrawSpriteAt(sh, s, x + left, y + top, 0, 0, false, 0, 0);
+            state_.flipX = false;
+        };
+        if (sp) {
+            drawPart(*sheet, *sp, (float)-sp->pivotX, (float)-sp->pivotY);
+        } else {
+            for (const CompoPart& part : compo->parts) {
+                const SpriteSheet* partSheet = nullptr;
+                const Sprite* ps = sprites_.Find(part.sprite, &partSheet);
+                if (ps) drawPart(*partSheet, *ps, (float)(part.x - ps->pivotX), (float)(part.y - ps->pivotY));
+            }
+        }
+    }
+    state_ = saved;
     tileTexture_ = nullptr;
 }
 
 // drawGameNative: static blocks, then the other blocks, the trajectory dots, the birds, and
 // finally everything with a z of 5 or more.
 void GamePlatform::DrawGame() {
+    gameDrawn_ = true;
     if (!backend_) return;
     state_ = RenderState();
     state_.tx = -camX_; state_.ty = -camY_;
     state_.sx = state_.sy = worldScale_;
-    const auto& objects = physics_.Objects();
-    auto isStatic = [](PhysObject& o) { return o.b2 && o.b2->GetType() == b2_staticBody; };
-    for (auto& o : objects) if (isStatic(*o) && o->zOrder < 5) DrawPhysObject(*o);
-    for (auto& o : objects) if (!o->isBird && !isStatic(*o) && !o->drawWithBirds && o->zOrder < 5) DrawPhysObject(*o);
+    const auto& objects = Physics().Objects();
+    auto isStatic = [](PhysObject& o) { return o.pbody && o.pbody->IsStatic(); };
+    // Angry Birds Rio draws each group by z order (equal z keeps the creation order); the earlier games use creation order
+    bool rio = scripts_ && scripts_->IsRio();
+    auto drawGroup = [&](auto pick) {
+        if (!rio) { for (auto& o : objects) if (pick(*o)) DrawPhysObject(*o); return; }
+        std::vector<PhysObject*> group;
+        for (auto& o : objects) if (pick(*o)) group.push_back(o.get());
+        std::stable_sort(group.begin(), group.end(), [](PhysObject* a, PhysObject* b) { return a->zOrder < b->zOrder; });
+        for (PhysObject* o : group) DrawPhysObject(*o);
+    };
+    drawGroup([&](PhysObject& o) { return isStatic(o) && o.zOrder < 5; });
+    drawGroup([&](PhysObject& o) { return !o.isBird && !isStatic(o) && !o.drawWithBirds && o.zOrder < 5; });
     // each of the six lists: its dots go through TRAIL_WHITE_1, _2, _3 and start again, then its puffs (BIRD_SPECIAL)
     state_.angle = 0; state_.pivotX = state_.pivotY = 0;
     for (int list = 0; list < 6; list++) {
@@ -1044,8 +1231,8 @@ void GamePlatform::DrawGame() {
             if (sp) DrawSpriteAt(*sheet, *sp, p.x, p.y, 4, 3, false, 0, 0);
         }
     }
-    for (auto& o : objects) if ((o->isBird || o->drawWithBirds) && o->zOrder < 5) DrawPhysObject(*o);
-    for (auto& o : objects) if (o->zOrder >= 5) DrawPhysObject(*o);
+    drawGroup([&](PhysObject& o) { return (o.isBird || o.drawWithBirds) && o.zOrder < 5; });
+    drawGroup([&](PhysObject& o) { return o.zOrder >= 5; });
     if (IsSeasonsScripts()) { if (!levelParticlesByScript_) DrawParticles(); }
     else DrawParticlesOf(true, 0);
     state_ = RenderState();
@@ -1133,6 +1320,8 @@ void GamePlatform::AddParticles(const std::string& type, float amount, float x, 
         if (!(amount > 0)) return;
     }
     const ParticleDef* d = ParticleDefFor(type);
+    static const bool partDbg = std::getenv("AB_PARTDBG") != nullptr;
+    if (partDbg) std::fprintf(stderr, "THEME addParticles %s amount=%g def=%d sprites=%d\n", type.c_str(), amount, d ? 1 : 0, d ? (int)d->sprites.size() : -1);
     if (!d || d->sprites.empty()) return;
     float s = std::sin(angle), c = std::cos(angle);
     for (int i = 0; (float)i < amount; i++) {
@@ -1244,4 +1433,163 @@ void GamePlatform::DrawParticlesOf(bool world, int second, int levelLayer) {
     state_ = RenderState();
 }
 
+
+// Rio: the exe swaps the bird sprites that the script does not (def.sprites.blink / yell).
+// A bird waiting on the ground blinks now and then; the bird the player has grabbed yells until it is launched.
+void GamePlatform::UpdateRioBirdFaces(float dt) {
+    lua_State* L = scripts_->State();
+    int top = lua_gettop(L);
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    int env = top + 1;
+    lua_getfield(L, env, "birds");
+    lua_getfield(L, env, "getObjectDefinition");
+    if (!lua_istable(L, top + 2) || !lua_isfunction(L, top + 3)) { lua_settop(L, top); return; }
+    std::string grabbed;
+    lua_getfield(L, env, "selectedBird");
+    if (lua_istable(L, -1)) { lua_getfield(L, -1, "name"); if (lua_isstring(L, -1)) grabbed = lua_tostring(L, -1); lua_pop(L, 1); }
+    lua_pop(L, 1);
+    lua_getfield(L, env, "flyingBird");
+    if (lua_istable(L, -1)) grabbed.clear();
+    lua_pop(L, 1);
+    std::vector<std::string> names;
+    lua_pushnil(L);
+    while (lua_next(L, top + 2)) {
+        if (lua_type(L, -2) == LUA_TSTRING) names.push_back(lua_tostring(L, -2));
+        lua_pop(L, 1);
+    }
+    for (const std::string& name : names) {
+        PhysObject* o = Physics().Find(name);
+        if (!o) continue;
+        lua_pushvalue(L, top + 3);
+        lua_pushstring(L, name.c_str());
+        if (lua_pcall(L, 1, 1, 0) != 0) { lua_pop(L, 1); continue; }
+        if (lua_istable(L, -1)) {
+            lua_getfield(L, -1, "sprites");
+            if (lua_istable(L, -1)) {
+                std::string sp[3];
+                const char* keys[3] = {"default", "blink", "yell"};
+                for (int i = 0; i < 3; i++) {
+                    lua_getfield(L, -1, keys[i]);
+                    if (lua_isstring(L, -1)) sp[i] = lua_tostring(L, -1);
+                    lua_pop(L, 1);
+                }
+                std::string flyingSprite;
+                lua_getfield(L, -1, "flying");
+                if (lua_isstring(L, -1)) flyingSprite = lua_tostring(L, -1);
+                lua_pop(L, 1);
+                if (sp[1] == flyingSprite) sp[1].clear();     // Blu & Jewel: the blink sprite is her flying pose, so she does not blink
+                if (sp[2] == flyingSprite) sp[2].clear();
+                // The gamelogic script runs the face timers itself (animTimer / animOn: a face for 0.1-0.2 s, a yell one time in four,
+                // with the bird_misc sound) but it looks the sprites up as spriteYell / spriteBlink of the definition, a name
+                // that Rio's definitions do not have; give it those names from sprites.yell / sprites.blink.
+                const char* extra[2] = {"spriteYell", "spriteBlink"};
+                for (int i = 0; i < 2; i++) {
+                    const std::string& face = sp[i == 0 ? 2 : 1];
+                    lua_getfield(L, -2, extra[i]);
+                    bool missing = lua_isnil(L, -1);
+                    lua_pop(L, 1);
+                    if (missing && !face.empty()) { lua_pushstring(L, face.c_str()); lua_setfield(L, -3, extra[i]); }
+                }
+                // the script never puts the default sprite back: that is when its animOn flag goes false again
+                bool showing = false;
+                lua_getfield(L, top + 2, name.c_str());
+                if (lua_istable(L, -1)) { lua_getfield(L, -1, "animOn"); showing = lua_toboolean(L, -1) != 0; lua_pop(L, 1); }
+                lua_pop(L, 1);
+                if (!sp[0].empty() && (o->sprite == sp[0] || o->sprite == sp[1] || o->sprite == sp[2])) {
+                    // the bird being dragged in the slingshot shows its yell sprite
+                    std::string want = o->sprite;
+                    if (name == grabbed && !sp[2].empty()) want = sp[2];
+                    else if (!showing) want = sp[0];
+                    if (o->sprite != want) { if (std::getenv("AB_FACEDBG")) std::fprintf(stderr, "face %s: %s -> %s\n", name.c_str(), o->sprite.c_str(), want.c_str()); o->sprite = want; }
+                }
+            }
+            lua_pop(L, 1);
+        }
+        lua_pop(L, 1);
+    }
+    lua_settop(L, top);
+}
+
+}  // namespace ab
+
+namespace ab {
+// Rio, the world update at 0x40a8xx / 0x40b8xx: the wobble that a hit starts in an object's draw scale, and the turning
+// of the objects that face the way they move
+void GamePlatform::UpdateRioSquash(float dt) {
+    static const bool dbg = std::getenv("AB_WOBDBG") != nullptr;
+    for (auto& o : Physics().Objects()) {
+        if (dbg && o->wobActive && o->wobT == 0) std::fprintf(stderr, "DBG wobble %s amp0=%.3f mult=%.2f\n", o->name.c_str(), o->wobAmp0, o->bounceAmp);
+        if (o->wobActive) {
+            o->wobT += dt;
+            float cur = (o->wobAmp0 - o->wobT * o->wobAmp0) * o->bounceAmp;      // dies out linearly within a second
+            if (cur > 4.0f) cur = 4.0f;
+            o->wobCur = cur;
+            if (cur > 0.01f) {
+                float phase = o->wobT * (cur * 100.0f + o->bounceFreq * 5.0f);
+                o->wobDX = std::sin(phase) * cur;
+                o->wobDY = std::sin(phase + 3.1415927f) * cur;
+            } else {
+                o->wobActive = false; o->wobCur = 0; o->wobAmp0 = 0; o->wobT = 0;
+            }
+        }
+        if (o->enableFlipping) {        // Luiz and the marmosets face the way they move (their sprites face left)
+            float vx = o->pbody->VelX();
+            if (std::fabs(vx) > 3.0f) o->flipX = o->flipBase != (vx > 0);
+        }
+    }
+}
+
+// Rio, 0x40b1xx: a marmoset (setObjectParameter 14) that is not hanging on a joint and lies still on its side stands up again.
+// The exe starts the "getting_up" animation, then turns the body upright at 2 rad/s the short way round.
+void GamePlatform::UpdateRioGettingUp(float dt) {
+    const float kPi = 3.1415927f, kTwoPi = 6.2831855f;
+    std::vector<std::string> started;
+    for (auto& o : Physics().Objects()) {
+        if (!o->canGetUp || !o->pbody) continue;
+        PhysBody* body = o->pbody.get();
+        float angle = std::fmod(body->Angle(), kTwoPi);
+        if (angle < 0) angle += kTwoPi;
+        float w = std::fabs(body->AngularVelocity());
+        if (!o->gettingUp) {
+            if (o->getUpTimer > 0 || body->IsStatic()) continue;
+            if (body->VelX() * body->VelX() + body->VelY() * body->VelY() >= 4.0f || w >= 0.1f) continue;
+            if (Physics().HasJoints(o->name) || o->disableRotation) continue;
+            if (angle > 0.7853982f && angle < 5.4977875f) {
+                o->getUpTimer = 3.0f; o->gettingUp = true;
+                started.push_back(o->name);
+                if (std::getenv("AB_WOBDBG")) std::fprintf(stderr, "DBG getup start %s angle=%.2f\n", o->name.c_str(), angle);
+            }
+            continue;
+        }
+        o->getUpTimer -= dt;
+        bool done = false;
+        if (o->getUpTimer <= 0) {
+            done = w > 0.1f;
+        } else if (angle < 0.1f || angle > 6.183f) {
+            done = true;
+        } else if (w < 2.0f) {
+            body->SetAwake(true);
+            body->SetAngularVelocity(angle > kPi ? 2.0f : -2.0f);
+        }
+        if (done) {
+            if (std::getenv("AB_WOBDBG")) std::fprintf(stderr, "DBG getup done %s angle=%.2f\n", o->name.c_str(), angle);
+            o->getUpTimer = 0; o->gettingUp = false; body->SetAngularVelocity(0);
+        }
+    }
+    if (started.empty() || !scripts_) return;
+    lua_State* L = scripts_->State();
+    int top = lua_gettop(L);
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    for (const std::string& name : started) {
+        lua_getfield(L, top + 1, "setAnimationByName");
+        if (!lua_isfunction(L, -1)) { lua_pop(L, 1); continue; }
+        lua_pushstring(L, name.c_str());
+        lua_pushstring(L, "getting_up");
+        if (lua_pcall(L, 2, 0, 0) != 0) {
+            std::fprintf(stderr, "setAnimationByName: %s\n", lua_tostring(L, -1));
+            lua_pop(L, 1);
+        }
+    }
+    lua_settop(L, top);
+}
 }  // namespace ab

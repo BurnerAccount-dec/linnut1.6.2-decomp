@@ -15,6 +15,7 @@
 #include "lua/lua_frame_host.h"
 #include "lua/platform.h"
 #include "lua/script_host.h"
+#include <cstdlib>
 #include <map>
 
 #include "audio/audio_mixer.h"
@@ -83,7 +84,7 @@ public:
     void BeginFrame();
     void EndFrame();
     const SpriteLibrary& Sprites() const { return sprites_; }
-    PhysicsWorld& Physics() { return physics_; }
+    PhysicsWorld& Physics();      // made on first use: the version of Box2D depends on the game
     int birdCollisions = 0, blockCollisions = 0;     // callbacks made so far (for tests)
     const std::vector<std::string>& Log() const { return log_; }
 
@@ -91,6 +92,11 @@ public:
     void Print(const std::string& text) override;
     void BeginLevelLoad() override;
     std::string ResolveDataFile(const std::string& path) override;
+    // The level editor: setEditing(true) while a level is edited, saveLevel(file) writes it over the level file, the folders are made on demand.
+    void SetEditing(bool on) override { editing_ = on; }
+    void SaveLevel(const std::string& path) override;
+    void CreateDirectory(const std::string& path) override;
+    bool CheckDirectory(const std::string& path) override;
     // Where settings.lua and highscores.lua live (default: the working folder).
     void SetUserDir(const std::string& dir) { userDir_ = dir; }
     std::string ResolveUserFile(const std::string& file, bool appData) override {
@@ -108,38 +114,56 @@ public:
     void ResGetSpriteBounds(const std::string& sheet, const std::string& sprite, float& w, float& h) override;
     void ResGetSpritePivot(const std::string& sheet, const std::string& sprite, float& px, float& py) override;
 
-    float CreateBox(const BodyDef& d) override { return physics_.CreateBox(d); }
-    float CreateCircle(const BodyDef& d) override { return physics_.CreateCircle(d); }
-    float CreatePolygon(const BodyDef& d, const std::vector<float>& v) override { return physics_.CreatePolygon(d, v); }
-    bool CreateJoint(JointDef& d) override { return physics_.CreateJoint(d); }
-    void SetJointParameters(const JointParams& p) override { physics_.SetJointParameters(p); }
-    void CheckJointLimits(const std::string& n) override { physics_.CheckJointLimits(n); }
-    void DestroyJoint(const std::string& n) override { physics_.DestroyJoint(n); }
-    std::vector<std::string> RemoveObject(const std::string& n) override { return physics_.RemoveObject(n); }
-    void ApplyImpulse(const std::string& n, float ix, float iy, float px, float py) override { physics_.ApplyImpulse(n, ix, iy, px, py); }
-    void ApplyForce(const std::string& n, float fx, float fy, float px, float py) override { physics_.ApplyForce(n, fx, fy, px, py); }
-    bool SetPosition(const std::string& n, float x, float y) override { return physics_.SetPosition(n, x, y); }
-    bool SetRotation(const std::string& n, float a, float& normalized) override { return physics_.SetRotation(n, a, normalized); }
-    void SetVelocity(const std::string& n, float vx, float vy) override { physics_.SetVelocity(n, vx, vy); }
-    void SetAngularVelocity(const std::string& n, float w) override { physics_.SetAngularVelocity(n, w); }
-    void SetSleeping(const std::string& n, bool s) override { physics_.SetSleeping(n, s); }
-    float GetAngle(const std::string& n) override { return physics_.GetAngle(n); }
-    void GetWorldPoint(const std::string& n, float lx, float ly, float& wx, float& wy) override { physics_.GetWorldPoint(n, lx, ly, wx, wy); }
+    float CreateBox(const BodyDef& d) override { return Physics().CreateBox(d); }
+    float CreateCircle(const BodyDef& d) override { return Physics().CreateCircle(d); }
+    float CreatePolygon(const BodyDef& d, const std::vector<float>& v) override { return Physics().CreatePolygon(d, v); }
+    bool CreateJoint(JointDef& d) override { return Physics().CreateJoint(d); }
+    void SetJointParameters(const JointParams& p) override { Physics().SetJointParameters(p); }
+    void CheckJointLimits(const std::string& n) override { Physics().CheckJointLimits(n); }
+    void DestroyJoint(const std::string& n) override { Physics().DestroyJoint(n); }
+    std::vector<std::string> RemoveObject(const std::string& n) override { return Physics().RemoveObject(n); }
+    void ApplyImpulse(const std::string& n, float ix, float iy, float px, float py) override { Physics().ApplyImpulse(n, ix, iy, px, py); }
+    void ApplyForce(const std::string& n, float fx, float fy, float px, float py) override { Physics().ApplyForce(n, fx, fy, px, py); }
+    bool SetPosition(const std::string& n, float x, float y) override { return Physics().SetPosition(n, x, y); }
+    bool SetRotation(const std::string& n, float a, float& normalized) override { return Physics().SetRotation(n, a, normalized); }
+    float GetSpeed(const std::string& n) override { return Physics().GetSpeed(n); }
+    bool HasMovingObjects(float tol) override { return Physics().HasMovingObjects(tol); }
+    void GetLocalPoint(const std::string& n, float wx, float wy, float& lx, float& ly) override { Physics().GetLocalPoint(n, wx, wy, lx, ly); }
+    void SetCollisionEnabled(const std::string& n, bool on) override { Physics().SetCollisionEnabled(n, on); }
+    void SetColliderType(const std::string& n, int type) override { Physics().SetColliderType(n, type); }
+    int ColliderType(const std::string& n) override { return Physics().ColliderType(n); }
+    void SetColliderRule(int a, int b, bool collide) override { Physics().SetColliderRule(a, b, collide); }
+    bool ColliderRule(int a, int b) override { return Physics().ColliderRule(a, b); }
+    void SetPolygonRadius(float r) override { Physics().SetPolygonRadius(r); }
+    float PolygonRadius() override { return Physics().PolygonRadius(); }
+    void RemoveJointsFromObject(const std::string& n) override { Physics().RemoveJointsFromObject(n); }
+    std::vector<std::string> IntersectingObjects(float x, float y, float l, float r, float d, float u) override { return Physics().IntersectingObjects(x, y, l, r, d, u); }
+    void SetVelocity(const std::string& n, float vx, float vy) override { Physics().SetVelocity(n, vx, vy); }
+    void SetAngularVelocity(const std::string& n, float w) override { Physics().SetAngularVelocity(n, w); }
+    void SetSleeping(const std::string& n, bool s) override { Physics().SetSleeping(n, s); }
+    float GetAngle(const std::string& n) override { return Physics().GetAngle(n); }
+    void GetWorldPoint(const std::string& n, float lx, float ly, float& wx, float& wy) override { Physics().GetWorldPoint(n, lx, ly, wx, wy); }
     void SetBGColor(float r, float g, float b) override;
     void RequestExit() override { exitRequested_ = true; }
     void SetFullScreen(bool on) override { Platform::SetFullScreen(on); fullScreenReq_ = true; }
     void SetRenderState(int argc, const float* args) override;
     bool levelParticlesByScript_ = false;
     bool pauseGuard_ = false;
+    bool editing_ = false;
+    bool gameDrawn_ = false, gameDrawnLast_ = false;   // Rio: drawGameNative ran this / the last frame (the particles of a level end with it)
     bool menuParticlesByScript_ = false;      // 2.0.0 draws the level's particles itself, in two layers (drawLevelParticlesNative)
-    void SetAlpha(float a) override { state_.alpha = a; }
+    void SetAlpha(float a) override { state_.alpha = a < 0 ? 0 : (a > 1 ? 1 : a); }
     void ResDrawSprite(const std::string& sprite, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height) override;
-    void SetWorldGravity(float x, float y) override { physics_.World().SetGravity(b2Vec2(x, y)); }
+    void SetWorldGravity(float x, float y) override { Physics().SetGravity(x, y); }
     void ClearParticles() override { particles_.clear(); }
     void CreateThemeSprite(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, float speedX, int layer) override;
     void ModifyThemeSprite(const std::string& name, float x, float y, float scaleX, float scaleY, float angle, int layer) override;
     void RemoveThemeSprite(const std::string& name, int layer) override;
     void UpdateThemeSprites(float dt) override;
+    void CreateThemeSpriteRio(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, int layer, float angleVel, bool flipped) override;
+    void SetThemeSprite(const std::string& name, const std::string& sprite, int layer) override;
+    void RotateThemeSprites(float dt) override;
+    void ScrollThemeLayers(float dt, bool force) override;
     bool IsSeasonsScripts();
     void ResSetClipRect(float x, float y, float w, float h) override;
     void DrawRect(float r, float g, float b, float a, float x1, float y1, float x2, float y2, bool inWorld) override;
@@ -174,20 +198,21 @@ public:
     void AddLevelParticles(const std::string& type, float amount, float x, float y, float w, float h, float angle, bool ignoreLimits) override;
     void DrawParticlesOf(bool world, int second, int levelLayer = 0);          // second: -1 both lists, 0 the first, 1 the second
 
-    void SetObjectParameter(const std::string& n, int id, float v) override { physics_.SetObjectParameter(n, id, v); }
-    void SetMaterial(const std::string& n, const std::string& m) override { physics_.SetMaterial(n, m); }
-    void SetSprite(const std::string& n, const std::string& s) override { physics_.SetSpriteName(n, s); }
-    void SetTexture(const std::string& n, const std::string& t) override { physics_.SetTextureName(n, t); }
-    void SetPhysicsEnabled(bool on) override { physics_.SetRunning(on); }
-    bool IsPhysicsEnabled() override { return physics_.Frame().running; }
-    void SetLevelLimits(float minX, float, float maxX, float) override { physics_.SetLevelLimits(minX, maxX); }
+    void SetObjectParameter(const std::string& n, int id, float v) override { Physics().SetObjectParameter(n, id, v); }
+    void SetMaterial(const std::string& n, const std::string& m) override { Physics().SetMaterial(n, m); }
+    void SetSprite(const std::string& n, const std::string& s) override { Physics().SetSpriteName(n, s); }
+    void SetTexture(const std::string& n, const std::string& t) override { Physics().SetTextureName(n, t); }
+    void SetPhysicsEnabled(bool on) override { Physics().SetRunning(on); }
+    bool IsPhysicsEnabled() override { return Physics().Frame().running; }
+    void SetLevelLimits(float minX, float, float maxX, float) override { Physics().SetLevelLimits(minX, maxX); }
 
 private:
-    void OnContact(PhysObject& a, PhysObject& b, b2Contact* contact);
+    void OnContact(PhysObject& a, PhysObject& b, ContactHandle& contact);
     class Host;                       // FrameHost: world step, Lua writes, (no audio / effects yet)
     // The persistent state set by setRenderState (0x408630): translation, scale, angle, pivot.
     struct RenderState {
         float tx = 0, ty = 0, sx = 1, sy = 1, angle = 0, pivotX = 0, pivotY = 0;
+        bool flipX = false;              // Rio: the sprite is drawn mirrored
         float alpha = 1;                 // 2.0.0: setRenderState's 8th value and setAlpha (render state +0x40)
     };
     struct TextureInfo { int handle = -1, width = 0, height = 0; };
@@ -198,8 +223,14 @@ private:
     void Transform(float x, float y, float cx, float cy, float& ox, float& oy) const;
 
     void DrawPhysObject(PhysObject& o);
+    void SelectRioAnimations(float dt);          // Rio: the exe asks the script which animation each animated object plays
+    void UpdateRioSquash(float dt);              // Rio: the wobble of an object's scale after a hit, and the marmosets' turning
+    void UpdateRioGettingUp(float dt);           // Rio: a marmoset lying on its side stands up again
+    void UpdateRioBirdFaces(float dt);           // Rio: waiting birds blink, the bird pulled back in the slingshot yells
+    struct BirdFace { float wait = 1.0f + 4.0f * (std::rand() % 1000) / 1000.0f, blink = 0.0f; };
+    std::map<std::string, BirdFace> birdFaces_;
 
-    struct BgLayer { std::string sprite; float speed = 1, scale = 1; bool looping = true; };
+    struct BgLayer { std::string sprite; float speed = 1, scale = 1; bool looping = true; float autoScroll = 0, offset = 0; };
     struct TrajectoryPoint { float x, y; };
     // What particleTable.particles[type] says (read once per type).
     struct ParticleDef {
@@ -235,12 +266,12 @@ private:
     float zoom_ = 1, zoomPrev_ = 1, zoomMax_ = 1, zoomStart_ = 1, zoomTarget_ = 1, zoomT_ = -1, zoomDur_ = 0.5f;
     bool exitRequested_ = false, fullScreenReq_ = false;
     std::vector<BgLayer> bgLayers_;
-    struct ThemeSprite { std::string name, sprite; float x, y, scaleX, scaleY, angle, speedX; int layer; };
+    struct ThemeSprite { std::string name, sprite; float x, y, scaleX, scaleY, angle, speedX; int layer; float angleVel = 0; bool flipped = false; };
     std::vector<ThemeSprite> themeSprites_;
     void DrawThemeSprites(int layer);
     float themeShift_ = 0;
     std::vector<std::string> fgLayers_;
-    std::vector<float> fgSpeed_, fgScale_;      // per foreground layer: parallax speed and scale (entries 3 and 4; 1 and 1.5 when absent)
+    std::vector<float> fgSpeed_, fgScale_, fgAuto_, fgOffset_;      // per foreground layer: parallax speed and scale (entries 3 and 4; 1 and 1.5 when absent)
     float groundR_ = 0, groundG_ = 0, groundB_ = 0;
     std::string themeTexture_;
     std::vector<TrajectoryPoint> trajDots_[6], trajPuffs_[6];
@@ -257,7 +288,7 @@ private:
     std::map<std::string, TextureInfo> textures_;
     ScriptHost* scripts_ = nullptr;
     std::string dataRoot_;
-    PhysicsWorld physics_;
+    std::unique_ptr<PhysicsWorld> physics_;
     SpriteLibrary sprites_;
     AudioMixer audio_;
     std::map<std::string, BitmapFont> fonts_;          // by file name without folder and extension

@@ -79,6 +79,21 @@ int main() {
         ContactResult r = ResolveContact(a, b);
         Check(r.events[0].isBird && Near(r.events[0].force, 2.0f) && r.events[0].damage == 0, "bird-bird");
     }
+    {   // Rio: a block's damageFactors say how much it hurts what it touches. The platforms Mauro lands on deal 0 to material monkeyBoss
+        DamageFactorSet platformFactors;
+        platformFactors.damageMultiplier["monkeyBoss"] = 0.0f;
+        ContactObject boss, platform;
+        boss.name = "boss"; boss.material = "monkeyBoss"; boss.hasStrength = true; boss.strength = 1000; boss.hasDefence = true; boss.defence = 2;
+        boss.mass = 30; boss.velocity = {0, 20};
+        platform.name = "platform"; platform.material = "immovable"; platform.hasStrength = true; platform.strength = 30;
+        platform.hasDefence = true; platform.defence = 100000; platform.mass = 1; platform.velocity = {0, 0};
+        platform.damageFactors = &platformFactors;
+        ContactResult r = ResolveContact(boss, platform);
+        bool bossHurt = false;
+        for (const StrengthUpdate& u : r.strengthUpdates) if (u.name == "boss") bossHurt = true;
+        Check(!bossHurt, "damageFactors: the platform does not hurt the boss");
+        Check(r.destroyed.empty(), "damageFactors: nothing destroyed");
+    }
     std::printf(failures ? "%d FAILED\n" : "all passed\n", failures);
     return failures ? 1 : 0;
 }

@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
 
     for (const char* n : {"RedBird_4", "RedBird_3", "RedBird_4"}) {
         PhysObject* o = platform.Physics().Find(n);
-        if (o) std::printf("%s is %s\n", n, o->b2->GetType() == b2_staticBody ? "static" : "dynamic");
+        if (o) std::printf("%s is %s\n", n, o->pbody->IsStatic() ? "static" : "dynamic");
     }
     std::vector<float> startX, startY;
     for (size_t i = 0; i < platform.Physics().Frame().objects.size(); i++) {

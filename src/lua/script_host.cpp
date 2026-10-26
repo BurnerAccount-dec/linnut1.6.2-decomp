@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "lua/script_host.h"
 #include "lua/aes.h"
 
@@ -12,7 +13,34 @@ extern "C" {
 
 namespace ab {
 
+extern const unsigned char kEditorClassicLua[];
+extern const unsigned int kEditorClassicLuaSize;
+
 namespace {
+// Angry Birds 1.6.3.1 ships its level editor with updateEditor emptied out (the menus, saving and every helper are still there);
+// 1.6.2 has the full function. A game whose updateEditor is only a stub gets the 1.6.2 one, so the editor works in every version.
+void EnsureClassicEditor(lua_State* L) {
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    lua_getfield(L, -1, "updateEditor");
+    bool stub = false;
+    if (lua_isfunction(L, -1)) {
+        lua_getglobal(L, "string");
+        lua_getfield(L, -1, "dump");
+        lua_pushvalue(L, -3);
+        if (lua_pcall(L, 1, 1, 0) == 0) stub = lua_objlen(L, -1) < 400;
+        lua_pop(L, 1);                       // the dump (or the error)
+        lua_pop(L, 1);                       // string
+    }
+    lua_pop(L, 1);                           // updateEditor
+    if (stub && luaL_loadbuffer(L, (const char*)kEditorClassicLua, kEditorClassicLuaSize, "editor_classic.lua") == 0) {
+        lua_pushvalue(L, -2);                // the environment
+        lua_setfenv(L, -2);
+        if (lua_pcall(L, 0, 0, 0) != 0) { std::fprintf(stderr, "editor: %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+        else std::fprintf(stderr, "editor: this game's updateEditor is empty, using the Angry Birds 1.6.2 editor\n");
+    } else if (stub) { std::fprintf(stderr, "editor: %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+    lua_pop(L, 1);                           // the environment
+}
+
 int MissingGlobalHook(lua_State* L) {
     // _G.__index(key): remember the key, return nil
     ScriptHost* host = static_cast<ScriptHost*>(lua_touserdata(L, lua_upvalueindex(1)));
@@ -48,6 +76,13 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
     lua_pop(L_, 1);
 
     RegisterApi(L_, &platform_);
+    // Angry Birds Rio's scripts use `res` and `particles` by bare name (the later versions go through _G)
+    lua_getfield(L_, LUA_REGISTRYINDEX, "ab.env");
+    lua_getglobal(L_, "res");
+    lua_setfield(L_, -2, "res");
+    lua_getglobal(L_, "particles");
+    lua_setfield(L_, -2, "particles");
+    lua_pop(L_, 1);
 
     SetString("scriptPath", config_.scriptPath);
     SetString("imagePath", config_.imagePath);
@@ -190,14 +225,108 @@ bool ScriptHost::RunFile(const std::string& path) {
 }
 
 bool ScriptHost::LoadScripts() {
+    // the collider type names of Angry Birds 3.0.1's blocks.lua; the scripts may replace or extend the table
+    RunString("collider_types = {basic = 0, eagle = 1, static = 2, bird = 3, pig = 4, ghost = 5, sticky = 6}\n");
     const char* files[] = {"/loadlist.lua", "/gamelogic.lua"};
     for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
         if (!RunFile(config_.scriptPath + files[i])) return false;
     }
     // starLimits.lua, blocks.lua and particles.lua are data files: each fills its own table
     if (!LoadTableFile(L_, "starTable", config_.scriptPath + "/starLimits.lua", &error_)) return false;
-    if (!LoadTableFile(L_, "blockTable", config_.scriptPath + "/blocks.lua", &error_)) return false;
-    if (!LoadTableFile(L_, "particleTable", config_.scriptPath + "/particles.lua", &error_)) return false;
+    std::vector<uint8_t> blocksBytes;
+    if (ReadLuaFile(config_.scriptPath + "/blocks.lua", blocksBytes) && !blocksBytes.empty()) {
+        if (!LoadTableFile(L_, "blockTable", config_.scriptPath + "/blocks.lua", &error_)) return false;
+        if (!LoadTableFile(L_, "particleTable", config_.scriptPath + "/particles.lua", &error_)) return false;
+    } else { rio_ = true; if (!LoadRioTables(L_)) { error_ = "Rio data files could not be loaded"; return false; }
+        // the game scene draws with objects.theme before a level has told it which theme it uses
+        lua_pushboolean(L_, 1);
+        SetEnvField("rioMode");
+        GetEnvField("objects");
+        lua_pushstring(L_, "theme2");
+        lua_setfield(L_, -2, "theme");
+        lua_pop(L_, 1);
+        // The level selection opens only the levels up to settings.lastOpenLevels[pack], which the scripts raise when a level is
+        // completed. A level that has a high score but is beyond that number (a save from elsewhere, a level played from the
+        // extra-play menu) stayed locked until the one before it was completed again, in the exe as well: open them.
+        RunString(
+            "local original = getLastOpenLevelNumberInLevelPack\n"
+            "function getLastOpenLevelNumberInLevelPack(pack)\n"
+            "    local open = original(pack)\n"
+            "    local order, scores = levelOrder[pack], highscores\n"
+            "    if order and scores then\n"
+            "        for i = #order, open + 1, -1 do\n"
+            "            local s = scores[order[i]]\n"
+            "            if s and s.score and s.score > 0 then\n"
+            "                open = s.completed and i + 1 or i\n"
+            "                settings.lastOpenLevels[pack] = open\n"
+            "                break\n"
+            "            end\n"
+            "        end\n"
+            "    end\n"
+            "    return open\n"
+            "end\n");
+        // The reward popup (a golden fruit flying to the middle of the screen) had no counter, so the player could not see how many
+        // fruits of the episode were found. The popup page is made after the scripts load, so it is changed on its first use.
+        RunString(
+            "local original = physicsToScreenTransform\n"
+            "local episodeOf = {PINEAPPLE = 1, BANANA = 2, MELON = 3, PAPAYA = 4, APPLE = 5, MANGO = 6}\n"
+            "function physicsToScreenTransform(x, y)\n"
+            "    local popup = rewardPopup\n"
+            "    if popup and not popup.tagPatched then\n"
+            "        popup.tagPatched = true\n"
+            "        local show, update = popup.show, popup.update\n"
+            "        function popup.show(self, sprite, sx, sy)\n"
+            "            show(self, sprite, sx, sy)\n"
+            "            local episode = episodeOf[_G.string.sub(sprite, 11)]\n"
+            "            if not episode then return end\n"
+            "            if not self.items.tag then\n"
+            "                self:insertItem('tag', gamelua.SpriteItem:new({sprite = 'STAND_NOTE', visible = false, selectable = false, useScreenCoordinates = true}))\n"
+            "                self:insertItem('tagText', gamelua.TextItem:new({text = '', font = 'FONT_INGAME_SMALL', visible = false, selectable = false, useScreenCoordinates = true}))\n"
+            "            end\n"
+            "            local count, total = getEpisodeCollectableCount(episode)\n"
+            "            self.items.tagText.text = count .. '/' .. total\n"
+            "        end\n"
+            "        function popup.update(self, dt, a)\n"
+            "            update(self, dt, a)\n"
+            "            local reward, tag, text = self.items.reward, self.items.tag, self.items.tagText\n"
+            "            if tag and reward then\n"
+            "                local shown = reward.visible and self.visible\n"
+            "                local scale = reward.xs or 1\n"
+            "                tag.visible, text.visible = shown, shown\n"
+            "                tag.localX, tag.x = reward.localX, reward.localX\n"
+            "                tag.localY, tag.y = reward.localY + 95 * scale, reward.localY + 95 * scale\n"
+            "                tag.xs, tag.ys = scale, scale\n"
+            "                text.localX, text.x = tag.localX, tag.localX\n"
+            "                text.localY, text.y = tag.localY, tag.localY\n"
+            "                text.xs, text.ys = scale, scale\n"
+            "            end\n"
+            "        end\n"
+            "    end\n"
+            "    return original(x, y)\n"
+            "end\n");
+    }
+    EnsureClassicEditor(L_);
+    // The scripts' debug tools (fps 0/F, background 9, hit boxes / sleeping objects 8, level clear C, shift+arrows to change level, ...)
+    // are all behind `not releaseBuild` or cheatsEnabled. releaseBuild itself must stay true: false unlocks every level and episode
+    // (resetSettings, the level select). So the cheats are switched on, and the two per-frame functions that read the debug keys run
+    // in an environment where releaseBuild reads false and everything else reads and writes the real globals.
+    if (!std::getenv("AB_NODEBUGKEYS")) RunString(
+        "local env = _G.getfenv(1)\n"
+        "env.cheatsEnabled = true\n"
+        "env.showEditor = true\n"
+        "local view = _G.setmetatable({releaseBuild = false}, {__index = env, __newindex = env})\n"
+        "for _, name in _G.ipairs({\"update\", \"updateGame\"}) do\n"
+        "    if _G.type(env[name]) == \"function\" then _G.setfenv(env[name], view) end\n"
+        "end\n"
+        "env.__abview = view\n");
+    // the view is kept for loadLuaFile: Angry Birds 2.0.0 builds the main menu's EDITOR button (MainMenu.init) and places it
+    // (MainMenu.layout) only when releaseBuild is false, and main_menu.lua is loaded after this point
+    lua_getfield(L_, LUA_REGISTRYINDEX, "ab.env");
+    lua_getfield(L_, -1, "__abview");
+    lua_setfield(L_, LUA_REGISTRYINDEX, "ab.view");
+    lua_pushnil(L_);
+    lua_setfield(L_, -2, "__abview");
+    lua_pop(L_, 1);
     return true;
 }
 
@@ -230,6 +359,13 @@ bool ScriptHost::CallWithArgs(const char* name, int nargs) {
     }
     lua_pop(L_, 1);
     return true;
+}
+
+void ScriptHost::RunString(const char* code) {
+    if (luaL_loadstring(L_, code) != 0) { std::fprintf(stderr, "exec: %s\n", lua_tostring(L_, -1)); lua_pop(L_, 1); return; }
+    lua_getfield(L_, LUA_REGISTRYINDEX, "ab.env");
+    lua_setfenv(L_, -2);
+    if (lua_pcall(L_, 0, 0, 0) != 0) { std::fprintf(stderr, "exec: %s\n", lua_tostring(L_, -1)); lua_pop(L_, 1); }
 }
 
 bool ScriptHost::Call(const char* name) {

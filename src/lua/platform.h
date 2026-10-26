@@ -102,6 +102,21 @@ public:
     virtual void SetSleeping(const std::string& n, bool sleeping) { (void)n; (void)sleeping; }
     virtual float GetAngle(const std::string& n) { (void)n; return 0; }
     virtual void GetWorldPoint(const std::string& n, float lx, float ly, float& wx, float& wy) { (void)n; wx = lx; wy = ly; }
+    // Angry Birds Rio
+    virtual float GetSpeed(const std::string& n) { (void)n; return 0; }
+    virtual bool HasMovingObjects(float tolerance) { (void)tolerance; return false; }
+    virtual void GetLocalPoint(const std::string& n, float wx, float wy, float& lx, float& ly) { (void)n; lx = wx; ly = wy; }
+    virtual void SetCollisionEnabled(const std::string& n, bool on) { (void)n; (void)on; }
+    // collider types (Angry Birds 3.0.1 / Seasons) and the polygon skin of Angry Birds Rio's physics
+    virtual void SetColliderType(const std::string& n, int type) { (void)n; (void)type; }
+    virtual int ColliderType(const std::string& n) { (void)n; return -1; }
+    virtual void SetColliderRule(int a, int b, bool collide) { (void)a; (void)b; (void)collide; }
+    virtual bool ColliderRule(int a, int b) { (void)a; (void)b; return true; }
+    virtual void SetPolygonRadius(float r) { (void)r; }
+    virtual float PolygonRadius() { return 0; }
+    virtual void RemoveJointsFromObject(const std::string& n) { (void)n; }
+    virtual std::vector<std::string> IntersectingObjects(float x, float y, float l, float r, float d, float u) {
+        (void)x; (void)y; (void)l; (void)r; (void)d; (void)u; return std::vector<std::string>(); }
     virtual void SetObjectParameter(const std::string& n, int id, float value) { (void)n; (void)id; (void)value; }
     virtual void SetPhysicsSimulationScale(float s) { (void)s; }
     virtual void SetWorldGravity(float x, float y) { (void)x; (void)y; }
@@ -169,6 +184,13 @@ public:
         (void)name; (void)x; (void)y; (void)scaleX; (void)scaleY; (void)angle; (void)layer; }
     virtual void RemoveThemeSprite(const std::string& name, int layer) { (void)name; (void)layer; }
     virtual void UpdateThemeSprites(float dt) { (void)dt; }
+    // Angry Birds Rio: createThemeSprite(name, sprite, x, y, scaleX, scaleY, angle, layer, angleVel, flipped), setThemeSprite,
+    // rotateThemeSprites(dt) and updateBackgroundAndForegroundScrollingNative(dt, force)
+    virtual void CreateThemeSpriteRio(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, int layer, float angleVel, bool flipped) {
+        (void)name; (void)sprite; (void)x; (void)y; (void)scaleX; (void)scaleY; (void)angle; (void)layer; (void)angleVel; (void)flipped; }
+    virtual void SetThemeSprite(const std::string& name, const std::string& sprite, int layer) { (void)name; (void)sprite; (void)layer; }
+    virtual void RotateThemeSprites(float dt) { (void)dt; }
+    virtual void ScrollThemeLayers(float dt, bool force) { (void)dt; (void)force; }
     virtual void ResDrawSprite(const std::string& sprite, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height) {
         (void)sprite; (void)x; (void)y; (void)vAnchor; (void)hAnchor; (void)sized; (void)width; (void)height; }
         // vAlign "TOP"/"BOTTOM"/..., hAlign "LEFT"/"HCENTER"/...; group "" = current font

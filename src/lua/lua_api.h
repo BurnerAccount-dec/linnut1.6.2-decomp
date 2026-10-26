@@ -14,6 +14,7 @@ namespace ab {
 void RegisterApi(lua_State* L, Platform* platform);
 
 // Runs a data file in a fresh table and stores that table as the script global `name`.
-bool LoadTableFile(lua_State* L, const char* name, const std::string& path, std::string* error);
+bool LoadTableFile(lua_State* L, const char* name, const std::string& path, std::string* error, bool append = false);
+bool LoadRioTables(lua_State* L);
 
 }  // namespace ab

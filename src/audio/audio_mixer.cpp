@@ -105,6 +105,13 @@ void AudioMixer::CreateOutput(int channels, int bits, int rate) {
     std::lock_guard<std::mutex> l(m_);
     channels_ = channels; bits_ = bits; rate_ = rate;
     created_ = true;
+    wake_.notify_all();
+}
+
+AudioMixer::~AudioMixer() {
+    { std::lock_guard<std::mutex> l(m_); quit_ = true; }
+    wake_.notify_all();
+    if (preload_.joinable()) preload_.join();
 }
 
 void AudioMixer::AddClip(const std::string& name, const std::string& path) {
@@ -112,29 +119,61 @@ void AudioMixer::AddClip(const std::string& name, const std::string& path) {
     Entry e;
     e.path = path;
     clips_[name] = e;
+    if (EndsWith(path, ".wav")) {                    // short sounds are decoded in the background (music is decoded when it is played)
+        toLoad_.push_back(name);
+        if (!preload_.joinable()) preload_ = std::thread(&AudioMixer::PreloadLoop, this);
+        wake_.notify_one();
+    }
 }
 
-std::shared_ptr<AudioClip> AudioMixer::ClipFor(Entry& e) {
-    if (e.clip || e.failed) return e.clip;
+void AudioMixer::PreloadLoop() {
+    std::unique_lock<std::mutex> l(m_);
+    for (;;) {
+        wake_.wait(l, [this] { return quit_ || (created_ && !toLoad_.empty()); });
+        if (quit_) return;
+        std::string name = toLoad_.front();
+        toLoad_.pop_front();
+        auto it = clips_.find(name);
+        if (it == clips_.end() || it->second.clip || it->second.failed) continue;
+        std::string path = it->second.path, error;
+        int rate = rate_;
+        l.unlock();
+        std::shared_ptr<AudioClip> clip = Decode(path, rate, &error);       // the slow part runs without the lock
+        l.lock();
+        it = clips_.find(name);
+        if (it == clips_.end() || it->second.clip || it->second.path != path) continue;
+        if (clip) it->second.clip = clip;
+        else { it->second.failed = true; lastError_ = error; }
+    }
+}
+
+std::shared_ptr<AudioClip> AudioMixer::Decode(const std::string& path, int rate, std::string* error) {
     auto clip = std::make_shared<AudioClip>();
-    std::string error;
-    if (!LoadAudioClip(e.path, *clip, &error)) { e.failed = true; lastError_ = error; return nullptr; }
+    if (!LoadAudioClip(path, *clip, error)) return nullptr;
     // The exe plays a clip as it is. A clip whose rate differs from the output's is resampled here (linear).
-    if (clip->rate != rate_ && clip->rate > 0) {
+    if (clip->rate != rate && clip->rate > 0) {
         int ch = clip->channels;
         size_t inFrames = clip->samples.size() / ch;
-        size_t outFrames = (size_t)((double)inFrames * rate_ / clip->rate);
+        size_t outFrames = (size_t)((double)inFrames * rate / clip->rate);
         std::vector<int16_t> r(outFrames * ch);
         for (size_t i = 0; i < outFrames; i++) {
-            double src = (double)i * clip->rate / rate_;
+            double src = (double)i * clip->rate / rate;
             size_t a = (size_t)src, b = std::min(a + 1, inFrames - 1);
             float t = (float)(src - a);
             for (int c = 0; c < ch; c++)
                 r[i * ch + c] = (int16_t)(clip->samples[a * ch + c] * (1 - t) + clip->samples[b * ch + c] * t);
         }
         clip->samples.swap(r);
-        clip->rate = rate_;
+        clip->rate = rate;
     }
+    return clip;
+}
+
+std::shared_ptr<AudioClip> AudioMixer::ClipFor(Entry& e) {
+    if (e.clip || e.failed) return e.clip;
+    std::string error;
+    std::shared_ptr<AudioClip> clip = Decode(e.path, rate_, &error);
+    if (!clip) { e.failed = true; lastError_ = error; return nullptr; }
     e.clip = clip;
     return clip;
 }

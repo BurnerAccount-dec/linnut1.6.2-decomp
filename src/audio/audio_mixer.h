@@ -18,7 +18,10 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <condition_variable>
+#include <deque>
 #include <mutex>
+#include <thread>
 #include <string>
 #include <vector>
 
@@ -38,6 +41,8 @@ bool LoadAudioClip(const std::string& path, AudioClip& out, std::string* error);
 class AudioMixer {
 public:
     // createAudioOutput(channels, bits, rate): the scripts always ask for 2, 16, 44100
+    AudioMixer() = default;
+    ~AudioMixer();
     void CreateOutput(int channels, int bits, int rate);
     void Start() { std::lock_guard<std::mutex> l(m_); started_ = true; }      // +0x84
     void Stop() { std::lock_guard<std::mutex> l(m_); started_ = false; }
@@ -77,6 +82,12 @@ private:
         bool loop = false, stopped = false;
     };
     std::shared_ptr<AudioClip> ClipFor(Entry& e);
+    std::shared_ptr<AudioClip> Decode(const std::string& path, int rate, std::string* error);
+    void PreloadLoop();                  // decodes the WAV clips in the background so that the first play does not stall the frame
+    std::thread preload_;
+    std::condition_variable wake_;
+    std::deque<std::string> toLoad_;
+    bool quit_ = false;
     int VoicesOnTrack(int track) const;
 
     std::string lastError_;
