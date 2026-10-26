@@ -41,9 +41,17 @@ ContactResult ResolveContact(const ContactObject& a, const ContactObject& b) {
                    a.mass * a.velocity.y - b.mass * b.velocity.y};
         float force = Length(dp) * 0.1f;
 
+        // Rio (0x40ca60): the damage a block takes is scaled by the other block's damageFactors,
+        // looked up by the material of the block that is hit (Lua tables with no entry scale by 1).
+        // This is what keeps the Mauro boss unharmed by the platforms he jumps onto:
+        // DefaultDamageFactors.damageMultiplier.monkeyBoss is 0.
+        float forceA = force, forceB = force;
+        if (b.damageFactors) forceA *= Lookup(b.damageFactors->damageMultiplier, a.material, 1.0f);
+        if (a.damageFactors) forceB *= Lookup(a.damageFactors->damageMultiplier, b.material, 1.0f);
+
         bool okA, okB;
-        float total = HitBlock(a, force, okA, r);
-        total += HitBlock(b, force, okB, r);
+        float total = HitBlock(a, forceA, okA, r);
+        total += HitBlock(b, forceB, okB, r);
 
         CollisionEvent e;
         e.isBird = false;

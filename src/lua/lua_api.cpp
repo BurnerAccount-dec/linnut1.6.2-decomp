@@ -27,7 +27,7 @@ extern "C" {
 }
 
 namespace ab {
-bool LoadTableFile(lua_State* L, const char* name, const std::string& path, std::string* error);
+bool LoadTableFile(lua_State* L, const char* name, const std::string& path, std::string* error, bool append);
 namespace {
 
 Platform* P(lua_State* L) { return static_cast<Platform*>(lua_touserdata(L, lua_upvalueindex(1))); }
@@ -100,7 +100,12 @@ int l_setEditing(lua_State* L) { P(L)->SetEditing(B(L, 1)); return 0; }
 int l_setGameOn(lua_State* L) { P(L)->SetGameOn(B(L, 1)); return 0; }
 
 // createThemeSprite(name, sprite, x, y, scaleX, scaleY, angle, speedX, layer) and friends
+bool RioMode(lua_State* L);
 int l_createThemeSprite(lua_State* L) {
+    if (RioMode(L)) {      // Rio: ..., angle, layer, angleVel, flipped
+        P(L)->CreateThemeSpriteRio(S(L, 1), S(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), (int)N(L, 8), N(L, 9), B(L, 10));
+        return 0;
+    }
     P(L)->CreateThemeSprite(S(L, 1), S(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), N(L, 8), (int)N(L, 9));
     return 0;
 }
@@ -110,6 +115,9 @@ int l_modifyThemeSprite(lua_State* L) {
 }
 int l_removeThemeSprite(lua_State* L) { P(L)->RemoveThemeSprite(S(L, 1), (int)N(L, 2)); return 0; }
 int l_updateThemeSprite(lua_State* L) { P(L)->UpdateThemeSprites(N(L, 1)); return 0; }
+int l_setThemeSprite(lua_State* L) { P(L)->SetThemeSprite(S(L, 1), S(L, 2), (int)N(L, 3)); return 0; }
+int l_rotateThemeSprites(lua_State* L) { P(L)->RotateThemeSprites(N(L, 1)); return 0; }
+int l_updateBackgroundAndForegroundScrollingNative(lua_State* L) { P(L)->ScrollThemeLayers(N(L, 1), B(L, 2)); return 0; }
 
 // Seasons: loadLevelFile(path, date) asked a server for a level of that date and getLoadStatus() reported
 // {status = ...} until the answer came. Levels are local here, so the answer is ready at once (status 1).
@@ -119,6 +127,8 @@ int l_getLoadStatus(lua_State* L) {
     lua_setfield(L, -2, "status");
     return 1;
 }
+
+int l_throwException(lua_State* L) { P(L)->Print("script exception: " + S(L, 1)); return 0; }
 
 int l_loadLuaFileToObject(lua_State* L) {
     // loadLuaFileToObject(path, object, name): runs the file in a table of its own that falls back to
@@ -139,6 +149,18 @@ int l_loadLuaFileToObject(lua_State* L) {
                 lua_pushvalue(L, 2);
                 lua_setfield(L, -2, "__index");
                 lua_setmetatable(L, -2);
+                // an object without a metatable of its own falls back to the globals, so the menu files
+                // (Angry Birds Rio) also find `gamelua`, `res` and the engine functions by bare name
+                if (!lua_getmetatable(L, 2)) {
+                    PushEnv(L);
+                    if (!lua_rawequal(L, -1, 2)) {
+                        lua_newtable(L);
+                        lua_pushvalue(L, -2);
+                        lua_setfield(L, -2, "__index");
+                        lua_setmetatable(L, 2);
+                    }
+                    lua_pop(L, 1);
+                } else lua_pop(L, 1);
                 lua_pushvalue(L, -1);
                 lua_setfield(L, 2, lua_tostring(L, 3)); // object[name] = the file's table
             }
@@ -161,6 +183,21 @@ int l_loadLuaFileToObject(lua_State* L) {
             lua_setfenv(L, -2);
         }
         rc = lua_pcall(L, 0, 0, 0);
+        if (rc == 0) {
+            // debug build: MainMenu.init / MainMenu.layout run with releaseBuild false (shows the 2.0.0 EDITOR button)
+            lua_getfield(L, LUA_REGISTRYINDEX, "ab.view");
+            PushEnv(L);
+            lua_getfield(L, -1, "MainMenu");
+            if (lua_istable(L, -1) && lua_istable(L, -3)) {
+                for (const char* name : {"init", "layout"}) {
+                    lua_pushstring(L, name);
+                    lua_rawget(L, -2);
+                    if (lua_isfunction(L, -1)) { lua_pushvalue(L, -4); lua_setfenv(L, -2); }
+                    lua_pop(L, 1);
+                }
+            }
+            lua_pop(L, 3);
+        }
     }
     if (rc != 0) {
         P(L)->Print("loadLuaFileToObject failed: " + path + ": " + std::string(lua_tostring(L, -1)));
@@ -177,7 +214,27 @@ void ReloadTable(lua_State* L, const char* name, const char* file) {
     std::string path = std::string(lua_isstring(L, -1) ? lua_tostring(L, -1) : "scripts") + file;
     lua_pop(L, 2);
     std::string err;
-    if (!ab::LoadTableFile(L, name, path, &err)) P(L)->Print("loadLevel: " + err);
+    if (!ab::LoadTableFile(L, name, path, &err, false)) P(L)->Print("loadLevel: " + err);
+}
+
+// Angry Birds Rio has no blocks.lua: the exe's loadLevel reads materials, damage factors, pigs, level goals, score
+// objects, birds and the blocks_*.lua files, the last ones all into blockTable, then themes and groups.
+bool HasSingleBlocksFile(lua_State* L) {
+    PushEnv(L);
+    lua_getfield(L, -1, "scriptPath");
+    std::string path = std::string(lua_isstring(L, -1) ? lua_tostring(L, -1) : "scripts") + "/blocks.lua";
+    lua_pop(L, 2);
+    std::vector<uint8_t> bytes;
+    return ab::ReadLuaFile(path, bytes) && !bytes.empty();
+}
+
+void ReloadAllTables(lua_State* L) {
+    if (HasSingleBlocksFile(L)) {
+        ReloadTable(L, "blockTable", "/blocks.lua");
+        ReloadTable(L, "particleTable", "/particles.lua");
+        return;
+    }
+    ab::LoadRioTables(L);
 }
 
 // loadLevel(file) (0x40d2c0): the level file runs in a fresh, empty environment table; that table
@@ -186,8 +243,7 @@ void ReloadTable(lua_State* L, const char* name, const char* file) {
 int l_loadLevel(lua_State* L) {
     std::string file = S(L, 1);
     P(L)->BeginLevelLoad();
-    ReloadTable(L, "blockTable", "/blocks.lua");
-    ReloadTable(L, "particleTable", "/particles.lua");
+    ReloadAllTables(L);
 
     bool ok = false;
     lua_newtable(L);                                    // the level's environment
@@ -211,12 +267,36 @@ int l_loadLevel(lua_State* L) {
         P(L)->Print("loadLevel: cannot read " + path + ": " + loadError);
     }
     if (!ok) { lua_pop(L, 1); lua_pushnil(L); }
+    else {
+        // The scripts empty loadedObjects once they have taken what they use. The editor's saveLevel writes back what the file
+        // held that no script keeps (trainCarts, weather...), so the top-level entries stay in the registry.
+        lua_newtable(L);
+        lua_pushnil(L);
+        while (lua_next(L, -3)) {
+            lua_pushvalue(L, -2);
+            lua_pushvalue(L, -2);
+            lua_settable(L, -5);
+            lua_pop(L, 1);
+        }
+        lua_setfield(L, LUA_REGISTRYINDEX, "ab.lastLevel");
+    }
     PushEnv(L);
     lua_pushvalue(L, -2);
     lua_setfield(L, -2, "loadedObjects");
     lua_pop(L, 2);
     P(L)->EndLevelLoad();
     lua_pushboolean(L, ok);
+    return 1;
+}
+// loadLevelEditor(file) (Seasons, 0x40db30): the editor asks for the plain-text copy of a level before it runs loadLevelInternal.
+// ReadLuaFile already takes plain and encrypted levels alike, so all that is left is to report a level that is missing.
+int l_loadLevelEditor(lua_State* L) {
+    std::string file = S(L, 1);
+    if (file.size() < 4 || file.compare(file.size() - 4, 4, ".lua") != 0) file += ".lua";
+    std::vector<uint8_t> bytes;
+    ab::ReadLuaFile(P(L)->ResolveDataFile(file), bytes);
+    if (bytes.empty()) P(L)->Print("loadLevelEditor: cannot read " + P(L)->ResolveDataFile(file));
+    lua_pushboolean(L, !bytes.empty());
     return 1;
 }
 int l_saveLevel(lua_State* L) { P(L)->SaveLevel(S(L, 1)); return 0; }
@@ -370,6 +450,10 @@ void WriteWorldEntry(lua_State* L, const BodyDef& d, const char* type, float mas
     SetNum(L, "xVel", 0);
     SetNum(L, "yVel", 0);
     SetNum(L, "z_order", d.zOrder);
+    // Angry Birds Rio's entries also carry the animation counters (the scripts count them down)
+    SetNum(L, "animTimer", 0);
+    SetNum(L, "animFrame", 0);
+    SetNum(L, "animThresholdTimer", 0);
     lua_setfield(L, -2, d.name.c_str());
     lua_pop(L, 1);
 }
@@ -386,7 +470,8 @@ BodyDef ReadBody(lua_State* L, bool circle) {
     d.density = N(L, i++);
     d.friction = N(L, i++);
     d.restitution = N(L, i++);
-    if (!circle) d.collision = B(L, i++);
+    // Angry Birds Rio's circles take the collision flag as well (a boolean followed by the controllable boolean)
+    if (!circle || (lua_type(L, i) == LUA_TBOOLEAN && lua_type(L, i + 1) == LUA_TBOOLEAN)) d.collision = B(L, i++);
     d.controllable = B(L, i++);
     d.zOrder = N(L, i++);
     return d;
@@ -517,8 +602,34 @@ int l_createJoint(lua_State* L) {
     default:
         break;
     }
+    // Rio: a joint the level marks `recreate` (rebuilt after it breaks) keeps the flag, so the editor writes it back
+    lua_getfield(L, 1, "recreate");
+    if (lua_isboolean(L, -1)) { lua_pushvalue(L, -1); lua_setfield(L, -3, "recreate"); }
+    lua_pop(L, 1);
     lua_setfield(L, -2, d.name.c_str());
     lua_pop(L, 1);
+    return 0;
+}
+// createJoints(list) (Angry Birds Rio): creates every joint of a level's joint table; a joint without a name takes its key
+int l_createJoints(lua_State* L) {
+    if (!lua_istable(L, 1)) return 0;
+    lua_pushnil(L);
+    while (lua_next(L, 1)) {
+        if (lua_istable(L, -1)) {
+            lua_getfield(L, -1, "name");
+            bool named = lua_isstring(L, -1);
+            lua_pop(L, 1);
+            if (!named && lua_type(L, -2) == LUA_TSTRING) {
+                lua_pushvalue(L, -2);
+                lua_setfield(L, -2, "name");
+            }
+            lua_pushvalue(L, lua_upvalueindex(1));        // the platform
+            lua_pushcclosure(L, l_createJoint, 1);
+            lua_pushvalue(L, -2);
+            lua_call(L, 1, 0);
+        }
+        lua_pop(L, 1);
+    }
     return 0;
 }
 int l_setJointParameters(lua_State* L) {
@@ -561,6 +672,7 @@ int l_destroyJoint(lua_State* L) {
     }
     return 0;
 }
+bool RioMode(lua_State* L);
 int l_removeObject(lua_State* L) {
     std::vector<std::string> fired = P(L)->RemoveObject(S(L, 1));
     if (!fired.empty() && PushObjectsTable(L, "joints")) {
@@ -568,6 +680,25 @@ int l_removeObject(lua_State* L) {
             lua_pushnil(L);
             lua_setfield(L, -2, fired[i].c_str());
         }
+        lua_pop(L, 1);
+    }
+    if (RioMode(L) && PushObjectsTable(L, "joints")) {      // Rio: a joint whose object is gone does not stay in objects.joints (removeBird would follow it to a missing object)
+        std::string gone = S(L, 1);
+        std::vector<std::string> stale;
+        lua_pushnil(L);
+        while (lua_next(L, -2)) {
+            if (lua_type(L, -2) == LUA_TSTRING && lua_istable(L, -1)) {
+                bool match = false;
+                for (const char* end : {"end1", "end2"}) {
+                    lua_getfield(L, -1, end);
+                    if (lua_isstring(L, -1) && gone == lua_tostring(L, -1)) match = true;
+                    lua_pop(L, 1);
+                }
+                if (match) stale.push_back(lua_tostring(L, -2));
+            }
+            lua_pop(L, 1);
+        }
+        for (const std::string& k : stale) { lua_pushnil(L); lua_setfield(L, -2, k.c_str()); }
         lua_pop(L, 1);
     }
     return 0;
@@ -607,7 +738,64 @@ int l_getWorldPoint(lua_State* L) {
     lua_pushnumber(L, wy);
     return 2;
 }
-int l_setObjectParameter(lua_State* L) { P(L)->SetObjectParameter(S(L, 1), (int)N(L, 2), N(L, 3)); return 0; }
+// Angry Birds Rio
+int l_getVelocity(lua_State* L) { lua_pushnumber(L, P(L)->GetSpeed(S(L, 1))); return 1; }
+int l_hasMovingObjects(lua_State* L) { lua_pushboolean(L, P(L)->HasMovingObjects(0.5f)); return 1; }
+int l_hasMovingObjectsZeroTolerance(lua_State* L) { lua_pushboolean(L, P(L)->HasMovingObjects(0.001f)); return 1; }
+int l_getLocalPoint(lua_State* L) {
+    float lx, ly;
+    P(L)->GetLocalPoint(S(L, 1), N(L, 2), N(L, 3), lx, ly);
+    lua_pushnumber(L, lx);
+    lua_pushnumber(L, ly);
+    return 2;
+}
+int l_setCollisionEnabled(lua_State* L) { P(L)->SetCollisionEnabled(S(L, 1), B(L, 2)); return 0; }
+// setColliderType(name, type) / getColliderType(name) -> type (-1: no such object); setColliderRule(typeA, typeB, collides) / getColliderRule(typeA, typeB)
+int l_setColliderType(lua_State* L) { P(L)->SetColliderType(S(L, 1), (int)N(L, 2)); return 0; }
+int l_getColliderType(lua_State* L) { lua_pushnumber(L, P(L)->ColliderType(S(L, 1))); return 1; }
+int l_setColliderRule(lua_State* L) { P(L)->SetColliderRule((int)N(L, 1), (int)N(L, 2), B(L, 3)); return 0; }
+int l_getColliderRule(lua_State* L) { lua_pushboolean(L, P(L)->ColliderRule((int)N(L, 1), (int)N(L, 2))); return 1; }
+// setPolygonRadius(r) / getPolygonRadius(): the skin of the boxes and polygons that are created afterwards (Angry Birds Rio's Box2D 2.2)
+int l_setPolygonRadius(lua_State* L) { P(L)->SetPolygonRadius(N(L, 1)); return 0; }
+int l_getPolygonRadius(lua_State* L) { lua_pushnumber(L, P(L)->PolygonRadius()); return 1; }
+int l_removeJointsFromObject(lua_State* L) { P(L)->RemoveJointsFromObject(S(L, 1)); return 0; }
+// getIntersectingObjects{ x, y, left, right, down, up } -> { name, name, ... } (the scripts read the names as the values)
+bool RioMode(lua_State* L);
+int l_getIntersectingObjects(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    // Seasons passes the sizes of the four sides; Rio passes signed offsets (left and down are negative)
+    float sideSign = RioMode(L) ? -1.0f : 1.0f;
+    std::vector<std::string> names = P(L)->IntersectingObjects(FieldN(L, 1, "x"), FieldN(L, 1, "y"), sideSign * FieldN(L, 1, "left"),
+                                                               FieldN(L, 1, "right"), sideSign * FieldN(L, 1, "down"), FieldN(L, 1, "up"));
+    lua_newtable(L);
+    bool haveWorld = PushObjectsTable(L, "world");     // only objects the scripts still know (they index objects.world[name])
+    int n = 0;
+    for (const std::string& name : names) {
+        if (haveWorld) {
+            lua_getfield(L, -1, name.c_str());
+            bool known = lua_istable(L, -1);
+            lua_pop(L, 1);
+            if (!known) continue;
+        }
+        lua_pushlstring(L, name.data(), name.size());
+        lua_rawseti(L, haveWorld ? -3 : -2, ++n);
+    }
+    if (haveWorld) lua_pop(L, 1);
+    return 1;
+}
+int l_setObjectParameter(lua_State* L) {
+    int id = (int)N(L, 2);
+    float value = N(L, 3);
+    PushEnv(L);
+    lua_getfield(L, -1, "rioMode");
+    bool rio = lua_toboolean(L, -1) != 0;
+    lua_pop(L, 2);
+    // Angry Birds Rio: 6 and 7 are bounce multipliers, not Seasons' "use the scale", and a scale of its own applies as is
+    if (rio && (id == 6 || id == 7)) { P(L)->SetObjectParameter(S(L, 1), id + 100, value); return 0; }
+    P(L)->SetObjectParameter(S(L, 1), id, value);
+    if (rio && id == 5) P(L)->SetObjectParameter(S(L, 1), 6, value != 1.0f ? 1.0f : 0.0f);
+    return 0;
+}
 int l_setPhysicsSimulationScale(lua_State* L) { P(L)->SetPhysicsSimulationScale(N(L, 1)); return 0; }
 int l_setPhysicsEnabled(lua_State* L) { P(L)->SetPhysicsEnabled(B(L, 1)); return 0; }
 int l_isPhysicsEnabled(lua_State* L) { lua_pushboolean(L, P(L)->IsPhysicsEnabled()); return 1; }
@@ -976,9 +1164,29 @@ int r_getTrackVolume(lua_State* L) { lua_pushnumber(L, P(L)->ResGetTrackVolume((
 int r_openURL(lua_State* L) { P(L)->ResOpenURL(S(L, 1)); return 0; }
 
 // ---- particles.*
+bool RioMode(lua_State* L) {
+    PushEnv(L);
+    lua_getfield(L, -1, "rioMode");
+    bool rio = lua_toboolean(L, -1) != 0;
+    lua_pop(L, 2);
+    return rio;
+}
 int p_addParticles(lua_State* L) {
+    // Angry Birds Rio: the background confetti is the one emitter that ignores the limits, and it is drawn in the level's
+    // two layers (drawLevelParticlesNative), so it goes to the level list, which the limits do not count
+    if (RioMode(L) && lua_toboolean(L, 8) != 0) {
+        P(L)->AddLevelParticles(S(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), true);
+        return 0;
+    }
+    // Angry Birds Rio: a bird or crate landing on the ground puffs one dust particle to the left and one to the right
+    // (the script's default amount of 10 would make a cloud)
+    float amount = N(L, 2);
+    if (RioMode(L)) {
+        std::string type = S(L, 1);
+        if (type.compare(0, 10, "groundDust") == 0 || type.compare(0, 15, "groundCrateDust") == 0) amount = 1;
+    }
     // Seasons adds two booleans: ignore the particle limits, and put the particles in the second list
-    P(L)->AddParticles(S(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), lua_toboolean(L, 8) != 0, lua_toboolean(L, 9) != 0);
+    P(L)->AddParticles(S(L, 1), amount, N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), lua_toboolean(L, 8) != 0, lua_toboolean(L, 9) != 0);
     return 0;
 }
 // 0x42cae0: addLevelParticles(type, amount, x, y, w, h, angle, ignoreLimits) -> first list
@@ -1003,6 +1211,27 @@ void Register(lua_State* L, Platform* p, int table, const Entry* entries, size_t
     if (pushedEnv) lua_pop(L, 1);
 }
 
+// The Rio level editor files every block under `group` / `index` (blockTable.groups names the ten groups, with their keys).
+// The shipped definition files carry neither for most blocks (the list a block was defined in is all that is left), so the editor's
+// palette is built from the list: a block belongs to the group named like its list, at its position in it. Only the editor reads
+// the two fields.
+void FileInEditorPalette(lua_State* L, int key, int entry, int position) {
+    static const char* const groups[] = {"staticBlocks", "staticFragile", "glassBlocks", "woodBlocks", "stoneBlocks",
+                                         "miscBlocks", "birds", "levelGoals", "decorationBlocks", "scoreObjects"};
+    if (lua_type(L, key) != LUA_TSTRING) return;
+    std::string list = lua_tostring(L, key);
+    lua_getfield(L, entry, "group");
+    std::string own = lua_isstring(L, -1) ? lua_tostring(L, -1) : "";
+    lua_pop(L, 1);
+    auto known = [&](const std::string& name) { for (const char* g : groups) if (name == g) return true; return false; };
+    if (own.empty() || (!known(own) && known(list))) {
+        lua_pushstring(L, list.c_str());
+        lua_setfield(L, entry, "group");
+    }
+    lua_pushnumber(L, position);
+    lua_setfield(L, entry, "index");
+}
+
 }  // namespace
 
 void RegisterApi(lua_State* L, Platform* p) {
@@ -1015,11 +1244,20 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"doesMouseClickSetsTouchCount", l_doesMouseClickSetsTouchCount},
         {"setEditing", l_setEditing}, {"setGameOn", l_setGameOn},
         {"loadLuaFileToObject", l_loadLuaFileToObject}, {"loadLuaFile", l_loadLuaFileToObject},   // 2.0.0: the same without an object
-        {"loadLevel", l_loadLevel}, {"saveLevel", l_saveLevel}, {"saveLuaFile", l_saveLuaFile},
+        {"loadLevel", l_loadLevel}, {"loadLevelEditor", l_loadLevelEditor}, {"saveLevel", l_saveLevel}, {"saveLuaFile", l_saveLuaFile},
         {"createDirectory", l_createDirectory}, {"checkDirectory", l_checkDirectory}, {"checkForLuaFile", l_checkForLuaFile},
         {"createBox", l_createBox}, {"createCircle", l_createCircle}, {"createPolygon", l_createPolygon},
         {"clearVertices", l_clearVertices}, {"addVertex", l_addVertex},
-        {"createJoint", l_createJoint}, {"setJointParameters", l_setJointParameters},
+        {"getVelocity", l_getVelocity}, {"hasMovingObjects", l_hasMovingObjects},
+        {"hasMovingObjectsZeroTolerance", l_hasMovingObjectsZeroTolerance}, {"getLocalPoint", l_getLocalPoint},
+        {"setCollisionEnabled", l_setCollisionEnabled},
+        {"setColliderType", l_setColliderType}, {"getColliderType", l_getColliderType}, {"setColliderRule", l_setColliderRule}, {"getColliderRule", l_getColliderRule},
+        {"setPolygonRadius", l_setPolygonRadius}, {"getPolygonRadius", l_getPolygonRadius}, {"removeJointsFromObject", l_removeJointsFromObject},
+        {"getIntersectingObjects", l_getIntersectingObjects},
+        {"setParticleSystemLimits", l_nothing}, {"clearParticleCache", l_nothing}, {"enableInGameParticlesNative", l_nothing},
+        {"updateBackgroundAndForegroundScrollingNative", l_updateBackgroundAndForegroundScrollingNative}, {"rotateThemeSprites", l_rotateThemeSprites},
+        {"setThemeSprite", l_setThemeSprite}, {"drawMenuParticlesNative", l_nothing}, {"updateMenuParticlesNative", l_nothing}, {"isHDVersion", l_false},
+        {"createJoint", l_createJoint}, {"createJoints", l_createJoints}, {"setJointParameters", l_setJointParameters},
         {"checkJointLimits", l_checkJointLimits}, {"destroyJoint", l_destroyJoint},
         {"removeObject", l_removeObject}, {"applyImpulse", l_applyImpulse}, {"applyForce", l_applyForce},
         {"setPosition", l_setPosition}, {"setRotation", l_setRotation}, {"setVelocity", l_setVelocity},
@@ -1062,7 +1300,13 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"setWorldGravity", l_setWorldGravity},
         {"getOSName", l_osName}, {"getOSVersion", l_osVersion}, {"getModel", l_deviceModel},
         {"getManufacturer", l_deviceManufacturer}, {"getCurrentLocale", l_currentLocale},
-        {"initLocales", l_nothing}, {"setNotificationCallback", l_nothing}, {"requestAd", l_nothing}, {"showAd", l_nothing}, {"hideAd", l_nothing},
+        {"initLocales", l_nothing}, {"setRetinaResolution", l_nothing},
+        // Angry Birds Rio: ads, analytics and the NFC eagle are not there on the PC
+        {"flushMedioEvents", l_nothing}, {"logMedioAnonymousIDtoFlurry", l_nothing}, {"logMedioEvent", l_nothing},
+        {"hideBannerAd", l_nothing}, {"showBannerAd", l_nothing}, {"requestBannerAd", l_nothing},
+        {"requestInterstitialAd", l_nothing}, {"requestAndShowInterstitialAd", l_nothing}, {"showInterstitialAd", l_nothing},
+        {"toggleNFC", l_nothing}, {"enableSmoothZooming", l_nothing}, {"setGameParameters", l_nothing},
+        {"throwException", l_throwException}, {"setNotificationCallback", l_nothing}, {"requestAd", l_nothing}, {"showAd", l_nothing}, {"hideAd", l_nothing},
         {"requestExpandableAd", l_nothing}, {"showExpandableAd", l_nothing}, {"stopAds", l_nothing},
         {"clearParticles", l_clearParticlesNative},
         {"iapBuyItem", l_nothing},
@@ -1118,8 +1362,12 @@ void RegisterApi(lua_State* L, Platform* p) {
 
 // Runs a data file in a fresh, empty environment table and registers that table as the script
 // global `name` (the exe's load_lua_file, 0x40ae20: blocks.lua -> blockTable, particles.lua -> particleTable).
-bool LoadTableFile(lua_State* L, const char* name, const std::string& path, std::string* error) {
-    lua_newtable(L);
+bool LoadTableFile(lua_State* L, const char* name, const std::string& path, std::string* error, bool append) {
+    // append: the file runs in the table that already is the global `name` (Rio fills blockTable from many files)
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    lua_getfield(L, -1, name);
+    if (append && lua_istable(L, -1)) lua_remove(L, -2);
+    else { lua_pop(L, 2); lua_newtable(L); }
     bool ok = false;
     // The exe decrypts the file (AES-256-CBC) before running it; a plain-text level is used as it is.
     std::vector<uint8_t> bytes;
@@ -1145,6 +1393,118 @@ bool LoadTableFile(lua_State* L, const char* name, const std::string& path, std:
     lua_setfield(L, -2, name);
     lua_pop(L, 2);
     return true;
+}
+
+// Angry Birds Rio (1.4.x): the data comes in many files instead of blocks.lua (the exe's loadLevel, strings
+// "Loading materials..." to "Loading particles...").
+bool LoadRioTables(lua_State* L) {
+    std::string base;
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    lua_getfield(L, -1, "scriptPath");
+    base = lua_isstring(L, -1) ? lua_tostring(L, -1) : "scripts";
+    lua_pop(L, 2);
+    std::string err;
+    auto load = [&](const char* name, const char* file, bool append) {
+        if (!LoadTableFile(L, name, base + file, &err, append)) {
+            lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+            lua_pop(L, 1);
+            std::fprintf(stderr, "loadLevel: %s\n", err.c_str());
+            return false;
+        }
+        return true;
+    };
+    bool ok = true;
+    // A new blockTable. Each file builds lists of definitions (pigs, birds, woodBlocks...); the exe files every
+    // definition under blockTable.blocks[definition]. Plain numbers a file defines (monkeyIdleTimeIntervalMin...)
+    // stay globals.
+    PushEnv(L);
+    lua_newtable(L);
+    lua_newtable(L);
+    lua_setfield(L, -2, "blocks");
+    lua_setfield(L, -2, "blockTable");
+    lua_pop(L, 1);
+    const char* blockFiles[] = {"/pigs.lua", "/levelgoals.lua", "/scoreobjects.lua", "/birds.lua", "/blocks_hazard.lua",
+                                "/blocks_wood.lua", "/blocks_stone.lua", "/blocks_glass.lua", "/blocks_misc.lua",
+                                "/blocks_static.lua", "/blocks_staticfragile.lua", "/blocks_decorations.lua"};
+    for (const char* f : blockFiles) {
+        std::vector<uint8_t> bytes;
+        ab::ReadLuaFile(base + f, bytes);
+        if (bytes.empty() || luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), f) != 0) {
+            std::fprintf(stderr, "loadLevel: cannot load %s%s\n", f, bytes.empty() ? "" : (std::string(": ") + lua_tostring(L, -1)).c_str());
+            if (!bytes.empty()) lua_pop(L, 1);
+            ok = false;
+            continue;
+        }
+        lua_newtable(L);                                // the file's own globals: [chunk, T]
+        lua_newtable(L);
+        PushEnv(L);
+        lua_setfield(L, -2, "__index");
+        lua_setmetatable(L, -2);
+        lua_pushvalue(L, -1);
+        lua_setfenv(L, -3);
+        lua_pushvalue(L, -2);
+        if (lua_pcall(L, 0, 0, 0) != 0) {
+            std::fprintf(stderr, "loadLevel: %s: %s\n", f, lua_tostring(L, -1));
+            lua_pop(L, 3);
+            ok = false;
+            continue;
+        }
+        lua_remove(L, -2);                              // [T]
+        PushEnv(L);
+        lua_insert(L, -2);                              // [env, T]
+        lua_getfield(L, -2, "blockTable");
+        lua_getfield(L, -1, "blocks");                  // [env, T, blockTable, blocks]
+        lua_pushnil(L);
+        while (lua_next(L, -4)) {                       // T's key, value
+            if (lua_isnumber(L, -1) && lua_type(L, -2) == LUA_TSTRING) {
+                lua_pushvalue(L, -2);
+                lua_pushvalue(L, -2);
+                lua_settable(L, -8);                    // env[key] = number
+            } else if (lua_istable(L, -1)) {
+                int n = (int)lua_objlen(L, -1);
+                for (int i = 1; i <= n; i++) {
+                    lua_rawgeti(L, -1, i);
+                    lua_getfield(L, -1, "definition");
+                    if (lua_isstring(L, -1)) {
+                        FileInEditorPalette(L, lua_gettop(L) - 3, lua_gettop(L) - 1, i);
+                        lua_pushvalue(L, -1);
+                        lua_pushvalue(L, -3);
+                        lua_settable(L, -7);            // blocks[definition] = entry
+                    }
+                    lua_pop(L, 2);
+                }
+            }
+            lua_pop(L, 1);
+        }
+        lua_pop(L, 4);
+    }
+    // the exe adds the ground itself: an immovable box
+    PushEnv(L);
+    lua_getfield(L, -1, "blockTable");
+    lua_getfield(L, -1, "blocks");
+    lua_newtable(L);
+    lua_pushstring(L, "Ground"); lua_setfield(L, -2, "definition");
+    lua_pushstring(L, "box"); lua_setfield(L, -2, "type");
+    lua_pushstring(L, ""); lua_setfield(L, -2, "sprite");
+    lua_pushstring(L, ""); lua_setfield(L, -2, "texture");
+    lua_pushstring(L, "immovable"); lua_setfield(L, -2, "material");
+    lua_setfield(L, -2, "Ground");
+    lua_pop(L, 3);
+    // materials, damage factors, themes and groups each fill a table of their own, which the scripts read
+    // as blockTable.materials, blockTable.damageFactors, blockTable.themes and blockTable.groups
+    struct Nested { const char* name; const char* file; };
+    const Nested nested[] = {{"materials", "/materials.lua"}, {"damageFactors", "/damagefactors.lua"},
+                             {"themes", "/themes.lua"}, {"groups", "/groups.lua"}};
+    for (const Nested& n : nested) {
+        ok = load(n.name, n.file, false) && ok;
+        lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+        lua_getfield(L, -1, "blockTable");
+        lua_getfield(L, -2, n.name);
+        if (lua_istable(L, -2)) lua_setfield(L, -2, n.name); else lua_pop(L, 1);
+        lua_pop(L, 2);
+    }
+    ok = load("particleTable", "/particles.lua", false) && ok;
+    return ok;
 }
 
 }  // namespace ab

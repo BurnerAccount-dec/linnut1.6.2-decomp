@@ -43,6 +43,9 @@ public:
     bool CreateStartUpAssets() { return Call("createStartUpAssets"); }
     bool Initialize() { return Call("initialize"); }
     bool Update(float dt, float realDt);
+    bool IsRio() const { return rio_; }        // Angry Birds Rio: data in many files, and the exe calls draw() after update()
+    bool Draw() { return Call("draw"); }
+    void RunString(const char* code);             // test hook: runs a snippet among the scripts' globals
     bool BirdCollision(const std::string& a, const std::string& b, float force, float damage);
     bool BlockCollision(const std::string& a, const std::string& b, float force, bool wasDamageDone);
     bool RemoveBlocks() { return Call("removeBlocks"); }
@@ -56,6 +59,7 @@ public:
     const std::string& LastError() const { return error_; }
 
 private:
+    bool rio_ = false;
     bool Call(const char* name);
     bool CallWithArgs(const char* name, int nargs);   // args already pushed after the function slot
     bool RunFile(const std::string& path);

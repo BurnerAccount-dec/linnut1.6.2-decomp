@@ -364,6 +364,8 @@ static int db_errorfb (lua_State *L) {
         lua_pushfstring(L, " in function <%s:%d>",
                            ar.short_src, ar.linedefined);
     }
+    if (*ar.what == 'L')  /* stripped scripts: the line the function starts on identifies it */
+      lua_pushfstring(L, " [def %d]", ar.linedefined);
     lua_concat(L, lua_gettop(L) - arg);
   }
   lua_concat(L, lua_gettop(L) - arg);

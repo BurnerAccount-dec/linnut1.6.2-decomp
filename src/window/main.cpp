@@ -468,7 +468,7 @@ static int GameMain(int argc, char** argv) {
         if (!shotFrames && std::getenv("AB_SLOWFRAMES")) {       // set AB_SLOWFRAMES=1 to list frames that took long and where the time went
             double f = (double)SDL_GetPerformanceFrequency(), end = (double)SDL_GetPerformanceCounter();
             double total = (end - frameStart) / f * 1000.0;
-            if (total > 25.0) std::printf("slow frame %d: %.1f ms (game %.1f, swap %.1f)\n", frame, total, (beforeSwap - frameStart) / f * 1000.0, (end - beforeSwap) / f * 1000.0);
+            if (total > (std::getenv("AB_SLOWMS") ? std::atof(std::getenv("AB_SLOWMS")) : 25.0)) std::printf("slow frame %d: %.1f ms (game %.1f, swap %.1f)\n", frame, total, (beforeSwap - frameStart) / f * 1000.0, (end - beforeSwap) / f * 1000.0);
         }
     }
     SDL_GL_DeleteContext(context);

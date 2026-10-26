@@ -99,12 +99,19 @@ void SpriteLibrary::CompoExtent(const CompoSprite& c, int& width, int& height, i
 bool ParseSpriteSheet(const std::vector<uint8_t>& bytes, SpriteSheet& out, std::string* error) {
     auto fail = [&](const char* m) { if (error) *error = m; return false; };
     Reader r{bytes};
-    if (r.Str(4) != "KA3D") return fail("not a KA3D file");
-    r.U32();                                   // total length
-    if (r.Str(4) != "SPRT") return fail("no SPRT chunk");
-    r.U32();                                   // chunk size
-    int images = r.U16();
-    if (images != 1) return fail("expected exactly one image");
+    // Angry Birds 1.0.0 ships INGAME_SKIES_1.dat (the backgrounds of the first five packs) without the 18 byte header
+    // ("KA3D", length, "SPRT", length, image count): the file starts at the image name's length, and the exe still loads it.
+    bool headerless = bytes.size() > 6 && !(bytes[0] == 'K' && bytes[1] == 'A' && bytes[2] == '3' && bytes[3] == 'D') &&
+                      bytes[0] == 0 && bytes[1] > 4 && bytes.size() >= (size_t)(2 + bytes[1]) &&
+                      bytes[2 + bytes[1] - 4] == '.' && bytes[2 + bytes[1] - 3] == 'p';
+    if (!headerless) {
+        if (r.Str(4) != "KA3D") return fail("not a KA3D file");
+        r.U32();                               // total length
+        if (r.Str(4) != "SPRT") return fail("no SPRT chunk");
+        r.U32();                               // chunk size
+        int images = r.U16();
+        if (images != 1) return fail("expected exactly one image");
+    }
     out.image = r.Str(r.U16());
     int count = r.U16();
     out.sprites.clear();

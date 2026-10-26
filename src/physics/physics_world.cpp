@@ -1,64 +1,17 @@
+// The part of the physics world that does not depend on the Box2D version. See physics_world.h.
 #include "physics/physics_world.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace ab {
 
 namespace {
-
 const float kTwoPi = 6.2831855f;
-
-class B2BodyAdapter : public Body {
-public:
-    explicit B2BodyAdapter(b2Body* b) : b_(b) {}
-    bool IsStatic() const override { return b_->GetType() == b2_staticBody; }
-    bool IsAwake() const override { return b_->IsAwake(); }
-    bool HasJoints() const override { return b_->GetJointList() != nullptr; }
-    float PosX() const override { return b_->GetPosition().x; }
-    float PosY() const override { return b_->GetPosition().y; }
-    float RotCol1X() const override { return b_->GetTransform().R.col1.x; }
-    float RotCol1Y() const override { return b_->GetTransform().R.col1.y; }
-    float VelX() const override { return b_->GetLinearVelocity().x; }
-    float VelY() const override { return b_->GetLinearVelocity().y; }
-    float AngularVelocity() const override { return b_->GetAngularVelocity(); }
-    float Mass() const override { return b_->GetMass(); }
-    void SetLinearVelocity(float x, float y) override { b_->SetLinearVelocity(b2Vec2(x, y)); }
-    void SetBullet(bool on) override { b_->SetBullet(on); }
-
-private:
-    b2Body* b_;
-};
-
-// The two end points the exe publishes to objects.joints[name].x1..y2 (anchor A, anchor B).
-class B2JointView : public JointView {
-public:
-    B2JointView(b2Joint* j, int coordType) : j_(j), coordType_(coordType) {}
-    bool PublishesEndpoints() const override { return coordType_ != 2; }
-    void Anchors(float& x1, float& y1, float& x2, float& y2) const override {
-        b2Vec2 a = j_->GetAnchorA(), b = j_->GetAnchorB();
-        x1 = a.x; y1 = a.y; x2 = b.x; y2 = b.y;
-    }
-
-private:
-    b2Joint* j_;
-    int coordType_;
-};
-
-}  // namespace
-
-PhysicsWorld::PhysicsWorld() : world_(b2Vec2(kGravityX, kGravityY), true) {
-    world_.SetWarmStarting(true);
-    world_.SetContinuousPhysics(true);
-    world_.SetContactListener(this);
-    world_.SetContactFilter(this);
-    world_.SetDestructionListener(this);
 }
 
-PhysicsWorld::~PhysicsWorld() {
-    // the world is destroyed after this body runs; keep the callbacks from touching freed records
-    world_.SetDestructionListener(nullptr);
-    world_.SetContactListener(nullptr);
-    world_.SetContactFilter(nullptr);
+std::unique_ptr<PhysicsWorld> MakePhysicsWorld(Box2DVersion version) {
+    return version == Box2DVersion::V22 ? MakePhysicsWorld22() : MakePhysicsWorld21();
 }
 
 PhysObject* PhysicsWorld::Find(const std::string& name) const {
@@ -66,10 +19,10 @@ PhysObject* PhysicsWorld::Find(const std::string& name) const {
     return it == byName_.end() ? nullptr : it->second;
 }
 
-PhysObject* PhysicsWorld::AddObject(const BodyDef& d, float rollFactor, bool circle) {
+PhysObject* PhysicsWorld::NewObject(const BodyDef& d, float rollFactor, bool circle) {
     // An object that already has this name is replaced in the hash table by the original; the old
     // body stays in the world. Scripts never reuse a name, so that case is not reproduced here.
-    std::unique_ptr<PhysObject> o(new PhysObject());
+    PhysObject* o = new PhysObject();
     o->name = d.name;
     o->id = nextId_++;
     idNames_[o->id] = d.name;
@@ -80,78 +33,15 @@ PhysObject* PhysicsWorld::AddObject(const BodyDef& d, float rollFactor, bool cir
     o->collision = circle ? true : d.collision;
     o->state[0][0] = o->state[1][0] = o->interpX = d.x;
     o->state[0][1] = o->state[1][1] = o->interpY = d.y;
-
-    b2BodyDef bd;
-    bd.type = d.density != 0.0f ? b2_dynamicBody : b2_staticBody;
-    bd.position.Set(d.x, d.y);
-    bd.angle = 0;
-    bd.linearDamping = 0;
-    bd.angularDamping = 1.0f;
-    bd.allowSleep = true;
-    bd.awake = true;
-    bd.active = true;
-    bd.userData = o.get();
-    o->b2 = world_.CreateBody(&bd);
-    o->adapter.reset(new B2BodyAdapter(o->b2));
-    o->body = o->adapter.get();
-    return o.release();
+    return o;
 }
 
-static void MakeFixture(b2Body* body, PhysObject* o, const b2Shape& shape, const BodyDef& d) {
-    b2FixtureDef fd;
-    fd.shape = &shape;
-    fd.friction = d.friction;
-    fd.restitution = d.restitution;
-    fd.density = d.density;
-    fd.filter.categoryBits = 1;
-    fd.filter.maskBits = 0xFFFF;
-    fd.filter.groupIndex = 0;
-    fd.isSensor = false;
-    fd.userData = o;
-    body->CreateFixture(&fd);
-}
-
-float PhysicsWorld::CreateBox(const BodyDef& d) {
-    PhysObject* o = AddObject(d, -1.0f, false);
-    b2PolygonShape shape;
-    shape.SetAsBox(d.w * 0.5f, d.h * 0.5f);
-    MakeFixture(o->b2, o, shape, d);
+void PhysicsWorld::AddObject(PhysObject* o, bool bird) {
+    o->body = o->pbody.get();
     objects_.emplace_back(o);
-    byName_[d.name] = o;
+    byName_[o->name] = o;
     frame_.objects.push_back(o);
-    return o->b2->GetMass();
-}
-
-float PhysicsWorld::CreateCircle(const BodyDef& d) {
-    PhysObject* o = AddObject(d, d.w, true);
-    b2CircleShape shape;
-    shape.m_radius = d.w;
-    shape.m_p.Set(0, 0);
-    MakeFixture(o->b2, o, shape, d);
-    // GUESS: the exe tests the z_order argument here (ftol(...) == 999). Check on a real level.
-    o->special999 = (int)d.zOrder == 999;
-    if (d.controllable) {
-        o->b2->SetAngularDamping(2.0f);
-        frame_.birds.push_back(o);
-    }
-    objects_.emplace_back(o);
-    byName_[d.name] = o;
-    frame_.objects.push_back(o);
-    return o->b2->GetMass();
-}
-
-float PhysicsWorld::CreatePolygon(const BodyDef& d, const std::vector<float>& verts) {
-    PhysObject* o = AddObject(d, -1.0f, false);
-    std::vector<b2Vec2> pts;
-    for (size_t i = 0; i + 1 < verts.size(); i += 2) pts.push_back(b2Vec2(verts[i], verts[i + 1]));
-    b2PolygonShape shape;
-    shape.Set(pts.data(), (int)pts.size());
-    MakeFixture(o->b2, o, shape, d);
-    if (d.controllable) o->b2->SetAngularDamping(2.0f);
-    objects_.emplace_back(o);
-    byName_[d.name] = o;
-    frame_.objects.push_back(o);
-    return o->b2->GetMass();
+    if (bird) frame_.birds.push_back(o);
 }
 
 // ---- joints
@@ -167,161 +57,11 @@ void PhysicsWorld::RebuildJointViews() {
     for (auto& j : joints_) frame_.joints.push_back(j->view.get());
 }
 
-// 0x40ecd0. The anchors follow the exe literally, including its quirk for distance joints with
-// coordType 1: the local anchor is (world point - body position), which ignores the body's rotation.
-bool PhysicsWorld::CreateJoint(JointDef& d) {
-    if (d.type == 5) {
-        Link l;
-        l.name = d.name; l.end1 = d.end1; l.end2 = d.end2; l.destroyTimer = d.destroyTimer;
-        links_.push_back(l);
-        return true;
+void PhysicsWorld::DropJointRecord(void* joint) {
+    for (size_t i = 0; i < joints_.size(); i++) {
+        if (joints_[i]->joint == joint) { joints_.erase(joints_.begin() + i); break; }
     }
-    PhysObject* o1 = Find(d.end1);
-    PhysObject* o2 = Find(d.end2);
-    if (!o1 || !o2) return false;
-    b2Body* b1 = o1->b2;
-    b2Body* b2b = o2->b2;
-    b2Joint* joint = nullptr;
-
-    switch (d.type) {
-    case 1: {  // distance
-        b2DistanceJointDef jd;
-        jd.bodyA = b1;
-        jd.bodyB = b2b;
-        b2Vec2 pa = b1->GetPosition(), pb = b2b->GetPosition();
-        if (d.coordType == 0) {
-            jd.localAnchorA.Set(0, 0);
-            jd.localAnchorB.Set(0, 0);
-            jd.length = b2Distance(pa, pb);
-            d.x1 = pa.x; d.y1 = pa.y; d.x2 = pb.x; d.y2 = pb.y;     // written back to the Lua table
-        } else if (d.coordType == 1) {
-            jd.localAnchorA.Set(d.x1 - pa.x, d.y1 - pa.y);
-            jd.localAnchorB.Set(d.x2 - pb.x, d.y2 - pb.y);
-            jd.length = b2Distance(b2Vec2(d.x1, d.y1), b2Vec2(d.x2, d.y2));
-        } else if (d.coordType == 2) {
-            jd.localAnchorA.Set(d.x1, d.y1);
-            jd.localAnchorB.Set(d.x2, d.y2);
-            jd.length = b2Distance(b1->GetWorldPoint(jd.localAnchorA), b2b->GetWorldPoint(jd.localAnchorB));
-        } else {
-            jd.localAnchorA.Set(0, 0);
-            jd.localAnchorB.Set(0, 0);
-            jd.length = 1.0f;
-        }
-        jd.frequencyHz = d.frequency;
-        jd.dampingRatio = d.dampingRatio;
-        jd.collideConnected = d.collideConnected;
-        joint = world_.CreateJoint(&jd);
-        break;
-    }
-    case 2: {  // weld: the anchor is the midpoint of the two transformed local anchors
-        b2WeldJointDef jd;
-        b2Vec2 a = b1->GetWorldPoint(b2Vec2(d.x1, d.y1));
-        b2Vec2 b = b2b->GetWorldPoint(b2Vec2(d.x2, d.y2));
-        b2Vec2 mid(a.x + (b.x - a.x) * 0.5f, a.y + (b.y - a.y) * 0.5f);
-        jd.Initialize(b1, b2b, mid);
-        jd.collideConnected = d.collideConnected;
-        joint = world_.CreateJoint(&jd);
-        break;
-    }
-    case 3: {  // revolute
-        b2RevoluteJointDef jd;
-        b2Vec2 anchor = b1->GetWorldPoint(b2Vec2(d.x1, d.y1));
-        jd.Initialize(b1, b2b, anchor);
-        jd.enableMotor = d.motor;
-        jd.motorSpeed = d.motorSpeed;
-        jd.maxMotorTorque = d.maxTorque;
-        jd.enableLimit = d.limit;
-        jd.lowerAngle = d.lowerLimit;
-        jd.upperAngle = d.upperLimit;
-        jd.collideConnected = d.collideConnected;
-        joint = world_.CreateJoint(&jd);
-        break;
-    }
-    case 4: {  // prismatic
-        b2PrismaticJointDef jd;
-        b2Vec2 anchor = b1->GetWorldPoint(b2Vec2(d.x1, d.y1));
-        jd.Initialize(b1, b2b, anchor, b2Vec2(d.worldAxisX, d.worldAxisY));
-        jd.enableLimit = d.limit;
-        jd.lowerTranslation = d.lowerLimit;
-        jd.upperTranslation = d.upperLimit;
-        jd.enableMotor = d.motor;
-        jd.motorSpeed = d.motorSpeed;
-        jd.maxMotorForce = d.maxTorque;
-        jd.collideConnected = d.collideConnected;
-        joint = world_.CreateJoint(&jd);
-        break;
-    }
-    default:
-        return false;
-    }
-
-    std::unique_ptr<JointRecord> r(new JointRecord());
-    r->name = d.name; r->end1 = d.end1; r->end2 = d.end2;
-    r->joint = joint;
-    r->coordType = d.coordType;
-    r->view.reset(new B2JointView(joint, d.coordType));
-    joints_.push_back(std::move(r));
     RebuildJointViews();
-    return true;
-}
-
-void PhysicsWorld::Clear() {
-    frame_.objects.clear();
-    frame_.birds.clear();
-    frame_.joints.clear();
-    for (auto& o : objects_) world_.DestroyBody(o->b2);   // joints go with their bodies (SayGoodbye)
-    objects_.clear();
-    byName_.clear();
-    idNames_.clear();
-    joints_.clear();
-    links_.clear();
-    frame_.accumulator = 0;
-}
-
-void PhysicsWorld::SetJointParameters(const JointParams& p) {
-    JointRecord* r = FindJoint(p.name);
-    if (!r) return;
-    if (r->joint->GetType() == e_revoluteJoint) {
-        b2RevoluteJoint* j = static_cast<b2RevoluteJoint*>(r->joint);
-        if (p.hasMotor) j->EnableMotor(p.motor);
-        if (p.hasMotorSpeed) j->SetMotorSpeed(p.motorSpeed);
-        if (p.hasMaxTorque) j->SetMaxMotorTorque(p.maxTorque);
-        if (p.hasLimit) j->EnableLimit(p.limit);
-        if (p.hasLowerLimit) j->SetLimits(p.lowerLimit, j->GetUpperLimit());
-        if (p.hasUpperLimit) j->SetLimits(j->GetLowerLimit(), p.upperLimit);
-    } else if (r->joint->GetType() == e_prismaticJoint) {
-        b2PrismaticJoint* j = static_cast<b2PrismaticJoint*>(r->joint);
-        if (p.hasMotor) j->EnableMotor(p.motor);
-        if (p.hasMotorSpeed) j->SetMotorSpeed(p.motorSpeed);
-        if (p.hasMaxTorque) j->SetMaxMotorForce(p.maxTorque);
-        if (p.hasLimit) j->EnableLimit(p.limit);
-        if (p.hasLowerLimit) j->SetLimits(p.lowerLimit, j->GetUpperLimit());
-        if (p.hasUpperLimit) j->SetLimits(j->GetLowerLimit(), p.upperLimit);
-    } else if (r->joint->GetType() == e_distanceJoint) {
-        b2DistanceJoint* j = static_cast<b2DistanceJoint*>(r->joint);
-        if (p.hasFrequency) j->SetFrequency(p.frequency);
-        if (p.hasDampingRatio) j->SetDampingRatio(p.dampingRatio);
-    }
-}
-
-void PhysicsWorld::CheckJointLimits(const std::string& name) {
-    JointRecord* r = FindJoint(name);
-    if (!r) return;
-    if (r->joint->GetType() == e_revoluteJoint) {
-        b2RevoluteJoint* j = static_cast<b2RevoluteJoint*>(r->joint);
-        if (!(j->IsMotorEnabled() && j->IsLimitEnabled())) return;
-        float speed = j->GetMotorSpeed();
-        float angle = j->GetJointAngle();
-        if ((speed > 0 && angle >= j->GetUpperLimit()) || (speed < 0 && angle <= j->GetLowerLimit()))
-            j->SetMotorSpeed(-speed);
-    } else if (r->joint->GetType() == e_prismaticJoint) {
-        b2PrismaticJoint* j = static_cast<b2PrismaticJoint*>(r->joint);
-        if (!(j->IsMotorEnabled() && j->IsLimitEnabled())) return;
-        float speed = j->GetMotorSpeed();
-        float t = j->GetJointTranslation();
-        if ((speed > 0 && t >= j->GetUpperLimit()) || (speed < 0 && t <= j->GetLowerLimit()))
-            j->SetMotorSpeed(-speed);
-    }
 }
 
 void PhysicsWorld::DestroyJoint(const std::string& name) {
@@ -330,16 +70,22 @@ void PhysicsWorld::DestroyJoint(const std::string& name) {
     }
     JointRecord* r = FindJoint(name);
     if (!r) return;
-    b2Joint* j = r->joint;
-    SayGoodbye(j);                 // Box2D only calls the listener for implicit destruction
-    world_.DestroyJoint(j);
+    void* j = r->joint;
+    DropJointRecord(j);            // Box2D only calls the listener for implicit destruction
+    DestroyBox2DJoint(j);
 }
 
-void PhysicsWorld::SayGoodbye(b2Joint* joint) {
-    for (size_t i = 0; i < joints_.size(); i++) {
-        if (joints_[i]->joint == joint) { joints_.erase(joints_.begin() + i); break; }
-    }
-    RebuildJointViews();
+void PhysicsWorld::Clear() {
+    frame_.objects.clear();
+    frame_.birds.clear();
+    frame_.joints.clear();
+    for (auto& o : objects_) DestroyBody(o.get());   // joints go with their bodies (SayGoodbye)
+    objects_.clear();
+    byName_.clear();
+    idNames_.clear();
+    joints_.clear();
+    links_.clear();
+    frame_.accumulator = 0;
 }
 
 std::vector<std::string> PhysicsWorld::RemoveObject(const std::string& name) {
@@ -350,7 +96,7 @@ std::vector<std::string> PhysicsWorld::RemoveObject(const std::string& name) {
             if (frame_.birds[i] == o) { frame_.birds.erase(frame_.birds.begin() + i); break; }
         for (size_t i = 0; i < frame_.objects.size(); i++)
             if (frame_.objects[i] == o) { frame_.objects.erase(frame_.objects.begin() + i); break; }
-        world_.DestroyBody(o->b2);        // also destroys the joints on the body
+        DestroyBody(o);        // also destroys the joints on the body
         byName_.erase(name);
         idNames_.erase(o->id);
         for (size_t i = 0; i < objects_.size(); i++)
@@ -376,18 +122,18 @@ std::vector<std::string> PhysicsWorld::RemoveObject(const std::string& name) {
 
 void PhysicsWorld::ApplyImpulse(const std::string& n, float ix, float iy, float px, float py) {
     PhysObject* o = Find(n);
-    if (o) o->b2->ApplyLinearImpulse(b2Vec2(ix, iy), b2Vec2(px, py));
+    if (o) o->pbody->ApplyImpulse(ix, iy, px, py);
 }
 
 void PhysicsWorld::ApplyForce(const std::string& n, float fx, float fy, float px, float py) {
     PhysObject* o = Find(n);
-    if (o) o->b2->ApplyForce(b2Vec2(fx, fy), b2Vec2(px, py));
+    if (o) o->pbody->ApplyForce(fx, fy, px, py);
 }
 
 bool PhysicsWorld::SetPosition(const std::string& n, float x, float y) {
     PhysObject* o = Find(n);
     if (!o) return false;
-    o->b2->SetTransform(b2Vec2(x, y), o->b2->GetAngle());
+    o->pbody->SetTransform(x, y, o->pbody->Angle());
     o->state[0][0] = o->state[1][0] = o->interpX = x;
     o->state[0][1] = o->state[1][1] = o->interpY = y;
     return true;
@@ -398,7 +144,7 @@ bool PhysicsWorld::SetRotation(const std::string& n, float angle, float& normali
     if (!o) return false;
     float a = std::fmod(angle, kTwoPi);
     if (a < 0) a += kTwoPi;
-    o->b2->SetTransform(o->b2->GetPosition(), a);
+    o->pbody->SetTransform(o->pbody->PosX(), o->pbody->PosY(), a);
     o->state[0][2] = o->state[1][2] = o->interpAngle = a;
     normalized = a;
     return true;
@@ -406,17 +152,17 @@ bool PhysicsWorld::SetRotation(const std::string& n, float angle, float& normali
 
 void PhysicsWorld::SetVelocity(const std::string& n, float vx, float vy) {
     PhysObject* o = Find(n);
-    if (o && o->b2->GetType() != b2_staticBody) o->b2->SetLinearVelocity(b2Vec2(vx, vy));
+    if (o && !o->pbody->IsStatic()) o->pbody->SetLinearVelocity(vx, vy);
 }
 
 void PhysicsWorld::SetAngularVelocity(const std::string& n, float w) {
     PhysObject* o = Find(n);
-    if (o && o->b2->GetType() != b2_staticBody) o->b2->SetAngularVelocity(w);
+    if (o && !o->pbody->IsStatic()) o->pbody->SetAngularVelocity(w);
 }
 
 void PhysicsWorld::SetSleeping(const std::string& n, bool sleeping) {
     PhysObject* o = Find(n);
-    if (o) o->b2->SetAwake(!sleeping);   // false: also zeroes velocities, force and torque
+    if (o) o->pbody->SetAwake(!sleeping);   // false: also zeroes velocities, force and torque
 }
 
 float PhysicsWorld::GetAngle(const std::string& n) const {
@@ -427,8 +173,7 @@ float PhysicsWorld::GetAngle(const std::string& n) const {
 void PhysicsWorld::GetWorldPoint(const std::string& n, float lx, float ly, float& wx, float& wy) const {
     PhysObject* o = Find(n);
     if (!o) { wx = lx; wy = ly; return; }
-    b2Vec2 p = o->b2->GetWorldPoint(b2Vec2(lx, ly));
-    wx = p.x; wy = p.y;
+    o->pbody->WorldPoint(lx, ly, wx, wy);
 }
 
 void PhysicsWorld::SetRolling(const std::string& n, int material, bool rolls, float rollFactor) {
@@ -445,11 +190,28 @@ void PhysicsWorld::SetObjectParameter(const std::string& n, int id, float value)
     if (id == 1) {
         o->drawWithBirds = (int)value == 1;
     } else if (id == 2) {
-        o->b2->SetType(value == 0.0f ? b2_staticBody : b2_dynamicBody);
+        o->pbody->SetStatic(value == 0.0f);
     } else if (id == 5) {
         o->scaleX = o->scaleY = value;
+        o->wobDX = o->wobDY = 0;        // the exe sets the current scale together with the base scale
     } else if (id == 6) {
         o->scaled = (int)value == 1;
+    } else if (id == 106) {
+        o->bounceAmp = value;
+    } else if (id == 107) {
+        o->bounceFreq = value;
+    } else if (id == 8) {
+        o->flipX = o->flipBase = (int)value == 1;
+    } else if (id == 9) {
+        o->enableFlipping = (int)value == 1;
+    } else if (id == 10) {
+        o->disableRotation = (int)value == 1;      // 0x41b2c0 draws the sprite upright; the physics is untouched
+    } else if (id == 14) {
+        o->canGetUp = (int)value == 1;
+    } else if (id == 15) {
+        o->disableImmovable = (int)value == 1;
+    } else if (id == 16) {
+        o->disableControllable = (int)value == 1;
     }
 }
 
@@ -475,10 +237,9 @@ ContactObject PhysicsWorld::MakeContactObject(const PhysObject& o) {
     ContactObject c;
     c.name = o.name;
     c.controllable = o.isBird;
-    c.mass = o.b2->GetMass();
-    b2Vec2 v = o.b2->GetLinearVelocity();
-    c.velocity.x = v.x;
-    c.velocity.y = v.y;
+    c.mass = o.pbody->Mass();
+    c.velocity.x = o.pbody->VelX();
+    c.velocity.y = o.pbody->VelY();
     return c;
 }
 
@@ -486,7 +247,7 @@ void PhysicsWorld::ApplyVelocityChange(const VelocityChange& v) {
     PhysObject* o = Find(v.name);
     if (!o) return;
     if (v.immediate) {
-        if (o->b2->GetType() != b2_staticBody) o->b2->SetLinearVelocity(b2Vec2(v.velocity.x, v.velocity.y));
+        if (!o->pbody->IsStatic()) o->pbody->SetLinearVelocity(v.velocity.x, v.velocity.y);
     } else {
         o->pendingVelocity = true;
         o->pendingVx = v.velocity.x;
@@ -494,24 +255,96 @@ void PhysicsWorld::ApplyVelocityChange(const VelocityChange& v) {
     }
 }
 
-void PhysicsWorld::BeginContact(b2Contact* c) {
-    PhysObject* a = static_cast<PhysObject*>(c->GetFixtureA()->GetUserData());
-    PhysObject* b = static_cast<PhysObject*>(c->GetFixtureB()->GetUserData());
-    if (!a || !b) return;
-    if (onBeginContact) onBeginContact(*a, *b, c);
-}
-
 // 0x40c440. Collide only if both objects have `collision` set, except that a circle created with
 // z_order 999 never collides with an object whose material is "immovable".
-bool PhysicsWorld::ShouldCollide(b2Fixture* fa, b2Fixture* fb) {
-    PhysObject* a = static_cast<PhysObject*>(fa->GetUserData());
-    PhysObject* b = static_cast<PhysObject*>(fb->GetUserData());
+bool PhysicsWorld::ShouldCollideObjects(const PhysObject* a, const PhysObject* b) const {
     if (!a || !b) return true;
     bool collide = a->collision && b->collision;
     // the original compares the first 9 bytes only
     if (a->special999 && materialOf && materialOf(*b).compare(0, 9, "immovable") == 0) collide = false;
     if (b->special999 && materialOf && materialOf(*a).compare(0, 9, "immovable") == 0) collide = false;
+    if (a->disableImmovable && materialOf && materialOf(*b).compare(0, 9, "immovable") == 0) collide = false;
+    if (b->disableImmovable && materialOf && materialOf(*a).compare(0, 9, "immovable") == 0) collide = false;
+    if (a->disableControllable && b->isBird) collide = false;
+    if (b->disableControllable && a->isBird) collide = false;
+    if (!colliderRules_.pair[a->colliderType & (kColliderTypes - 1)][b->colliderType & (kColliderTypes - 1)]) collide = false;
     return collide;
+}
+
+// ---- Angry Birds Rio queries
+
+float PhysicsWorld::GetSpeed(const std::string& n) const {
+    PhysObject* o = Find(n);
+    return o ? std::sqrt(o->pbody->VelX() * o->pbody->VelX() + o->pbody->VelY() * o->pbody->VelY()) : 0.0f;
+}
+
+bool PhysicsWorld::HasMovingObjects(float tolerance) const {
+    for (const auto& o : objects_) {
+        if (o->pbody->IsStatic() || !o->pbody->IsAwake()) continue;
+        float speed = std::sqrt(o->pbody->VelX() * o->pbody->VelX() + o->pbody->VelY() * o->pbody->VelY());
+        if (speed > tolerance || std::fabs(o->pbody->AngularVelocity()) > tolerance) return true;
+    }
+    return false;
+}
+
+void PhysicsWorld::GetLocalPoint(const std::string& n, float wx, float wy, float& lx, float& ly) const {
+    PhysObject* o = Find(n);
+    if (!o) { lx = wx; ly = wy; return; }
+    o->pbody->LocalPoint(wx, wy, lx, ly);
+}
+
+void PhysicsWorld::SetColliderType(const std::string& n, int type) {
+    PhysObject* o = Find(n);
+    if (o && type >= 0 && type < kColliderTypes) o->colliderType = type;
+}
+int PhysicsWorld::ColliderType(const std::string& n) const {
+    PhysObject* o = Find(n);
+    return o ? o->colliderType : -1;
+}
+void PhysicsWorld::SetColliderRule(int a, int b, bool collide) {
+    if (a < 0 || b < 0 || a >= kColliderTypes || b >= kColliderTypes) return;
+    colliderRules_.pair[a][b] = colliderRules_.pair[b][a] = collide;
+}
+bool PhysicsWorld::ColliderRule(int a, int b) const {
+    return a >= 0 && b >= 0 && a < kColliderTypes && b < kColliderTypes && colliderRules_.pair[a][b];
+}
+
+void PhysicsWorld::SetCollisionEnabled(const std::string& n, bool on) {
+    PhysObject* o = Find(n);
+    if (!o) return;
+    o->collision = on;
+    o->pbody->SetSensor(!on);
+}
+
+void PhysicsWorld::RemoveJointsFromObject(const std::string& n) {
+    for (size_t i = 0; i < links_.size();) {
+        if (links_[i].end1 == n || links_[i].end2 == n) links_.erase(links_.begin() + i); else i++;
+    }
+    std::vector<std::string> names;
+    for (auto& j : joints_)
+        if (j->end1 == n || j->end2 == n) names.push_back(j->name);
+    for (const std::string& name : names) DestroyJoint(name);
+}
+
+bool PhysicsWorld::HasJoints(const std::string& n) const {
+    for (const auto& j : joints_)
+        if (j->end1 == n || j->end2 == n) return true;
+    for (const Link& l : links_)
+        if (l.end1 == n || l.end2 == n) return true;
+    return false;
+}
+
+std::vector<std::string> PhysicsWorld::IntersectingObjects(float x, float y, float left, float right, float down, float up) const {
+    std::vector<std::string> out;
+    float x0 = x - left, x1 = x + right, y0 = y - down, y1 = y + up;
+    if (y0 > y1) std::swap(y0, y1);
+    for (const auto& o : objects_) {
+        float bx0, by0, bx1, by1;
+        if (!o->pbody->Bounds(bx0, by0, bx1, by1)) continue;
+        if (bx1 < x0 || bx0 > x1 || by1 < y0 || by0 > y1) continue;
+        out.push_back(o->name);
+    }
+    return out;
 }
 
 }  // namespace ab

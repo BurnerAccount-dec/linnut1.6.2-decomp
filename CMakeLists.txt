@@ -19,14 +19,34 @@ file(GLOB LUA_SOURCES third_party/lua/*.c)
 add_library(lua51 STATIC ${LUA_SOURCES})
 target_include_directories(lua51 PUBLIC third_party/lua)
 
-# Box2D 2.1.1 with the exe's constants (third_party/box2d/Box2D/Common/b2Settings.h)
+# Box2D 2.1.1 with the exe's constants (third_party/box2d/Box2D/Common/b2Settings.h): Angry Birds Classic and Seasons.
 file(GLOB_RECURSE BOX2D_SOURCES third_party/box2d/Box2D/*.cpp)
 add_library(box2d STATIC ${BOX2D_SOURCES})
 target_include_directories(box2d PUBLIC third_party/box2d)
 
+# Box2D 2.2.0 with the same constants: Angry Birds Rio and onwards. Its names carry a suffix (third_party/box2d22/Box2D/Common/b2Rename.h),
+# so both versions can be in one executable.
+file(GLOB_RECURSE BOX2D22_SOURCES third_party/box2d22/Box2D/*.cpp)
+add_library(box2d22 STATIC ${BOX2D22_SOURCES})
+target_include_directories(box2d22 PUBLIC third_party/box2d22)
+# Box2D 2.2.0 asserts in b2World::SolveTOI when a contact between two static bodies is left over after a body was made static (the game
+# does that with setObjectParameter(name, 2, 0)). The release exe has its asserts off and skips such a contact, so do the same here.
+target_compile_definitions(box2d22 PRIVATE NDEBUG)
+if(MSVC)
+  target_compile_definitions(box2d22 PRIVATE NOMINMAX)
+endif()
+
+# the physics world: the shared part, and the Box2D part once for each version
+add_library(ab_physics_b2v21 STATIC src/physics/physics_world_b2.cpp)
+target_include_directories(ab_physics_b2v21 PUBLIC src)
+target_link_libraries(ab_physics_b2v21 PRIVATE box2d PUBLIC ab_game)
+add_library(ab_physics_b2v22 STATIC src/physics/physics_world_b2.cpp)
+target_compile_definitions(ab_physics_b2v22 PRIVATE AB_BOX2D_V22)
+target_include_directories(ab_physics_b2v22 PUBLIC src)
+target_link_libraries(ab_physics_b2v22 PRIVATE box2d22 PUBLIC ab_game)
 add_library(ab_physics src/physics/physics_world.cpp)
 target_include_directories(ab_physics PUBLIC src)
-target_link_libraries(ab_physics PUBLIC box2d ab_game)
+target_link_libraries(ab_physics PUBLIC ab_physics_b2v21 ab_physics_b2v22 ab_game)
 
 add_executable(ab_physics_tests tests/physics_world_test.cpp)
 target_link_libraries(ab_physics_tests ab_physics)
@@ -38,11 +58,20 @@ if(MSVC)
   target_compile_definitions(ab_audio PRIVATE NOMINMAX _CRT_SECURE_NO_WARNINGS)
   target_compile_options(ab_audio PRIVATE /wd4267 /wd4244)   # warnings inside the third-party decoder
 endif()
-add_library(ab_lua src/lua/aes.cpp src/lua/lua_api.cpp src/lua/script_host.cpp src/lua/lua_frame_host.cpp)
+# Lua source the engine carries (the 1.6.2 editor, see script_host.cpp): written out as a byte array at configure time
+function(embed_lua_file input symbol output)
+  file(READ ${input} hex HEX)
+  string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," bytes "${hex}")
+  file(WRITE ${output} "namespace ab {\nextern const unsigned char ${symbol}[] = {${bytes}0};\nextern const unsigned int ${symbol}Size = sizeof(${symbol}) - 1;\n}\n")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${input})
+endfunction()
+embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/editor_classic.lua kEditorClassicLua ${CMAKE_CURRENT_BINARY_DIR}/generated/editor_classic_lua.cpp)
+
+add_library(ab_lua src/lua/aes.cpp src/lua/lua_api.cpp src/lua/script_host.cpp src/lua/lua_frame_host.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/editor_classic_lua.cpp)
 target_include_directories(ab_lua PUBLIC src)
 target_link_libraries(ab_lua PUBLIC lua51 ab_game)
 
-add_library(ab_engine src/engine/game_platform.cpp src/engine/sprite_sheet.cpp src/engine/png_decoder.cpp src/engine/font.cpp src/engine/render_soft.cpp)
+add_library(ab_engine src/engine/game_platform.cpp src/engine/level_writer.cpp src/engine/sprite_sheet.cpp src/engine/png_decoder.cpp src/engine/font.cpp src/engine/render_soft.cpp)
 target_include_directories(ab_engine PUBLIC src)
 target_link_libraries(ab_engine PUBLIC ab_lua ab_physics ab_audio)
 
@@ -59,6 +88,10 @@ target_link_libraries(ab_level_test ab_engine)
 add_executable(ab_sprite_sheet_tests tests/sprite_sheet_test.cpp)
 target_link_libraries(ab_sprite_sheet_tests ab_engine)
 add_test(NAME sprite_sheet COMMAND ab_sprite_sheet_tests ${CMAKE_SOURCE_DIR}/tests/data)
+
+add_executable(ab_level_writer_tests tests/level_writer_test.cpp)
+target_link_libraries(ab_level_writer_tests ab_engine)
+add_test(NAME level_writer COMMAND ab_level_writer_tests)
 
 add_executable(ab_png_tests tests/png_decoder_test.cpp)
 target_link_libraries(ab_png_tests ab_engine)
