@@ -61,6 +61,7 @@ public:
 private:
     bool rio_ = false;
     bool Call(const char* name);
+    bool DrawEditorOverlay();
     bool CallWithArgs(const char* name, int nargs);   // args already pushed after the function slot
     bool RunFile(const std::string& path);
     void SetString(const char* name, const std::string& v);

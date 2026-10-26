@@ -80,6 +80,8 @@ typedef double float64;
 // Angry Birds Rio: the skin radius is a variable (the physics world sets it, see PhysicsWorld::SetShapeSkin), so it can follow the game.
 extern float b2_polygonRadiusValue;
 #define b2_polygonRadius		b2_polygonRadiusValue
+// Fraction of the skin that the position solver keeps between two bodies (1 = Box2D 2.2 as shipped, 0 = the skin only decides when bodies touch).
+extern float b2_solverSkinFraction;
 
 /// Maximum number of sub-steps per contact in continuous physics simulation.
 #define b2_maxSubSteps			8

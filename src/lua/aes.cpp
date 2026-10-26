@@ -1,4 +1,5 @@
 #include "lua/aes.h"
+#include "lua/dec_folder.h"
 #include <fstream>
 #include <iterator>
 
@@ -152,6 +153,7 @@ bool ReadSaveFile(const std::string& path, std::string& text, bool& encrypted, c
 }
 
 bool ReadLuaFile(const std::string& path, std::vector<uint8_t>& bytes) {
+    if (ReadDecOverride(path, bytes)) return true;       // --use-dec: an edited plain copy in the dec folder wins
     std::ifstream f(path.c_str(), std::ios::binary);
     if (!f) return false;
     bytes.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
