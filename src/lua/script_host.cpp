@@ -379,7 +379,18 @@ bool ScriptHost::Update(float dt, float realDt) {
     if (!lua_isfunction(L_, -1)) { lua_pop(L_, 1); return true; }
     lua_pushnumber(L_, dt);
     lua_pushnumber(L_, realDt);
-    return CallWithArgs("update", 2);
+    return CallWithArgs("update", 2) && DrawEditorOverlay();
+}
+
+// Seasons and the later games keep the editor's on-screen extras (level name, status line, group palette) in a global drawEditor() that the exe
+// calls after the frame is drawn; their updateEditor and drawGame do not call it themselves.
+bool ScriptHost::DrawEditorOverlay() {
+    GetEnvField("currentGameMode");
+    GetEnvField("updateEditor");
+    bool inEditor = lua_isfunction(L_, -1) && lua_rawequal(L_, -1, -2);
+    lua_pop(L_, 2);
+    if (!inEditor) return true;
+    return Call("drawEditor");
 }
 
 bool ScriptHost::BirdCollision(const std::string& a, const std::string& b, float force, float damage) {

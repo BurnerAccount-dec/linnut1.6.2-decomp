@@ -76,8 +76,8 @@ static void RunAll(Box2DVersion version) {
         CHECK(w.Frame().birds.size() == 1 && w.Frame().birds[0] == ball);
         CHECK(w.Frame().objects.size() == 3);
         CHECK(Near(ball->interpX, 5.0f) && Near(ball->interpAngle, 0.0f));
-        // polygon radius of box shapes: the classic exe's 0.1 (Box2D 2.1.1); Angry Birds Rio's 2.2.0 uses one linearSlop (0.05), see b2Settings.cpp
-        CHECK(Near(w.Inspect("box").shapeRadius, version == Box2DVersion::V22 ? 0.05f : 0.1f, 1e-6f));
+        // polygon radius of box shapes: 0.1 (two linearSlops) in both Box2D builds; Rio keeps the skin out of the position solver, see b2Settings.cpp
+        CHECK(Near(w.Inspect("box").shapeRadius, 0.1f, 1e-6f));
     }
 
     // ---- polygon, with the angular damping rule

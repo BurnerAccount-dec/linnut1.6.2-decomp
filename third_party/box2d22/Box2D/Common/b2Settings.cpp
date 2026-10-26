@@ -19,10 +19,12 @@
 #include <Box2D/Common/b2Settings.h>
 #include <cstdlib>
 
-// Angry Birds Rio: the authored levels place blocks flush against each other, so the skin is one linearSlop (0.05), not the stock two.
-// With 0.1 the skins of touching blocks overlap and push stacks apart (Smuggler's Plane 12-8 and the ice tower in Mauro's level collapse);
-// with 0.05 they stay where the level put them, like in the retail exe. Scripts can change it with setPolygonRadius().
-float b2_polygonRadiusValue = b2_linearSlop;
+// Angry Birds Rio: the polygon skin is the stock two linearSlops (0.1), which makes blocks 0.1-0.2 apart count as touching (Smuggler's Plane 12-15
+// relies on that for its TNT). b2_solverSkinFraction = 0 keeps the position solver from pushing flush-placed stacks apart by the skin
+// (with the full skin Smuggler's Plane 12-8 and Mauro's ice tower collapse): the skin only decides when bodies touch. Scripts can change the
+// skin with setPolygonRadius().
+float b2_polygonRadiusValue = 2.0f * b2_linearSlop;
+float b2_solverSkinFraction = 0.0f;
 
 b2Version b2_version = {2, 2, 0};
 

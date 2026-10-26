@@ -2,7 +2,7 @@
 
 An unofficial, from-scratch reimplementation of the Angry Birds PC engine, rebuilt from a Ghidra decompile of the 1.6.2 executable. It is written in C++ (SDL2, OpenGL 1.x, Lua 5.1, Box2D 2.1 and 2.2) and does not re-implement the game logic: it runs the game's **original Lua scripts** and provides the native functions those scripts expect, so levels, menus, physics and scoring behave like the original.
 
-Version 1.8. What works, per game:
+Version 1.9. What works, per game:
 
 | Game | Play | Level editor | Notes |
 |---|---|---|---|
@@ -10,8 +10,8 @@ Version 1.8. What works, per game:
 | Angry Birds 1.6.2 / 1.6.3.1 (PC) | Playable | Works (tested in 1.6.3.1, 1.6.2 uses the same script) | 1.6.3.1 has no editor in its scripts, the engine brings Rovio's 1.6.2 one |
 | Angry Birds 2.0.0 (PC) | Playable, a few known visual gaps (below) | Works, "Editor" button on the main menu | |
 | Angry Birds Seasons 1.0.0 (PC) | Playable | Works, "Editor" button on the main menu | |
-| Angry Birds Seasons 2.2.0, Year of the Dragon (PC) | Playable | Same script and native as 1.0.0, not tested on the real Year of the Dragon files | |
-| Angry Birds Rio 1.4.2 (PC) | Playable | Works | Ice, glass and light blocks are stable now (Mauro's level, Smuggler's Plane 12-8 tested) |
+| Angry Birds Seasons 2.2.0, Year of the Dragon (PC) | Playable | The level name, status line and block palette draw (checked with Year of the Dragon files) | |
+| Angry Birds Rio 1.4.2 (PC) | Playable | Works | Ice, glass and light blocks are stable (Mauro's level, Smuggler's Plane 12-8 and 12-15 tested against Box2D 2.1) |
 
 **Not affiliated with, endorsed by or connected to Rovio Entertainment.** "Angry Birds" and everything in the game belong to their owners. This repository contains no game files: no scripts, images, sounds, levels or executables. To run it you need your own legally obtained copy of the game.
 
@@ -30,15 +30,107 @@ Version 1.8. What works, per game:
 
 These are not in any of the supported games; the engine adds them so scripts can use them, the same way they use `physicsTimeStep`. Nothing changes for the original scripts.
 
-- `setRenderState(tx, ty, sx, sy, angle, pivotX, pivotY, alpha)`: the 8th value is the transparency of everything drawn after it, from 0 (invisible) to 1 (opaque); out-of-range values are clamped. `setAlpha(a)` does the same.
-- Collider types, as in Angry Birds 3.0.1 and the last Seasons: the global table `collider_types` (`basic`, `eagle`, `static`, `bird`, `pig`, `ghost`, `sticky` = 0 to 6), `setColliderType(name, type)`, `getColliderType(name)`, `setColliderRule(typeA, typeB, collides)` and `getColliderRule(typeA, typeB)`. By default all types collide with each other, except ghost blocks, which only collide with birds and the eagle; change any pair from a script. The sticky type is stored but has no special behaviour yet.
-- `setPolygonRadius(r)` / `getPolygonRadius()`: the collision skin of boxes and polygons created afterwards (Rio only, default 0.05).
+### Transparency (alpha)
+
+`setRenderState(tx, ty, sx, sy, angle, pivotX, pivotY, alpha)`: the 8th value is the transparency of everything drawn after it, from 0 (invisible) to 1 (opaque); out-of-range values are clamped. `setAlpha(a)` does the same. The value stays until you set it again, and a call with only 7 values does not reset it, so always put it back to 1 when you are done:
+
+    setRenderState(-screen.left, -screen.top, worldScale, worldScale, 0, 0, 0, 0.4)   -- everything after this is 40% visible
+    drawSprite("BLOCK_WOOD_1", x, y)
+    setRenderState(-screen.left, -screen.top, worldScale, worldScale, 0, 0, 0, 1)     -- back to solid
+
+Masked and tiled sprites ignore the alpha.
+
+### Collider types
+
+Collider types decide which objects can hit which, as in Angry Birds 3.0.1 and the last Seasons (ghost blocks). The engine gives every script the global table `collider_types`: `basic`=0, `eagle`=1, `static`=2, `bird`=3, `pig`=4, `ghost`=5, `sticky`=6. By default all types collide with each other, except ghost objects, which only collide with birds and the eagle.
+
+- `setColliderType(objectName, type)` / `getColliderType(objectName)`: give an object a type (call it after the object exists, for example right after `createObject`).
+- `setColliderRule(typeA, typeB, collides)` / `getColliderRule(typeA, typeB)`: change one pair (it works both ways round). `collides` is `true` or `false`.
+- The sticky type is stored but has no special behaviour yet.
+
+To use your own array of types in a script, add a table next to `collider_types` and use it with the commands, the same way the scripts use their other tables. For example, in `gamelogic.lua`:
+
+    -- your own types after the engine's: 7 and up
+    my_types = { ice_ghost = 7, glass_wall = 8 }
+
+    -- types 7 and up are free to use: say what they collide with
+    setColliderRule(my_types.ice_ghost, collider_types.bird, true)
+    setColliderRule(my_types.ice_ghost, collider_types.pig, false)
+    setColliderRule(my_types.ice_ghost, my_types.glass_wall, false)
+
+    -- after an object is created:
+    local name = createObject(blockTable, "BLOCK_GLASS_1", nil, x, y)
+    setColliderType(name, my_types.ice_ghost)
+
+The rule table holds 16 types (0 to 15). A pair you never set uses the default above (everything collides, ghost only with bird and eagle).
+
+### Polygon skin
+
+`setPolygonRadius(r)` / `getPolygonRadius()`: the collision skin of boxes and polygons created afterwards (Rio, Box2D 2.2 only; default 0.1, the skin only decides when blocks count as touching, it does not push stacked blocks apart).
+
+## Native function summary
+
+These are the functions the engine registers for the scripts (all in `src/lua/lua_api.cpp`). Several are only used by one game; the ones that only talk to online services, ads or purchases are stubs.
+
+- **Window and input:** `requestExit`, `setBGColor`, `captureMouse`, `isMouseCaptured`, `setFullScreenMode`, `isInFullScreenMode`, `setResolution`, `setRetinaResolution`, `setIsMultitouchMouseWheelSimulationEnabled`, `doesMouseClickSetsTouchCount`, `getClipboardText`, `hasLocationCapability`.
+- **Files, scripts and levels:** `loadLuaFileToObject`, `loadLuaFile`, `saveLuaFile`, `checkForLuaFile`, `createDirectory`, `checkDirectory`, `loadLevel`, `loadLevelFile`, `getLoadStatus`, `saveLevel`, `loadLevelEditor`, `setEditing`, `setGameOn`, `setGameParameters`.
+- **Physics objects:** `createBox`, `createCircle`, `createPolygon` (with `clearVertices`, `addVertex`), `removeObject`, `setPosition`, `setRotation`, `setVelocity`, `setAngularVelocity`, `setSleeping`, `applyImpulse`, `applyForce`, `getVelocity`, `getAngle`, `getLocalPoint`, `getWorldPoint`, `setObjectParameter`, `getIntersectingObjects`, `hasMovingObjects`, `hasMovingObjectsZeroTolerance`.
+- **Physics world:** `setPhysicsEnabled`, `isPhysicsEnabled`, `setPhysicsSimulationScale`, `setWorldGravity`, `setLevelLimits`, `setCollisionEnabled`; engine additions: `setColliderType`, `getColliderType`, `setColliderRule`, `getColliderRule`, `setPolygonRadius`, `getPolygonRadius`.
+- **Joints:** `createJoint`, `createJoints`, `setJointParameters`, `checkJointLimits`, `destroyJoint`, `removeJointsFromObject`.
+- **Camera and drawing state:** `setTopLeft`, `setWorldScale`, `setMaxWorldScale`, `setMaxTranslation`, `enableSmoothZooming`, `setRenderState` (8th value: alpha), `setAlpha`.
+- **Drawing:** `drawRect`, `drawRectLines`, `drawLine2D`, `drawTexturedRect`, `drawSome`, `drawLayer`, `drawBoxNative`, `drawUITextNative`, `clipText`, `drawGameNative`, `drawBackgroundNative`, `drawForegroundNative`, `drawParticlesNative`, `drawLevelParticlesNative`, `drawMenuParticlesNative`, `updateBackgroundAndForegroundScrollingNative`.
+- **Sprites, materials and themes:** `setSprite`, `setMaterial`, `setTexture`, `setTheme`, `createThemeSprite`, `modifyThemeSprite`, `updateThemeSprite`, `removeThemeSprite`, `setThemeSprite`, `rotateThemeSprites`, `isHDVersion`.
+- **Particles:** `setParticleSystemLimits`, `clearParticleCache`, `clearParticles`, `clearParticlesNative`, `updateMenuParticlesNative`, `enableInGameParticlesNative`.
+- **Trajectory dots:** `startNewTrajectory`, `addToTrajectory`, `addPuffToTrajectory`.
+- **Time and system:** `getCurrentTime`, `getTimeDifference`, `getTImeDifferenceInSeconds`, `getOSName`, `getOSVersion`, `getModel`, `getManufacturer`, `getCurrentLocale`, `initLocales`, `getDeviceID`, `verifyDeviceID`, `areDeviceIDsEqual`, `canOpenProgram`, `openProgram`, `playVideo`, `print`, `printGlobals`, `throwException`.
+- **The `res` table** (reached as `_G.res`): sprite sheets, fonts, `drawSprite`, `drawString`, `getSpriteBounds`, `getSpritePivot`, `useFont` and the audio functions.
+- **Stubs for services that are not part of a PC build:** registration and updates (`openRegistrationDialog`, `registerKey`, `checkRegistrationResult`, `requestLatestVersionNumber`, `checkForUpdates`, `callVersionUpdater`), Crystal, Game Center and leaderboards, Flurry and Medio statistics, ads, in-app purchases, notifications, NFC and the task switcher.
+
+## Command line and environment variables
+
+    AngryBirdsEngine.exe [options]
+
+| Option | What it does |
+|---|---|
+| `--scripts <folder>`, `--data <folder>` | where the game's scripts and data are |
+| `--config <file>` | window settings (title, size, fullscreen, cursor) |
+| `--userdata <folder>` | keep saves here (`.` = working folder); default `original` shares progress with the original game |
+| `--decrypt [folder]` | write the game's scripts into a plain-text `dec` folder and exit (details below) |
+| `--use-dec [folder]` | read the scripts from that folder (where a file exists there) instead of the game's own |
+| `--size <w> <h>`, `--screenshot <file> <frames>`, `--click`, `--drag`, `--key`, `--wheel`, `--audio-out` | test-render helpers: run for some frames, feed input, write a picture or the audio |
+
+Environment variables, set in the command prompt before starting the engine (`set NAME=value`, `set NAME=` to clear):
+
+| Variable | What it does |
+|---|---|
+| `AB_BOX2D=21` or `22` | choose the physics library: 2.1.1 (Classic, Seasons) or 2.2.0 (Rio). Without it the engine picks the game's own. For example `set AB_BOX2D=21` makes Rio use 2.1 |
+| `AB_POLYRADIUS=r` | collision skin of boxes and polygons (2.2 only, default 0.1) |
+| `AB_SOLVERSKIN=f` | how much of the skin the 2.2 position solver keeps between blocks (default 0; 1 is stock Box2D and pushes flush stacks apart) |
+| `AB_NOCCD=1` | switch off continuous collision for fast objects |
+| `AB_NODEBUGKEYS=1` | run without the developers' keys and the editor button |
+| `AB_SLOWFRAMES=1` | print every frame that took over 25 ms |
+| `AB_CONTACTDBG=<text>`, `AB_PHYSDBG=1`, `AB_BODYDUMP=n` | physics debugging: contacts whose names contain the text, general physics log, positions of every body every n steps |
+| `AB_EXEC='<lua>'`, `AB_EXEC_FRAME=n` (and `AB_EXEC2`, `AB_EXEC2_FRAME`) | run a Lua snippet in the scripts' environment at a frame, for tests |
+
+## The `dec` folder (plain-text scripts)
+
+Next to the exe the engine can keep a folder called `dec` with the game's scripts as plain text:
+
+    cd /d "C:\path\to\the game"
+    C:\path\to\AngryBirdsEngine.exe --decrypt
+
+This writes `dec` next to the exe (or give a folder: `--decrypt C:\somewhere\dec`) and prints how many files are plain-text Lua source and how many are compiled. Then start the engine with `--use-dec` and it reads every script it finds in `dec` instead of the encrypted one, so you can edit them with any text editor.
+
+- **Angry Birds 1.6.2** ships encrypted Lua source: the `dec` files are readable and editable, and the engine runs your edits.
+- **1.6.3.1, 2.0.0, Seasons, Year of the Dragon and Rio** ship compiled Lua 5.1 bytecode. `--decrypt` still removes the encryption, but the result is bytecode, which is not readable text; a Lua decompiler is needed to turn it into source. Edit-by-text works for files you replace with your own plain Lua.
+- A file you put into `dec` that the game does not have is ignored; a file that is missing from `dec` is read from the game as usual.
+- The extra commands above (alpha, collider types, polygon skin) work in plain-text scripts of any game.
 
 ## Known gaps
 
 - 2.0.0: a faint flash of the pause page after the tutorials.
-- Editors: the Seasons editors start with the camera zoomed out on an empty "new level" page; a level that has no birds crashes when playtested (Shift+P), as it would in the original. The Year of the Dragon editor was not tested against the real Year of the Dragon files. Ctrl+S writes into the game's `data/levels` folder, so a game installed in `C:\Program Files (x86)` needs the engine started as administrator (or the game copied elsewhere).
-- Rio: other levels than Mauro's and Smuggler's Plane 12-8 were not compared with the retail exe.
+- Editors: the Seasons editors start with the camera zoomed out on an empty "new level" page; a level that has no birds crashes when playtested (Shift+P), as it would in the original. Ctrl+S writes into the game's `data/levels` folder, so a game installed in `C:\Program Files (x86)` needs the engine started as administrator (or the game copied elsewhere).
+- Rio: other levels than Mauro's, Smuggler's Plane 12-8 and 12-15 were not compared with the retail exe.
 - A few natives are not implemented (for example the colour table behind `drawBoxNative` and `setupCompoObject`).
 - Windows only so far; the code is plain SDL2 and should port, but only Windows is tested.
 

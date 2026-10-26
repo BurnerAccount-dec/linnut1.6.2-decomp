@@ -31,6 +31,7 @@ extern "C" {
 }
 
 #include "engine/game_platform.h"
+#include "lua/dec_folder.h"
 #include "engine/input.h"
 #include "engine/png_decoder.h"
 #include "window/gl_backend.h"
@@ -192,6 +193,8 @@ static void SetGameIcon(SDL_Window* window, const std::string& gameName) {
 static int GameMain(int argc, char** argv) {
     std::string scripts, data, shot, configPath, userData;
     int shotFrames = 0; int testW = 0, testH = 0;
+    bool decryptOnly = false, useDec = false;      // --decrypt / --use-dec: the dec folder (see lua/dec_folder.h)
+    std::string decFolder;
     std::string audioOut;                 // test: write the mixed sound of the --screenshot run to this .wav
     struct Click { int frame; float x, y, x2, y2; int length; };   // length 3 is a click, more is a drag to (x2, y2)
     std::vector<Click> clicks;
@@ -202,6 +205,8 @@ static int GameMain(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--data") && i + 1 < argc) data = argv[++i];
         else if (!std::strcmp(argv[i], "--userdata") && i + 1 < argc) userData = argv[++i];
         else if (!std::strcmp(argv[i], "--config") && i + 1 < argc) configPath = argv[++i];
+        else if (!std::strcmp(argv[i], "--decrypt")) { decryptOnly = true; if (i + 1 < argc && argv[i + 1][0] != '-') decFolder = argv[++i]; }
+        else if (!std::strcmp(argv[i], "--use-dec")) { useDec = true; if (i + 1 < argc && argv[i + 1][0] != '-') decFolder = argv[++i]; }
         else if (!std::strcmp(argv[i], "--key") && i + 2 < argc) { keys.push_back({std::atoi(argv[i + 1]), argv[i + 2]}); i += 2; }
         else if (!std::strcmp(argv[i], "--wheel") && i + 2 < argc) { wheels.push_back({std::atoi(argv[i + 1]), std::atoi(argv[i + 2])}); i += 2; }
         else if (!std::strcmp(argv[i], "--click") && i + 3 < argc) { float x = (float)std::atof(argv[i + 2]), y = (float)std::atof(argv[i + 3]); clicks.push_back({std::atoi(argv[i + 1]), x, y, x, y, 3}); i += 3; }
@@ -225,6 +230,24 @@ static int GameMain(int argc, char** argv) {
         return 2;
     }
     std::fclose(probe);
+
+    // the dec folder: next to the exe unless a folder was named
+    if (decryptOnly || useDec) {
+        if (decFolder.empty()) {
+            char* base = SDL_GetBasePath();
+            decFolder = std::string(base ? base : "./") + "dec";
+            if (base) SDL_free(base);
+        }
+        if (decryptOnly) {
+            int text = 0;
+            int n = ab::DecryptTree(data, decFolder, text);
+            std::printf("dec: wrote %d files to %s (%d plain-text Lua source, %d compiled Lua 5.1 bytecode)\n", n, decFolder.c_str(), text, n - text);
+            if (n == 0) std::printf("dec: nothing found below %s\n", data.c_str());
+            return n > 0 ? 0 : 3;
+        }
+        ab::UseDecFolder(data, decFolder);
+        std::printf("dec: reading scripts and levels from %s first\n", decFolder.c_str());
+    }
 
     // config.lua: --config, else the folder that holds the data folder (where the original exe sits), else the working folder
     WindowConfig wc;

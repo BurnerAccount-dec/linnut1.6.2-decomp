@@ -625,7 +625,7 @@ struct b2PositionSolverManifold
 				normal = pointB - pointA;
 				normal.Normalize();
 				point = 0.5f * (pointA + pointB);
-				separation = b2Dot(pointB - pointA, normal) - pc->radiusA - pc->radiusB;
+				separation = b2Dot(pointB - pointA, normal) - (pc->radiusA + pc->radiusB) * b2_solverSkinFraction;
 			}
 			break;
 
@@ -635,7 +635,7 @@ struct b2PositionSolverManifold
 				b2Vec2 planePoint = b2Mul(xfA, pc->localPoint);
 
 				b2Vec2 clipPoint = b2Mul(xfB, pc->localPoints[index]);
-				separation = b2Dot(clipPoint - planePoint, normal) - pc->radiusA - pc->radiusB;
+				separation = b2Dot(clipPoint - planePoint, normal) - (pc->radiusA + pc->radiusB) * b2_solverSkinFraction;
 				point = clipPoint;
 			}
 			break;
@@ -646,7 +646,7 @@ struct b2PositionSolverManifold
 				b2Vec2 planePoint = b2Mul(xfB, pc->localPoint);
 
 				b2Vec2 clipPoint = b2Mul(xfA, pc->localPoints[index]);
-				separation = b2Dot(clipPoint - planePoint, normal) - pc->radiusA - pc->radiusB;
+				separation = b2Dot(clipPoint - planePoint, normal) - (pc->radiusA + pc->radiusB) * b2_solverSkinFraction;
 				point = clipPoint;
 
 				// Ensure normal points from A to B

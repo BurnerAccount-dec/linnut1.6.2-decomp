@@ -131,12 +131,13 @@ class Impl : public PhysicsWorld, public b2ContactListener, public b2ContactFilt
 public:
     Impl() : world_(b2Vec2(kGravityX, kGravityY), true) {
         world_.SetWarmStarting(true);
-        world_.SetContinuousPhysics(true);
+        world_.SetContinuousPhysics(std::getenv("AB_NOCCD") == nullptr);   // AB_NOCCD=1: test without continuous collision
         world_.SetContactListener(this);
         world_.SetContactFilter(this);
         world_.SetDestructionListener(this);
 #ifdef AB_BOX2D_V22
         if (const char* r = std::getenv("AB_POLYRADIUS")) b2_polygonRadiusValue = (float)std::atof(r);   // test override
+        if (const char* r = std::getenv("AB_SOLVERSKIN")) b2_solverSkinFraction = (float)std::atof(r);   // test override
 #endif
     }
 
@@ -153,7 +154,21 @@ public:
     float PolygonRadius() const override { return b2_polygonRadiusValue; }
 #endif
 
-    void Step(float dt, int velocityIterations, int positionIterations) override { world_.Step(dt, velocityIterations, positionIterations); }
+    void Step(float dt, int velocityIterations, int positionIterations) override {
+        world_.Step(dt, velocityIterations, positionIterations);
+        // debug aid: AB_CONTACTDBG=<part of an object name> lists the contacts of the matching objects after every step
+        static const char* watch = std::getenv("AB_CONTACTDBG");
+        static int stepNo = 0;
+        stepNo++;
+        if (watch)
+            for (b2Contact* c = world_.GetContactList(); c; c = c->GetNext()) {
+                PhysObject* a = static_cast<PhysObject*>(c->GetFixtureA()->GetUserData());
+                PhysObject* b = static_cast<PhysObject*>(c->GetFixtureB()->GetUserData());
+                if (!a || !b || (a->name.find(watch) == std::string::npos && b->name.find(watch) == std::string::npos)) continue;
+                std::fprintf(stderr, "CT %d %s | %s touching=%d enabled=%d points=%d\n", stepNo, a->name.c_str(), b->name.c_str(),
+                             c->IsTouching() ? 1 : 0, c->IsEnabled() ? 1 : 0, c->GetManifold()->pointCount);
+            }
+    }
     void ClearForces() override { world_.ClearForces(); }
     void SetGravity(float x, float y) override { world_.SetGravity(b2Vec2(x, y)); }
     void GetGravity(float& x, float& y) const override { b2Vec2 g = world_.GetGravity(); x = g.x; y = g.y; }
