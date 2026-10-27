@@ -38,31 +38,32 @@ These are not in any of the supported games; the engine adds them so scripts can
     drawSprite("BLOCK_WOOD_1", x, y)
     setRenderState(-screen.left, -screen.top, worldScale, worldScale, 0, 0, 0, 1)     -- back to solid
 
-Masked and tiled sprites ignore the alpha.
+Masked and tiled sprites (the ground blocks) use it as well.
 
 ### Collider types
 
-Collider types decide which objects can hit which, as in Angry Birds 3.0.1 and the last Seasons (ghost blocks). The engine gives every script the global table `collider_types`: `basic`=0, `eagle`=1, `static`=2, `bird`=3, `pig`=4, `ghost`=5, `sticky`=6. By default all types collide with each other, except ghost objects, which only collide with birds and the eagle.
+Collider types decide which objects can hit which, as in Angry Birds 3.0.1 and the last Seasons (ghost blocks). The engine only provides the numbers and the commands; the names are a table in the game's own script. In Angry Birds 3.0.1 that table is `collider_types` in `blocks.lua`. The other games do not have it, so to use names there add the same table to your own `blocks.lua` (or `gamelogic.lua`) as a plain global array:
 
-- `setColliderType(objectName, type)` / `getColliderType(objectName)`: give an object a type (call it after the object exists, for example right after `createObject`).
-- `setColliderRule(typeA, typeB, collides)` / `getColliderRule(typeA, typeB)`: change one pair (it works both ways round). `collides` is `true` or `false`.
-- The sticky type is stored but has no special behaviour yet.
+    collider_types = { basic = 0, eagle = 1, static = 2, bird = 3, pig = 4, ghost = 5, sticky = 6 }
 
-To use your own array of types in a script, add a table next to `collider_types` and use it with the commands, the same way the scripts use their other tables. For example, in `gamelogic.lua`:
+and keep going with your own numbers (the rule table holds 16 types, 0 to 15):
 
-    -- your own types after the engine's: 7 and up
     my_types = { ice_ghost = 7, glass_wall = 8 }
 
-    -- types 7 and up are free to use: say what they collide with
+Commands:
+
+- `setColliderType(objectName, type)` / `getColliderType(objectName)`: give an object a type (call it after the object exists, for example right after `createObject`). The type is a number 0 to 15.
+- `setColliderRule(typeA, typeB, collides)` / `getColliderRule(typeA, typeB)`: change one pair (it works both ways round). `collides` is `true` or `false`.
+- By default every type collides with every other, except type 5 (ghost), which only collides with 1 (eagle) and 3 (bird). The sticky type (6) is stored but has no special behaviour yet.
+
+Example, in a script that has the table above:
+
     setColliderRule(my_types.ice_ghost, collider_types.bird, true)
     setColliderRule(my_types.ice_ghost, collider_types.pig, false)
     setColliderRule(my_types.ice_ghost, my_types.glass_wall, false)
 
-    -- after an object is created:
     local name = createObject(blockTable, "BLOCK_GLASS_1", nil, x, y)
     setColliderType(name, my_types.ice_ghost)
-
-The rule table holds 16 types (0 to 15). A pair you never set uses the default above (everything collides, ghost only with bird and eagle).
 
 ### Polygon skin
 

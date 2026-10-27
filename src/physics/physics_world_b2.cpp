@@ -130,7 +130,7 @@ float RelativeAngle(const b2Body* a, const b2Body* b) {
 class Impl : public PhysicsWorld, public b2ContactListener, public b2ContactFilter, public b2DestructionListener {
 public:
     Impl() : world_(b2Vec2(kGravityX, kGravityY), true) {
-        world_.SetWarmStarting(true);
+        world_.SetWarmStarting(std::getenv("AB_NOWARM") == nullptr);
         world_.SetContinuousPhysics(std::getenv("AB_NOCCD") == nullptr);   // AB_NOCCD=1: test without continuous collision
         world_.SetContactListener(this);
         world_.SetContactFilter(this);
@@ -155,6 +155,14 @@ public:
 #endif
 
     void Step(float dt, int velocityIterations, int positionIterations) override {
+        // Box2D 2.2.0 needs more velocity iterations than 2.1 for the long revolute chains and balloon strings of Rio levels (Smuggler's Plane
+        // 12-15 blows up after 2 s with 10, and the block stacks settle better); the retail exe's exact count is not known.
+#ifdef AB_BOX2D_V22
+        if (velocityIterations < 20) velocityIterations = 20;
+#endif
+        static const char* vi = std::getenv("AB_VELITERS"); static const char* pi = std::getenv("AB_POSITERS");   // test overrides
+        if (vi) velocityIterations = std::atoi(vi);
+        if (pi) positionIterations = std::atoi(pi);
         world_.Step(dt, velocityIterations, positionIterations);
         // debug aid: AB_CONTACTDBG=<part of an object name> lists the contacts of the matching objects after every step
         static const char* watch = std::getenv("AB_CONTACTDBG");
@@ -250,6 +258,7 @@ public:
         PhysObject* o1 = Find(d.end1);
         PhysObject* o2 = Find(d.end2);
         if (!o1 || !o2) return false;
+        if (std::getenv("AB_JOINTDBG") && d.end1.find(std::getenv("AB_JOINTDBG")) != std::string::npos) std::fprintf(stderr, "JT type=%d %s - %s coord=%d freq=%g damp=%g limit=%d lo=%g hi=%g motor=%d coll=%d\n", d.type, d.end1.c_str(), d.end2.c_str(), d.coordType, d.frequency, d.dampingRatio, (int)d.limit, d.lowerLimit, d.upperLimit, (int)d.motor, (int)d.collideConnected);
         b2Body* b1 = BodyOf(o1);
         b2Body* b2b = BodyOf(o2);
         b2Joint* joint = nullptr;

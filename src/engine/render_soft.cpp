@@ -41,8 +41,8 @@ void SoftwareBackend::DrawQuad(int texture, const float xy[8], const float uv[8]
     Raster(texture, -1, xy, uv, nullptr, cr, cg, cb, ca);
 }
 
-void SoftwareBackend::DrawMaskedQuad(int tileTexture, int maskTexture, const float xy[8], const float tileUV[8], const float maskUV[8]) {
-    Raster(tileTexture, maskTexture, xy, tileUV, maskUV, 1, 1, 1, 1);
+void SoftwareBackend::DrawMaskedQuad(int tileTexture, int maskTexture, const float xy[8], const float tileUV[8], const float maskUV[8], float alpha) {
+    Raster(tileTexture, maskTexture, xy, tileUV, maskUV, 1, 1, 1, alpha);
 }
 
 void SoftwareBackend::Raster(int texture, int mask, const float xy[8], const float uv[8], const float maskUV[8], float cr, float cg, float cb, float ca) {

@@ -19,7 +19,7 @@ public:
     int CreateTexture(const Image& image, bool repeat = false) override;
     void BeginFrame(int width, int height, float r, float g, float b) override;
     void DrawQuad(int texture, const float xy[8], const float uv[8], float r, float g, float b, float a) override;
-    void DrawMaskedQuad(int tileTexture, int maskTexture, const float xy[8], const float tileUV[8], const float maskUV[8]) override;
+    void DrawMaskedQuad(int tileTexture, int maskTexture, const float xy[8], const float tileUV[8], const float maskUV[8], float alpha) override;
     void SetClip(bool enabled, float x, float y, float w, float h) override;
     void EndFrame() override;
 

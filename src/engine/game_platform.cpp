@@ -145,6 +145,7 @@ PhysicsWorld& GamePlatform::Physics() {
     if (physics_) return *physics_;
     Box2DVersion ver = scripts_ && scripts_->IsRio() ? Box2DVersion::V22 : Box2DVersion::V21;
     if (const char* f = std::getenv("AB_BOX2D")) ver = std::string(f) == "21" ? Box2DVersion::V21 : Box2DVersion::V22;  // test override
+    if (requestedBox2D_) ver = requestedBox2D_ == 21 ? Box2DVersion::V21 : Box2DVersion::V22;
     physics_ = MakePhysicsWorld(ver);
     if (std::getenv("AB_PHYSDBG")) std::fprintf(stderr, "PHYS Box2D %s\n", physics_->Version() == Box2DVersion::V22 ? "2.2.0" : "2.1.1");
     physics_->onBeginContact = [this](PhysObject& a, PhysObject& b, ContactHandle& c) { OnContact(a, b, c); };
@@ -241,9 +242,11 @@ void GamePlatform::RunFrame(float dt) {
         static int execFrame = 0;
         const char* at = std::getenv("AB_EXEC_FRAME");
         const char* at2 = std::getenv("AB_EXEC2_FRAME");
+        const char* at3 = std::getenv("AB_EXEC3_FRAME");
         ++execFrame;
         if (scripts_ && at && execFrame == std::atoi(at) && std::getenv("AB_EXEC")) scripts_->RunString(std::getenv("AB_EXEC"));
         if (scripts_ && at2 && execFrame == std::atoi(at2) && std::getenv("AB_EXEC2")) scripts_->RunString(std::getenv("AB_EXEC2"));
+        if (scripts_ && at3 && execFrame == std::atoi(at3) && std::getenv("AB_EXEC3")) scripts_->RunString(std::getenv("AB_EXEC3"));
     }
     if (scripts_ && scripts_->IsRio() && dt > 0) {
         if (Physics().Frame().running) UpdateRioGettingUp(dt);
@@ -276,6 +279,10 @@ void GamePlatform::Print(const std::string& text) {
 
 // 0x40d2c0: the old level's bodies are destroyed and the step accumulator restarts
 void GamePlatform::BeginLevelLoad() {
+    if (physics_ && requestedBox2D_ && physics_->Version() != (requestedBox2D_ == 21 ? Box2DVersion::V21 : Box2DVersion::V22)) {
+        physics_.reset();                         // the console asked for the other Box2D: the old level is gone anyway, make the new world
+        std::printf("console: physics is now Box2D %s\n", requestedBox2D_ == 21 ? "2.1.1" : "2.2.0");
+    }
     Physics().Clear();
     // a new level (or a restart) starts without the old one's particles and bird trails
     particles_.clear();
@@ -722,7 +729,7 @@ void GamePlatform::DrawSpriteAt(const SpriteSheet& sheet, const Sprite& spr, flo
     if (state_.flipX) std::swap(u0, u1);
     const float us[4] = {u0, u1, u1, u0}, vs[4] = {v0, v0, v1, v1};
     for (int i = 0; i < 4; i++) { uv[i * 2] = us[i]; uv[i * 2 + 1] = vs[i]; }
-    if (tileTexture_) backend_->DrawMaskedQuad(tileTexture_->handle, tex->handle, xy, tileUV, uv);
+    if (tileTexture_) backend_->DrawMaskedQuad(tileTexture_->handle, tex->handle, xy, tileUV, uv, state_.alpha);
     else backend_->DrawQuad(tex->handle, xy, uv, 1, 1, 1, state_.alpha);
 }
 
@@ -1591,5 +1598,41 @@ void GamePlatform::UpdateRioGettingUp(float dt) {
         }
     }
     lua_settop(L, top);
+}
+}  // namespace ab
+
+namespace ab {
+// What the command prompt window accepts (main.cpp reads the lines on a thread and hands them over here once per frame).
+void GamePlatform::ConsoleCommand(const std::string& raw) {
+    std::string line = raw;
+    while (!line.empty() && (line.back() == '\r' || line.back() == '\n' || line.back() == ' ')) line.pop_back();
+    size_t s = line.find_first_not_of(' ');
+    if (s == std::string::npos) return;
+    line = line.substr(s);
+    std::string cmd = line.substr(0, line.find(' '));
+    std::string arg = line.size() > cmd.size() ? line.substr(cmd.size() + 1) : "";
+    if (cmd == "help" || cmd == "?") {
+        std::printf(
+            "Console commands (anything else is run as Lua code among the game's scripts):\n"
+            "  help                    this list\n"
+            "  box2d [21|22]           show / choose the physics library; it changes when the next level loads (restart the level)\n"
+            "  polyradius [r]          show / set the collision skin of boxes and polygons made from now on (Box2D 2.2)\n"
+            "  lua <code>              run Lua code, for example: lua print(levelName)\n");
+    } else if (cmd == "box2d") {
+        if (arg == "21" || arg == "22") {
+            requestedBox2D_ = std::atoi(arg.c_str());
+            std::printf("console: Box2D %s is used from the next level load (restart the level to apply it)\n", arg == "21" ? "2.1.1" : "2.2.0");
+        } else {
+            std::printf("console: physics is Box2D %s%s\n", physics_ ? (physics_->Version() == Box2DVersion::V22 ? "2.2.0" : "2.1.1") : "not started",
+                        requestedBox2D_ ? (requestedBox2D_ == 21 ? " (2.1.1 requested)" : " (2.2.0 requested)") : "");
+        }
+    } else if (cmd == "polyradius") {
+        if (!arg.empty()) Physics().SetPolygonRadius((float)std::atof(arg.c_str()));
+        if (Physics().Version() == Box2DVersion::V22) std::printf("console: polygon radius %g (applies to shapes made afterwards)\n", Physics().PolygonRadius());
+        else std::printf("console: Box2D 2.1 has a fixed polygon radius of 0.1\n");
+    } else if (scripts_) {
+        scripts_->RunString((cmd == "lua" ? arg : line).c_str());
+    }
+    std::fflush(stdout);
 }
 }  // namespace ab

@@ -36,6 +36,32 @@ extern "C" {
 #include "engine/png_decoder.h"
 #include "window/gl_backend.h"
 
+// ---- the console: lines typed into the command prompt window are read on a thread and run on the main thread, once per frame
+static SDL_mutex* g_consoleLock = nullptr;
+static std::vector<std::string> g_consoleLines;
+static int ConsoleReader(void*) {
+    char buf[1024];
+    while (std::fgets(buf, sizeof buf, stdin)) {
+        SDL_LockMutex(g_consoleLock);
+        g_consoleLines.push_back(buf);
+        SDL_UnlockMutex(g_consoleLock);
+    }
+    return 0;
+}
+static void StartConsole() {
+    g_consoleLock = SDL_CreateMutex();
+    if (SDL_Thread* t = SDL_CreateThread(ConsoleReader, "console", nullptr)) SDL_DetachThread(t);
+    std::printf("Console: type help and press Enter in this window for commands (box2d 21, lua ..., polyradius ...)\n");
+}
+static std::vector<std::string> TakeConsoleLines() {
+    std::vector<std::string> out;
+    if (!g_consoleLock) return out;
+    SDL_LockMutex(g_consoleLock);
+    out.swap(g_consoleLines);
+    SDL_UnlockMutex(g_consoleLock);
+    return out;
+}
+
 using namespace ab;
 
 static int MapKey(SDL_Keycode k) {
@@ -308,6 +334,7 @@ static int GameMain(int argc, char** argv) {
     cfg.screenWidth = (float)pw;
     cfg.screenHeight = (float)ph;
     GamePlatform platform(data);
+    if (!shotFrames || std::getenv("AB_CONSOLE")) StartConsole();   // AB_CONSOLE=1 also in a --screenshot run (tests)
     // --userdata <folder> keeps settings.lua / highscores.lua there; "original" is the folder the game itself
     // uses, %APPDATA%\Rovio\<product>, whose encrypted files are read and written in their own format
     if (userData.empty() && !shotFrames) userData = "original";     // like the game itself; --userdata . keeps saves in the working folder
@@ -456,6 +483,7 @@ static int GameMain(int argc, char** argv) {
         backend.SetWindowSize(pw, ph);
         platform.Resize(pw, ph);                        // the screen is the window
         input.Apply(host.State());
+        for (const std::string& l : TakeConsoleLines()) platform.ConsoleCommand(l);
         platform.BeginFrame();
         platform.SetSpeedBoost((SDL_GetModState() & KMOD_SHIFT) != 0);     // holding Shift doubles the speed
         platform.RunFrame(dt);
