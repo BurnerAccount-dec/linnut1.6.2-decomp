@@ -85,6 +85,9 @@ public:
     void EndFrame();
     const SpriteLibrary& Sprites() const { return sprites_; }
     PhysicsWorld& Physics();      // made on first use: the version of Box2D depends on the game
+    // The console of the command prompt window: one typed line (a command such as "box2d 21", or Lua code). Called on the main thread.
+    void ConsoleCommand(const std::string& line);
+    int requestedBox2D_ = 0;      // 21 or 22 from the console; applied when the next level loads (0 = the game's own)
     int birdCollisions = 0, blockCollisions = 0;     // callbacks made so far (for tests)
     const std::vector<std::string>& Log() const { return log_; }
 

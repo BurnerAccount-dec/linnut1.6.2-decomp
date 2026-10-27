@@ -225,8 +225,6 @@ bool ScriptHost::RunFile(const std::string& path) {
 }
 
 bool ScriptHost::LoadScripts() {
-    // the collider type names of Angry Birds 3.0.1's blocks.lua; the scripts may replace or extend the table
-    RunString("collider_types = {basic = 0, eagle = 1, static = 2, bird = 3, pig = 4, ghost = 5, sticky = 6}\n");
     const char* files[] = {"/loadlist.lua", "/gamelogic.lua"};
     for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
         if (!RunFile(config_.scriptPath + files[i])) return false;

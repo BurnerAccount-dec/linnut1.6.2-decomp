@@ -96,6 +96,10 @@ add_test(NAME level_writer COMMAND ab_level_writer_tests)
 add_executable(ab_png_tests tests/png_decoder_test.cpp)
 target_link_libraries(ab_png_tests ab_engine)
 
+add_executable(ab_alpha_tests tests/alpha_test.cpp)
+target_link_libraries(ab_alpha_tests ab_engine)
+add_test(NAME alpha COMMAND ab_alpha_tests)
+
 add_executable(ab_render_test tests/render_test.cpp)
 target_link_libraries(ab_render_test ab_engine)
 

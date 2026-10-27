@@ -125,7 +125,7 @@ void GlBackend::DrawQuad(int texture, const float xy[8], const float uv[8], floa
 }
 
 // Two texture units: unit 0 gives the colour (the tile texture), unit 1 multiplies the alpha by the mask's alpha.
-void GlBackend::DrawMaskedQuad(int tileTexture, int maskTexture, const float xy[8], const float tileUV[8], const float maskUV[8]) {
+void GlBackend::DrawMaskedQuad(int tileTexture, int maskTexture, const float xy[8], const float tileUV[8], const float maskUV[8], float alpha) {
     if (!gl_->ActiveTexture || !gl_->MultiTexCoord2f) return;
     if (tileTexture < 0 || tileTexture >= (int)textures_.size() || maskTexture < 0 || maskTexture >= (int)textures_.size()) return;
     gl_->ActiveTexture(GL_TEXTURE0);
@@ -145,7 +145,7 @@ void GlBackend::DrawMaskedQuad(int tileTexture, int maskTexture, const float xy[
     gl_->TexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
     gl_->TexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_TEXTURE);
     gl_->TexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
-    gl_->Color4f(1, 1, 1, 1);
+    gl_->Color4f(alpha, alpha, alpha, alpha);   // premultiplied, like DrawQuad: the sprite alpha scales colour and alpha
     gl_->Begin(GL_QUADS);
     for (int i = 0; i < 4; i++) {
         gl_->MultiTexCoord2f(GL_TEXTURE0, tileUV[i * 2], tileUV[i * 2 + 1]);
