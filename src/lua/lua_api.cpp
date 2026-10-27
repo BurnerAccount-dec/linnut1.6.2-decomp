@@ -753,6 +753,9 @@ int l_setCollisionEnabled(lua_State* L) { P(L)->SetCollisionEnabled(S(L, 1), B(L
 // setColliderType(name, type) / getColliderType(name) -> type (-1: no such object); setColliderRule(typeA, typeB, collides) / getColliderRule(typeA, typeB)
 int l_setColliderType(lua_State* L) { P(L)->SetColliderType(S(L, 1), (int)N(L, 2)); return 0; }
 int l_getColliderType(lua_State* L) { lua_pushnumber(L, P(L)->ColliderType(S(L, 1))); return 1; }
+// setObjectAlpha(name, alpha) / getObjectAlpha(name): transparency of one object when drawGameNative draws it (0 invisible .. 1 solid; -1: no such object)
+int l_setObjectAlpha(lua_State* L) { P(L)->SetObjectAlpha(S(L, 1), N(L, 2)); return 0; }
+int l_getObjectAlpha(lua_State* L) { lua_pushnumber(L, P(L)->ObjectAlpha(S(L, 1))); return 1; }
 int l_setColliderRule(lua_State* L) { P(L)->SetColliderRule((int)N(L, 1), (int)N(L, 2), B(L, 3)); return 0; }
 int l_getColliderRule(lua_State* L) { lua_pushboolean(L, P(L)->ColliderRule((int)N(L, 1), (int)N(L, 2))); return 1; }
 // setPolygonRadius(r) / getPolygonRadius(): the skin of the boxes and polygons that are created afterwards (Angry Birds Rio's Box2D 2.2)
@@ -1251,7 +1254,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"getVelocity", l_getVelocity}, {"hasMovingObjects", l_hasMovingObjects},
         {"hasMovingObjectsZeroTolerance", l_hasMovingObjectsZeroTolerance}, {"getLocalPoint", l_getLocalPoint},
         {"setCollisionEnabled", l_setCollisionEnabled},
-        {"setColliderType", l_setColliderType}, {"getColliderType", l_getColliderType}, {"setColliderRule", l_setColliderRule}, {"getColliderRule", l_getColliderRule},
+        {"setObjectAlpha", l_setObjectAlpha}, {"getObjectAlpha", l_getObjectAlpha}, {"setColliderType", l_setColliderType}, {"getColliderType", l_getColliderType}, {"setColliderRule", l_setColliderRule}, {"getColliderRule", l_getColliderRule},
         {"setPolygonRadius", l_setPolygonRadius}, {"getPolygonRadius", l_getPolygonRadius}, {"removeJointsFromObject", l_removeJointsFromObject},
         {"getIntersectingObjects", l_getIntersectingObjects},
         {"setParticleSystemLimits", l_nothing}, {"clearParticleCache", l_nothing}, {"enableInGameParticlesNative", l_nothing},

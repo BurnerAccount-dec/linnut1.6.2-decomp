@@ -1162,6 +1162,7 @@ void GamePlatform::DrawPhysObject(PhysObject& o) {
         if (t) tileTexture_ = t;
     }
     // 0x4165xx: a scaled sprite shrinks about its pivot, the pivot stays where it was on the screen
+    state_.alpha = o.alpha;                       // setObjectAlpha; the state is put back by the caller
     RenderState saved = state_;
     if (o.disableRotation) state_.angle = 0;     // 0x41b2c0: setObjectParameter 10 draws the sprite upright
     // the draw scale is the object's own scale plus the wobble after a hit (0x40b2xx: x gets +sin, y gets -sin of the same phase)
@@ -1216,11 +1217,12 @@ void GamePlatform::DrawGame() {
     // Angry Birds Rio draws each group by z order (equal z keeps the creation order); the earlier games use creation order
     bool rio = scripts_ && scripts_->IsRio();
     auto drawGroup = [&](auto pick) {
-        if (!rio) { for (auto& o : objects) if (pick(*o)) DrawPhysObject(*o); return; }
+        if (!rio) { for (auto& o : objects) if (pick(*o)) DrawPhysObject(*o); state_.alpha = 1; return; }
         std::vector<PhysObject*> group;
         for (auto& o : objects) if (pick(*o)) group.push_back(o.get());
         std::stable_sort(group.begin(), group.end(), [](PhysObject* a, PhysObject* b) { return a->zOrder < b->zOrder; });
         for (PhysObject* o : group) DrawPhysObject(*o);
+        state_.alpha = 1;                          // setObjectAlpha belongs to one object, not to what is drawn next
     };
     drawGroup([&](PhysObject& o) { return isStatic(o) && o.zOrder < 5; });
     drawGroup([&](PhysObject& o) { return !o.isBird && !isStatic(o) && !o.drawWithBirds && o.zOrder < 5; });
