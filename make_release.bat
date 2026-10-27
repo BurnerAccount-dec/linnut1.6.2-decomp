@@ -26,7 +26,7 @@ powershell -NoProfile -Command "Compress-Archive -Force -Path dist\* -Destinatio
 
 echo.
 echo DONE. The exe is clean. Upload this file to the GitHub release:
-echo   C:\abbuild\AngryBirdsEngine-v1.9.zip
+echo   C:\abbuild\AngryBirdsEngine-v2.0.zip
 exit /b 0
 
 :personal

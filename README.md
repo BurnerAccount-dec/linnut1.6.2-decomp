@@ -100,6 +100,18 @@ These are the functions the engine registers for the scripts (all in `src/lua/lu
 | `--use-dec [folder]` | read the scripts from that folder (where a file exists there) instead of the game's own |
 | `--size <w> <h>`, `--screenshot <file> <frames>`, `--click`, `--drag`, `--key`, `--wheel`, `--audio-out` | test-render helpers: run for some frames, feed input, write a picture or the audio |
 
+### The console (typing into the command prompt window)
+
+The window that opens behind the game accepts typed lines. Click into it, type a line and press Enter; the game keeps running.
+
+| You type | What happens |
+|---|---|
+| `help` | lists these commands |
+| `box2d` | shows which physics library is running |
+| `box2d 21` / `box2d 22` | choose Box2D 2.1.1 or 2.2.0; it is switched when the next level loads (restart the level). The same as the `AB_BOX2D` variable, without restarting the engine |
+| `polyradius 0.1` | collision skin of boxes and polygons made from now on (Box2D 2.2) |
+| `lua <code>` or just the code | runs Lua among the game's scripts, for example `lua print(score)` or `lua setAlpha(0.5)` |
+
 Environment variables, set in the command prompt before starting the engine (`set NAME=value`, `set NAME=` to clear):
 
 | Variable | What it does |
@@ -108,10 +120,14 @@ Environment variables, set in the command prompt before starting the engine (`se
 | `AB_POLYRADIUS=r` | collision skin of boxes and polygons (2.2 only, default 0.1) |
 | `AB_SOLVERSKIN=f` | how much of the skin the 2.2 position solver keeps between blocks (default 0; 1 is stock Box2D and pushes flush stacks apart) |
 | `AB_NOCCD=1` | switch off continuous collision for fast objects |
+| `AB_VELITERS=n`, `AB_POSITERS=n` | velocity / position solver iterations per step (the engine runs 20 velocity iterations with Box2D 2.2) |
+| `AB_NOWARM=1` | switch off warm starting (tests) |
+| `AB_JOINTDBG=<text>` | print the joints created for objects whose name contains the text |
+| `AB_CONSOLE=1` | keep the typed console on in a `--screenshot` run (tests) |
 | `AB_NODEBUGKEYS=1` | run without the developers' keys and the editor button |
 | `AB_SLOWFRAMES=1` | print every frame that took over 25 ms |
 | `AB_CONTACTDBG=<text>`, `AB_PHYSDBG=1`, `AB_BODYDUMP=n` | physics debugging: contacts whose names contain the text, general physics log, positions of every body every n steps |
-| `AB_EXEC='<lua>'`, `AB_EXEC_FRAME=n` (and `AB_EXEC2`, `AB_EXEC2_FRAME`) | run a Lua snippet in the scripts' environment at a frame, for tests |
+| `AB_EXEC='<lua>'`, `AB_EXEC_FRAME=n` (and `AB_EXEC2`, `AB_EXEC3` with their `_FRAME`) | run a Lua snippet in the scripts' environment at a frame, for tests |
 
 ## The `dec` folder (plain-text scripts)
 

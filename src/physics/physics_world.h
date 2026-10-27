@@ -78,6 +78,7 @@ struct PhysObject : FrameObject {
     bool canGetUp = false, gettingUp = false;        // Rio id 14 (+0x96) and the exe's "getting up" state (+0x9a)
     float getUpTimer = 0;                            // +0x9c
     int colliderType = 0;                            // setColliderType (Angry Birds 3.0.1 / Seasons): 0 basic, 1 eagle, 2 static, 3 bird, 4 pig, 5 ghost, 6 sticky
+    float alpha = 1;                                 // setObjectAlpha (engine addition): drawGameNative draws the object with this transparency, 0 invisible .. 1 solid
 };
 
 // The contact that is being reported, as far as the game code touches it.
@@ -148,6 +149,8 @@ public:
     enum { kColliderTypes = 16 };
     void SetColliderType(const std::string& n, int type);
     int ColliderType(const std::string& n) const;
+    void SetObjectAlpha(const std::string& n, float a);       // 0..1, clamped
+    float ObjectAlpha(const std::string& n) const;            // -1 if there is no such object
     void SetColliderRule(int a, int b, bool collide);
     bool ColliderRule(int a, int b) const;
     void RemoveJointsFromObject(const std::string& n);

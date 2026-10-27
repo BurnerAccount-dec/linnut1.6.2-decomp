@@ -135,6 +135,8 @@ public:
     void SetCollisionEnabled(const std::string& n, bool on) override { Physics().SetCollisionEnabled(n, on); }
     void SetColliderType(const std::string& n, int type) override { Physics().SetColliderType(n, type); }
     int ColliderType(const std::string& n) override { return Physics().ColliderType(n); }
+    void SetObjectAlpha(const std::string& n, float a) override { Physics().SetObjectAlpha(n, a); }
+    float ObjectAlpha(const std::string& n) override { return Physics().ObjectAlpha(n); }
     void SetColliderRule(int a, int b, bool collide) override { Physics().SetColliderRule(a, b, collide); }
     bool ColliderRule(int a, int b) override { return Physics().ColliderRule(a, b); }
     void SetPolygonRadius(float r) override { Physics().SetPolygonRadius(r); }

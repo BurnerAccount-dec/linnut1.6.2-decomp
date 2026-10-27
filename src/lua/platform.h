@@ -110,6 +110,8 @@ public:
     // collider types (Angry Birds 3.0.1 / Seasons) and the polygon skin of Angry Birds Rio's physics
     virtual void SetColliderType(const std::string& n, int type) { (void)n; (void)type; }
     virtual int ColliderType(const std::string& n) { (void)n; return -1; }
+    virtual void SetObjectAlpha(const std::string& n, float a) { (void)n; (void)a; }
+    virtual float ObjectAlpha(const std::string& n) { (void)n; return -1; }
     virtual void SetColliderRule(int a, int b, bool collide) { (void)a; (void)b; (void)collide; }
     virtual bool ColliderRule(int a, int b) { (void)a; (void)b; return true; }
     virtual void SetPolygonRadius(float r) { (void)r; }

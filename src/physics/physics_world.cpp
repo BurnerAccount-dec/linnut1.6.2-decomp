@@ -301,6 +301,14 @@ int PhysicsWorld::ColliderType(const std::string& n) const {
     PhysObject* o = Find(n);
     return o ? o->colliderType : -1;
 }
+void PhysicsWorld::SetObjectAlpha(const std::string& n, float a) {
+    PhysObject* o = Find(n);
+    if (o) o->alpha = a < 0 ? 0 : (a > 1 ? 1 : a);
+}
+float PhysicsWorld::ObjectAlpha(const std::string& n) const {
+    PhysObject* o = Find(n);
+    return o ? o->alpha : -1.0f;
+}
 void PhysicsWorld::SetColliderRule(int a, int b, bool collide) {
     if (a < 0 || b < 0 || a >= kColliderTypes || b >= kColliderTypes) return;
     colliderRules_.pair[a][b] = colliderRules_.pair[b][a] = collide;
