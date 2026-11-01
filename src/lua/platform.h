@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include "physics/collision_prediction.h"
 
 namespace ab {
 
@@ -41,6 +42,14 @@ struct JointParams {
     bool hasDampingRatio = false; float dampingRatio = 0;
 };
 
+// One shape of an Angry Birds Space compound body (addBox/Polygon/Line/CircleToCompoundList): placed relative to the body, in physics units
+struct CompoundShape {
+    int kind = 0;                 // 0 box, 1 polygon, 2 line, 3 circle
+    std::string sprite;
+    float x = 0, y = 0, angle = 0, w = 0, h = 0;   // circle: w is the radius
+    std::vector<float> verts;     // polygon: x,y pairs
+};
+
 struct BodyDef {
     std::string name, sprite;
     float x = 0, y = 0, w = 0, h = 0;      // circle: w is the radius
@@ -58,6 +67,7 @@ public:
     virtual void RequestExit() {}
     virtual void Print(const std::string& text) { (void)text; }
     virtual void SetBGColor(float r, float g, float b) { (void)r; (void)g; (void)b; }
+    virtual void GetBGColor(float& r, float& g, float& b) { r = g = b = 255; }   // 0..255, as setBGColor stored them
     virtual void CaptureMouse(bool on) { mouseCaptured_ = on; }
     virtual bool IsMouseCaptured() { return mouseCaptured_; }
     virtual void SetFullScreen(bool on) { fullScreen_ = on; }
@@ -86,6 +96,7 @@ public:
     // ---- physics
     // The three Create calls return the body mass (the exe writes it to objects.world[name].mass).
     virtual float CreateBox(const BodyDef& d) { (void)d; return 0; }
+    virtual float CreateCompound(const BodyDef& d, const std::vector<CompoundShape>& shapes, float damping) { (void)d; (void)shapes; (void)damping; return 0; }
     virtual float CreatePolygon(const BodyDef& d, const std::vector<float>& verts /* x,y pairs */) { (void)d; (void)verts; return 0; }
     virtual float CreateCircle(const BodyDef& d) { (void)d; return 0; }
     // d has the defaults applied; the call may change x1..y2 (coordType 0 writes the body positions).
@@ -96,23 +107,37 @@ public:
     virtual void DestroyJoint(const std::string& name) { (void)name; }
     // Returns the names of the links (createJoint type 5) that fired; the caller deletes joints[name].
     virtual std::vector<std::string> RemoveObject(const std::string& name) { (void)name; return std::vector<std::string>(); }
+    virtual CollisionPrediction PredictCollision(const std::string& a, const std::string& b, float restitution, const float* vel = nullptr) { (void)a; (void)b; (void)restitution; (void)vel; return CollisionPrediction(); }
+    virtual bool SetOwnGravityVector(const std::string& n, float gx, float gy) { (void)n; (void)gx; (void)gy; return false; }
+    virtual bool SetOwnGravityScale(const std::string& n, float scale) { (void)n; (void)scale; return false; }
+    virtual bool ResetOwnGravity(const std::string& n) { (void)n; return false; }
+    // Space getRayCastedObjects: the objects a segment crosses (0x46f3f0), with the hit point, the surface normal and the fraction of the segment
+    struct RayCastHit { std::string name; float px = 0, py = 0, nx = 0, ny = 0, fraction = 0; };
+    virtual void RayCastObjects(float x1, float y1, float x2, float y2, std::vector<RayCastHit>& out) { (void)x1; (void)y1; (void)x2; (void)y2; (void)out; }
+    virtual bool GetOwnGravity(const std::string& n, int& mode, float& gx, float& gy, float& scale) { (void)n; mode = 0; gx = gy = 0; scale = 1; return false; }
     virtual void ApplyImpulse(const std::string& n, float ix, float iy, float px, float py) { (void)n; (void)ix; (void)iy; (void)px; (void)py; }
     virtual void ApplyForce(const std::string& n, float fx, float fy, float px, float py) { (void)n; (void)fx; (void)fy; (void)px; (void)py; }
     virtual bool SetPosition(const std::string& n, float x, float y) { (void)n; (void)x; (void)y; return false; }   // false: no such object
     virtual bool SetRotation(const std::string& n, float a, float& normalized) { (void)n; normalized = a; return false; }
     virtual void SetVelocity(const std::string& n, float vx, float vy) { (void)n; (void)vx; (void)vy; }
     virtual void SetAngularVelocity(const std::string& n, float w) { (void)n; (void)w; }
+    virtual bool BodyCommand(const std::string& n, int cmd, float a, float& result) { (void)n; (void)cmd; (void)a; (void)result; return false; }
     virtual void SetSleeping(const std::string& n, bool sleeping) { (void)n; (void)sleeping; }
     virtual float GetAngle(const std::string& n) { (void)n; return 0; }
     virtual void GetWorldPoint(const std::string& n, float lx, float ly, float& wx, float& wy) { (void)n; wx = lx; wy = ly; }
     // Angry Birds Rio
     virtual float GetSpeed(const std::string& n) { (void)n; return 0; }
+    virtual void SetRecordVelocity(const std::string& n, bool on) { (void)n; (void)on; }
+    virtual bool GetVelocity(const std::string& n, float& vx, float& vy) { (void)n; vx = vy = 0; return false; }
     virtual bool HasMovingObjects(float tolerance) { (void)tolerance; return false; }
     virtual void GetLocalPoint(const std::string& n, float wx, float wy, float& lx, float& ly) { (void)n; lx = wx; ly = wy; }
     virtual void SetCollisionEnabled(const std::string& n, bool on) { (void)n; (void)on; }
     // collider types (Angry Birds 3.0.1 / Seasons) and the polygon skin of Angry Birds Rio's physics
     virtual void SetColliderType(const std::string& n, int type) { (void)n; (void)type; }
     virtual int ColliderType(const std::string& n) { (void)n; return -1; }
+    virtual float GetSpriteAngle(const std::string& n) { (void)n; return 0; }
+    virtual void SetDecoration(const std::string& n, const std::string& sprite, int amount, float increment, float scale) { (void)n; (void)sprite; (void)amount; (void)increment; (void)scale; }
+    virtual void SetSpriteLook(const std::string& n, int what, float a, float b) { (void)n; (void)what; (void)a; (void)b; }
     virtual void SetObjectAlpha(const std::string& n, float a) { (void)n; (void)a; }
     virtual float ObjectAlpha(const std::string& n) { (void)n; return -1; }
     virtual void SetObjectZOrder(const std::string& n, float z) { (void)n; (void)z; }
@@ -167,6 +192,7 @@ public:
     virtual void SetMaterial(const std::string& n, const std::string& material) { (void)n; (void)material; }
     virtual void SetTexture(const std::string& n, const std::string& texture) { (void)n; (void)texture; }
     virtual void SetTheme(const std::string& theme) { (void)theme; }
+    virtual void SetTrailSprite(bool special, const std::string& name) { (void)special; (void)name; }
     virtual void StartNewTrajectory() {}
     virtual void AddToTrajectory(float i, float x, float y) { (void)i; (void)x; (void)y; }
     virtual void AddPuffToTrajectory(float i, float x, float y) { (void)i; (void)x; (void)y; }
@@ -204,9 +230,17 @@ public:
     // rotateThemeSprites(dt) and updateBackgroundAndForegroundScrollingNative(dt, force)
     virtual void CreateThemeSpriteRio(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, int layer, float angleVel, bool flipped) {
         (void)name; (void)sprite; (void)x; (void)y; (void)scaleX; (void)scaleY; (void)angle; (void)layer; (void)angleVel; (void)flipped; }
+    // Angry Birds Space: createThemeAnimation(table) (0x484cc0), a theme sprite whose picture changes through `frames` every animDelay seconds
+    struct ThemeAnimation {
+        std::string name, sprite; std::vector<std::string> frames;
+        float x = 0, y = 0, scaleX = 1, scaleY = 1, angle = 0, velX = 0, velY = 0, scaleSpeed = 0;
+        float animTimer = 0, animDelay = 0, startingDelay = 0; bool loop = false; int layer = 0;
+    };
+    virtual void CreateThemeAnimation(const ThemeAnimation& a) { (void)a; }
     virtual void SetThemeSprite(const std::string& name, const std::string& sprite, int layer) { (void)name; (void)sprite; (void)layer; }
     virtual void RotateThemeSprites(float dt) { (void)dt; }
     virtual void ScrollThemeLayers(float dt, bool force) { (void)dt; (void)force; }
+    virtual void DrawTexturedLine2D(const std::string& sprite, float x1, float y1, float x2, float y2, float width, float r, float g, float b, float a) { (void)sprite; (void)x1; (void)y1; (void)x2; (void)y2; (void)width; (void)r; (void)g; (void)b; (void)a; }
     virtual void ResDrawSprite(const std::string& sprite, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height) {
         (void)sprite; (void)x; (void)y; (void)vAnchor; (void)hAnchor; (void)sized; (void)width; (void)height; }
         // vAlign "TOP"/"BOTTOM"/..., hAlign "LEFT"/"HCENTER"/...; group "" = current font
@@ -223,6 +257,8 @@ public:
     struct CompoItem { std::string sprite; float x = 0, y = 0, scale = 1, angle = 0; };
     virtual void SetupCompoObject(const std::string& object, const std::vector<CompoItem>& items, float scale) { (void)object; (void)items; (void)scale; }
     virtual bool CanvasMakeSprite(const std::string& name, int width, int height, int pivotX, int pivotY, bool save, const std::string& file) { (void)name; (void)width; (void)height; (void)pivotX; (void)pivotY; (void)save; (void)file; return false; }
+    // createSilhouette(newName, sourceSprite, r, g, b, a, outlineWidth): a new sprite with the shape of the source filled with one colour (outlineWidth > 0: only that many pixels along the edge)
+    virtual int CreateSilhouette(const std::string& name, const std::string& source, float r, float g, float b, float a, int outline) { (void)name; (void)source; (void)r; (void)g; (void)b; (void)a; (void)outline; return -1; }
     virtual bool CanvasLoadSprite(const std::string& name, const std::string& file, int pivotX, int pivotY) { (void)name; (void)file; (void)pivotX; (void)pivotY; return false; }
     virtual void ResGetSpriteBounds(const std::string& sheet, const std::string& sprite, float& w, float& h) { (void)sheet; (void)sprite; w = h = 0; }
     virtual void ResGetSpritePivot(const std::string& sheet, const std::string& sprite, float& px, float& py) { (void)sheet; (void)sprite; px = py = 0; }
@@ -261,6 +297,10 @@ public:
 
     // ---- particles.*
     // addParticles(type, amount, x, y, w, h, angle): type is the key in particleTable.particles
+    // Angry Birds Space: addParticlesWithScale (kind 1: scale begin a, scale end b) and addParticlesWithProperties (kind 2: min speed a, max speed b,
+    // min emitter angle c, max emitter angle d in radians) replace those values of the definition for one call
+    struct ParticleOverride { int kind = 0; float a = 0, b = 0, c = 0, d = 0; };
+    virtual void AddParticlesOverride(const std::string& type, float amount, float x, float y, float w, float h, float angle, const ParticleOverride& ov) { (void)type; (void)amount; (void)x; (void)y; (void)w; (void)h; (void)angle; (void)ov; }
     virtual void AddLevelParticles(const std::string& type, float amount, float x, float y, float w, float h, float angle, bool ignoreLimits) { (void)type; (void)amount; (void)x; (void)y; (void)w; (void)h; (void)angle; (void)ignoreLimits; }
     virtual void AddParticles(const std::string& type, float amount, float x, float y, float w, float h, float angle, bool ignoreLimits = false, bool second = false) {
         (void)type; (void)amount; (void)x; (void)y; (void)w; (void)h; (void)angle; }

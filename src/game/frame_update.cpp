@@ -34,7 +34,7 @@ void UpdateFrame(FrameState& s, FrameHost& host, float dt) {
     if (s.running) {
         // 1. fixed steps
         s.accumulator += dt * s.physicsScale;
-        while (s.accumulator > kFixedStep) {
+        while (s.stepOnEqual ? s.accumulator >= kFixedStep : s.accumulator > kFixedStep) {
             host.StepWorld(kFixedStep, 10, 10);
             s.accumulator -= kFixedStep;
             host.CallRemoveBlocks();
@@ -107,7 +107,9 @@ void UpdateFrame(FrameState& s, FrameHost& host, float dt) {
 
                     if (b.Mass() > 0.0f) {
                         // anything that leaves the level is frozen
-                        if (o->interpY > 20.0f) host.SetObjectBool(o->id, "frozen", true);
+                        if (s.stepOnEqual) {      // Space (0x483c13): outside any of the four limits, in either direction
+                            if ((float)s.levelMaxY < o->interpY || o->interpY < (float)s.levelMinY) host.SetObjectBool(o->id, "frozen", true);
+                        } else if (o->interpY > 20.0f) host.SetObjectBool(o->id, "frozen", true);
                         if (o->interpX < (float)s.levelMinX) host.SetObjectBool(o->id, "frozen", true);
                         if ((float)s.levelMaxX < o->interpX) host.SetObjectBool(o->id, "frozen", true);
                     }
@@ -123,6 +125,13 @@ void UpdateFrame(FrameState& s, FrameHost& host, float dt) {
                         host.SetObjectNumber(o->id, "yVel", vy);
                         host.SetObjectNumber(o->id, "angle", o->interpAngle);
                         done = true;
+                    } else if (o->recordVelocity) {
+                        // Space publishes these for an object the script flagged with setRecordVelocity (0x483eb6), the angle with them. The other
+                        // games' exes only do it for birds, so a script could not read a block's velocity from objects.world there; the engine sets the
+                        // flag on every object of those games, so objects.world[name].xVel / .yVel work for all of them
+                        host.SetObjectNumber(o->id, "xVel", vx);
+                        host.SetObjectNumber(o->id, "yVel", vy);
+                        if (o->recordAngle) host.SetObjectNumber(o->id, "angle", o->interpAngle);
                     }
                     if (!done && o->rolls) {
                         float w = b.AngularVelocity();

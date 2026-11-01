@@ -60,6 +60,8 @@ struct FrameObject {
     Body* body = nullptr;
     int rollMaterial = kRollNone;     // +0x18
     bool isBird = false;              // +0x87
+    bool recordVelocity = false;      // Space +0x189 (setRecordVelocity): xVel / yVel are published for this object too; the other games' objects always have it
+    bool recordAngle = false;         // Space: a recorded object also publishes its angle
     bool rolls = false;               // +0x88  makes rolling noise
     float rollFactor = 0;             // +0x70
     // +0x84 .. +0x30: velocity change queued by the collision code, applied after the next Step
@@ -110,9 +112,11 @@ struct FrameState {
     float accumulator = 0;            // Game+0x204
     int bufferIndex = 0;              // Game+0xc8
     int levelMinX = 0, levelMaxX = 0; // Game+0x2a4 / +0x2a8, set by setLevelLimits (args 1 and 3)
+    int levelMinY = 0, levelMaxY = 0; // Space: Game+0x3c0 / +0x3c4 (args 2 and 4); the other games freeze below y 20 instead
     bool versionReceived = false;     // Game+0x1c
     bool updateNoticePending = false; // Game+0x1d
     bool updateNoticeValue = false;   // Game+0x1e
+    bool stepOnEqual = false;         // Space (0x483xxx): the loop runs while accumulator >= step
     float physicsScale = 1;           // v2.2: physicsSpeedFactor. Only the physics steps see it (the accumulator grows by dt * physicsScale); Lua update(dt) is not scaled
     std::vector<FrameObject*> objects;     // the object hashtable
     std::vector<FrameObject*> birds;       // the array at Game+0x180 checked for pending velocity

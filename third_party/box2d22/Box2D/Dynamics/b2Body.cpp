@@ -127,6 +127,31 @@ void b2Body::SetType(b2BodyType type)
 
 	ResetMassData();
 
+	// AngryBirdsSpace.exe (0x496ed0): a body that becomes static loses its velocity, its sweep is collapsed onto the current
+	// position and the fixtures are synchronized; then every fixture is refiltered (0x49d790), which flags the contacts and touches the proxies.
+	if (b2_spaceBuild)
+	{
+		if (m_type == b2_staticBody)
+		{
+			m_linearVelocity.SetZero();
+			m_angularVelocity = 0.0f;
+			m_sweep.a0 = m_sweep.a;
+			m_sweep.c0 = m_sweep.c;
+			SynchronizeFixtures();
+		}
+
+		SetAwake(true);
+
+		m_force.SetZero();
+		m_torque = 0.0f;
+
+		for (b2Fixture* f = m_fixtureList; f; f = f->m_next)
+		{
+			f->Refilter();
+		}
+		return;
+	}
+
 	// AngryBirdsRio.exe (0x4e4c60) does not move the proxies or touch them when the type changes: a body that
 	// becomes static only loses its velocity, and the attached contacts are flagged for filtering.
 	if (m_type == b2_staticBody)

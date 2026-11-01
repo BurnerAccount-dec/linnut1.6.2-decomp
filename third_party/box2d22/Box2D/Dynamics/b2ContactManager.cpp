@@ -117,8 +117,9 @@ void b2ContactManager::Collide()
 		 
 		// AngryBirdsRio.exe (0x4ea100): a contact is skipped only when neither body is awake; the awake flag of
 		// a static body is never cleared, so a sleeping body keeps updating its contacts with the ground.
-		bool activeA = bodyA->IsAwake();
-		bool activeB = bodyB->IsAwake();
+		// AngryBirdsSpace.exe (0x4a1ce0) tests "awake and not static" for both bodies, as Box2D 2.3 does.
+		bool activeA = bodyA->IsAwake() && (!b2_spaceBuild || bodyA->GetType() != b2_staticBody);
+		bool activeB = bodyB->IsAwake() && (!b2_spaceBuild || bodyB->GetType() != b2_staticBody);
 
 		// At least one body must be awake and it must be dynamic or kinematic.
 		if (activeA == false && activeB == false)
@@ -289,6 +290,12 @@ void b2ContactManager::AddPair(void* proxyUserDataA, void* proxyUserDataB)
 
 	// AngryBirdsRio.exe (0x4ea250) does not wake the bodies when it creates a contact; they wake when the
 	// contact starts or stops touching (b2Contact::Update).
+	// AngryBirdsSpace.exe (0x4a1e60) wakes both bodies here, with no sensor check (the flag is set and the sleep time cleared at 0x4a1fb0).
+	if (b2_spaceBuild)
+	{
+		bodyA->SetAwake(true);
+		bodyB->SetAwake(true);
+	}
 
 	++m_contactCount;
 }

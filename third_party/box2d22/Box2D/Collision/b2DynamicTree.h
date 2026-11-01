@@ -122,6 +122,9 @@ private:
 	void FreeNode(int32 node);
 
 	void InsertLeaf(int32 node);
+	void InsertLeafSpace(int32 node);
+	void RemoveLeafSpace(int32 node);
+	int32 BalanceSpace(int32 node);
 	void RemoveLeaf(int32 node);
 
 	int32 ComputeHeight(int32 nodeId) const;

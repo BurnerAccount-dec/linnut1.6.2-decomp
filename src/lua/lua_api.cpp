@@ -107,12 +107,42 @@ int l_setGameOn(lua_State* L) { P(L)->SetGameOn(B(L, 1)); return 0; }
 
 // createThemeSprite(name, sprite, x, y, scaleX, scaleY, angle, speedX, layer) and friends
 bool RioMode(lua_State* L);
+bool IsSpaceData(lua_State* L);
+bool HasNum(lua_State* L, int t, const char* k);
+bool BoolOr(lua_State* L, int t, const char* k, bool def);
+float NumOr(lua_State* L, int t, const char* k, float def);
 int l_createThemeSprite(lua_State* L) {
-    if (RioMode(L)) {      // Rio: ..., angle, layer, angleVel, flipped
+    if (RioMode(L) || IsSpaceData(L)) {      // Rio and Space: ..., angle, layer, angleVel (Space calls it scaleSpeed), flipped [, velX, velY in Space]
         P(L)->CreateThemeSpriteRio(S(L, 1), S(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), (int)N(L, 8), N(L, 9), B(L, 10));
         return 0;
     }
     P(L)->CreateThemeSprite(S(L, 1), S(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), N(L, 8), (int)N(L, 9));
+    return 0;
+}
+// createThemeAnimation(table) (0x484cc0): layer, x, y, scaleX, scaleY, angle, name, spriteName, velX, velY, scaleSpeed, startAnimTimer, animDelay,
+// startingDelay, isAnimation, bLoop and animation (a list of the frames' sprite names)
+int l_createThemeAnimation(lua_State* L) {
+    if (!lua_istable(L, 1)) return 0;
+    Platform::ThemeAnimation a;
+    a.layer = (int)NumOr(L, 1, "layer", 0); a.x = NumOr(L, 1, "x", 0); a.y = NumOr(L, 1, "y", 0);
+    a.scaleX = NumOr(L, 1, "scaleX", 1); a.scaleY = NumOr(L, 1, "scaleY", 1); a.angle = NumOr(L, 1, "angle", 0);
+    if (Has(L, 1, "name")) a.name = FieldS(L, 1, "name");
+    if (Has(L, 1, "spriteName")) a.sprite = FieldS(L, 1, "spriteName");
+    a.velX = NumOr(L, 1, "velX", 0); a.velY = NumOr(L, 1, "velY", 0); a.scaleSpeed = NumOr(L, 1, "scaleSpeed", 0);
+    a.animTimer = NumOr(L, 1, "startAnimTimer", 0);
+    a.animDelay = NumOr(L, 1, "animDelay", 0);
+    a.startingDelay = HasNum(L, 1, "startingDelay") ? FieldN(L, 1, "startingDelay") : a.animDelay;   // 0x484fe5: the delay starts as animDelay unless given
+    a.loop = BoolOr(L, 1, "bLoop", false);
+    lua_getfield(L, 1, "animation");
+    if (lua_istable(L, -1))
+        for (int i = 1;; i++) {
+            lua_rawgeti(L, -1, i);
+            if (!lua_isstring(L, -1)) { lua_pop(L, 1); break; }
+            a.frames.push_back(lua_tostring(L, -1));
+            lua_pop(L, 1);
+        }
+    lua_pop(L, 1);
+    P(L)->CreateThemeAnimation(a);
     return 0;
 }
 int l_modifyThemeSprite(lua_State* L) {
@@ -141,6 +171,7 @@ int l_loadLuaFileToObject(lua_State* L) {
     // `object` for names it does not define, then stores that table as object[name]
     std::string path = S(L, 1);
     bool toObject = lua_istable(L, 2) && lua_isstring(L, 3);
+    bool spaceBlocks = false;
     std::vector<uint8_t> bytes;
     int rc = 1;
     // Angry Birds Island HD (Hatchery) names its files from the data folder ("hatchery/scripts/..."); try that when the path does not exist as written
@@ -200,21 +231,75 @@ int l_loadLuaFileToObject(lua_State* L) {
         } else if (lua_isstring(L, 2) && *lua_tostring(L, 2)) {
             // loadLuaFile(path, name): the file runs in a table of its own (names it does not define come from
             // the globals) and that table becomes the global `name`, e.g. cutscenes
+            // Angry Birds Space loads each block file with loadLuaFile(path, "blockTable"): the definitions it lists are filed
+            // under blockTable.blocks[definition] (as the Rio loader does); materials, damage factors, themes and groups also
+            // become fields of blockTable
+            const bool isBlocks = std::strcmp(lua_tostring(L, 2), "blockTable") == 0;
             PushEnv(L);                                 // the globals
-            lua_newtable(L);
+            lua_newtable(L);                            // the file's table
             lua_newtable(L);
             lua_pushvalue(L, -3);
             lua_setfield(L, -2, "__index");
             lua_setmetatable(L, -2);
-            lua_pushvalue(L, -1);
-            lua_setfield(L, -3, lua_tostring(L, 2));    // globals[name] = the file's table
+            if (!isBlocks) {
+                lua_pushvalue(L, -1);
+                lua_setfield(L, -3, lua_tostring(L, 2));    // globals[name] = the file's table
+                static const char* kNested[] = {"materials", "damageFactors", "themes", "groups"};
+                for (const char* nn : kNested) if (std::strcmp(lua_tostring(L, 2), nn) == 0) {
+                    lua_getfield(L, -2, "blockTable");
+                    if (!lua_istable(L, -1)) {
+                        lua_pop(L, 1);
+                        lua_newtable(L);
+                        lua_pushvalue(L, -1);
+                        lua_setfield(L, -4, "blockTable");
+                    }
+                    lua_pushvalue(L, -2);
+                    lua_setfield(L, -2, nn);
+                    lua_pop(L, 1);
+                }
+            } else {
+                lua_getfield(L, -2, "blockTable");
+                if (!lua_istable(L, -1)) {
+                    lua_pop(L, 1);
+                    lua_newtable(L);
+                    lua_pushvalue(L, -1);
+                    lua_setfield(L, -4, "blockTable");
+                }
+                lua_getfield(L, -1, "blocks");
+                if (!lua_istable(L, -1)) { lua_pop(L, 1); lua_newtable(L); lua_pushvalue(L, -1); lua_setfield(L, -3, "blocks"); }
+                lua_pop(L, 2);
+                // remember the file's table to file it after the run
+                lua_pushvalue(L, -1);
+                lua_setfield(L, LUA_REGISTRYINDEX, "ab.blockfile");
+            }
             lua_remove(L, -2);
             lua_setfenv(L, -2);
+            spaceBlocks = isBlocks;
         } else {
             PushEnv(L);
             lua_setfenv(L, -2);
         }
         rc = lua_pcall(L, 0, 0, 0);
+        if (rc == 0 && spaceBlocks) {
+            const char* filer =
+                "local T, bt, env = ...\nlocal pairs, ipairs, type = _G.pairs, _G.ipairs, _G.type\n"
+                "for k, v in pairs(T) do\n"
+                "  if type(v) == 'number' then env[k] = v\n"
+                "  elseif type(v) == 'table' then\n"
+                "    for _, e in ipairs(v) do\n"
+                "      if type(e) == 'table' and type(e.definition) == 'string' then bt.blocks[e.definition] = e end\n"
+                "    end\n"
+                "  end\n"
+                "end\n"
+                "if not bt.blocks.Ground then bt.blocks.Ground = {definition = 'Ground', type = 'box', sprite = '', texture = '', material = 'immovable'} end\n";
+            if (luaL_loadstring(L, filer) == 0) {
+                lua_getfield(L, LUA_REGISTRYINDEX, "ab.blockfile");
+                PushEnv(L);
+                lua_getfield(L, -1, "blockTable");
+                lua_insert(L, -2);                      // T, blockTable, env
+                if (lua_pcall(L, 3, 0, 0) != 0) { P(L)->Print(std::string("blockTable: ") + lua_tostring(L, -1)); lua_pop(L, 1); }
+            } else lua_pop(L, 1);
+        }
         if (rc == 0) {
             // debug build: MainMenu.init / MainMenu.layout run with releaseBuild false (shows the 2.0.0 EDITOR button)
             lua_getfield(L, LUA_REGISTRYINDEX, "ab.view");
@@ -480,7 +565,18 @@ bool HasSingleBlocksFile(lua_State* L) {
     return ab::ReadLuaFile(path, bytes) && !bytes.empty();
 }
 
+// Angry Birds Space (PC): its scripts load the block files themselves (loadBlockData -> loadLuaFile), so the engine keeps its hands off
+bool IsSpaceData(lua_State* L) {
+    PushEnv(L);
+    lua_getfield(L, -1, "scriptPath");
+    std::string path = std::string(lua_isstring(L, -1) ? lua_tostring(L, -1) : "scripts") + "/blocks_planets.lua";
+    lua_pop(L, 2);
+    std::vector<uint8_t> bytes;
+    return ab::ReadLuaFile(path, bytes) && !bytes.empty();
+}
+
 void ReloadAllTables(lua_State* L) {
+    if (IsSpaceData(L)) return;
     if (HasSingleBlocksFile(L)) {
         ReloadTable(L, "blockTable", "/blocks.lua");
         ReloadTable(L, "particleTable", "/particles.lua");
@@ -506,6 +602,7 @@ int l_loadLevel(lua_State* L) {
     int loaded = 1;
     std::string loadError = "No such file or directory";
     if (file.find(".temp") == std::string::npos || !P(L)->FindSavedLevel(file, bytes)) ab::ReadLuaFile(path, bytes);   // the editor's TAB copy comes from memory
+    if (const char* dump = std::getenv("AB_DUMPLEVEL")) { if (FILE* f = std::fopen(dump, "wb")) { std::fwrite(bytes.data(), 1, bytes.size(), f); std::fclose(f); } }   // debug: the decrypted level text
     if (!bytes.empty()) {
         loaded = luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), path.c_str());
         if (loaded != 0) { loadError = lua_tostring(L, -1); lua_pop(L, 1); }
@@ -600,10 +697,9 @@ void Serialize(lua_State* L, std::string& out, int depth) {
     }
 }
 
-int l_saveLuaFile(lua_State* L) {
-    // saveLuaFile(fileName, tableName, appData): writes `tableName = <global tableName>` to fileName
-    std::string file = S(L, 1), name = S(L, 2);
-    bool appData = B(L, 3);
+bool IsSpaceData(lua_State* L);
+// saveLuaFile(fileName, tableName, appData): writes `tableName = <global tableName>` to fileName
+int SaveLuaFileImpl(lua_State* L, const std::string& file, const std::string& name, bool appData) {
     PushEnv(L);
     lua_getfield(L, -1, name.c_str());
     lua_remove(L, -2);
@@ -614,11 +710,23 @@ int l_saveLuaFile(lua_State* L) {
     std::string old;
     bool encrypted = false;
     const char* saveKey = ab::kSaveKey;
-    ab::ReadSaveFile(path, old, encrypted, &saveKey);   // 1.x and Seasons saves have their own keys
+    ab::ReadSaveFile(path, old, encrypted, &saveKey);   // 1.x, Seasons and Space saves have their own keys
+    static int isSpace = -1;
+    if (isSpace < 0) isSpace = IsSpaceData(L) ? 1 : 0;
+    // Angry Birds Space: every save is encrypted with its own key (0x496180); the table is written one entry per line, which for settings is `root = {...}`
+    if (isSpace) { encrypted = true; saveKey = ab::kSpaceSaveKey; }
     size_t start = old.find_first_not_of(" \t\r\n");
     bool original = encrypted || (start != std::string::npos && old.compare(start, name.size() + 3, name + " = ") != 0);
     std::string text;
-    if (original) {
+    lua_getfield(L, -1, "root");
+    bool hasRoot = isSpace && lua_istable(L, -1);
+    if (!hasRoot) lua_pop(L, 1);
+    if (hasRoot) {                                      // Space: settings.root and friends are the whole file, written as `root = {...}`
+        text = "root = ";
+        Serialize(L, text, 0);
+        text += "\n";
+        lua_pop(L, 1);
+    } else if (original) {
         lua_pushnil(L);
         while (lua_next(L, -2)) {
             if (lua_type(L, -2) == LUA_TSTRING) {
@@ -661,6 +769,9 @@ int l_saveLuaFile(lua_State* L) {
     }
     return 0;
 }
+int l_saveLuaFile(lua_State* L) { return SaveLuaFileImpl(L, S(L, 1), S(L, 2), B(L, 3)); }
+// savePersistentLuaFile(fileName, tableName): the same file in the user data (highscores.lua, bi_data.lua)
+int l_savePersistentLuaFile(lua_State* L) { return SaveLuaFileImpl(L, S(L, 1), S(L, 2), true); }
 
 // Hatchery: the saved world (tileMapSave.lua) and egg sprite list (savedEggSprites.lua) are files in the user data written by saveLuaFile
 int l_checkForPersistentFile(lua_State* L) {
@@ -735,6 +846,24 @@ int l_setupCompoObject(lua_State* L) {
     P(L)->SetupCompoObject(S(L, 1), items, lua_isnumber(L, 3) ? (float)lua_tonumber(L, 3) : 1.0f);
     return 0;
 }
+// createSilhouette(newName, sourceSprite, r, g, b, a [, outlineWidth]) -> number of pixels in the shape, or nil
+//   Makes a new sprite called newName from the shape of an existing sprite: every pixel that sourceSprite draws (its alpha is not 0) is painted in one
+//   colour, and everything it leaves clear stays clear, so a pig becomes a flat pig-shaped patch, a bird a bird-shaped shadow. The source can be any
+//   sprite a sheet knows, with its pivot, and it keeps its size; use the new name anywhere a sprite name goes (setSprite, drawSprite, an object's
+//   sprite, a compo part). Calling it again with the same newName replaces the earlier sprite.
+//   r, g, b, a is the colour. Give each as 0 to 1 (1, 1, 1 white; 0, 0, 0 black), or as 0 to 255 when any value is above 1. The pixel's own alpha is
+//   multiplied by a, so soft edges of the source stay soft and a = 0.5 makes a half-see-through shadow. A colour left out is 1.
+//   outlineWidth (optional, default 0): 0 fills the whole shape. A number of pixels above 0 keeps only the border of the shape, that many pixels wide,
+//   measured inwards from every edge (including the edges of holes), which gives an outline sprite to draw behind or over the original for a glow or a
+//   selection frame.
+//   Returns how many pixels the shape has (it does not change with the outline width), or nil when the source sprite cannot be found. The sprite is
+//   made when the call runs: a sheet that is released later still leaves the silhouette in place.
+int l_createSilhouette(lua_State* L) {
+    int n = P(L)->CreateSilhouette(S(L, 1), S(L, 2), lua_isnoneornil(L, 3) ? 1.0f : N(L, 3), lua_isnoneornil(L, 4) ? 1.0f : N(L, 4),
+                                   lua_isnoneornil(L, 5) ? 1.0f : N(L, 5), lua_isnoneornil(L, 6) ? 1.0f : N(L, 6), lua_isnoneornil(L, 7) ? 0 : (int)N(L, 7));
+    if (n < 0) lua_pushnil(L); else lua_pushinteger(L, n);
+    return 1;
+}
 int l_loadCanvasSprite(lua_State* L) { lua_pushboolean(L, P(L)->CanvasLoadSprite(S(L, 1), S(L, 2), (int)N(L, 3), (int)N(L, 4))); return 1; }
 
 // ---- physics
@@ -798,7 +927,7 @@ BodyDef ReadBody(lua_State* L, bool circle) {
     d.friction = N(L, i++);
     d.restitution = N(L, i++);
     // Angry Birds Rio's circles take the collision flag as well (a boolean followed by the controllable boolean)
-    if (!circle || (lua_type(L, i) == LUA_TBOOLEAN && lua_type(L, i + 1) == LUA_TBOOLEAN)) d.collision = B(L, i++);
+    if (!circle || lua_gettop(L) >= i + 2 || (lua_type(L, i) == LUA_TBOOLEAN && lua_type(L, i + 1) == LUA_TBOOLEAN)) d.collision = B(L, i++);   // Space's createCircle always has 11 arguments (the collision flag may be a sprite name: any non-nil value is true)
     d.controllable = B(L, i++);
     d.zOrder = N(L, i++);
     return d;
@@ -818,6 +947,44 @@ int l_createPolygon(lua_State* L) {
     WriteWorldEntry(L, d, "polygon", P(L)->CreatePolygon(d, P(L)->Vertices()));
     return 0;
 }
+// ---- Angry Birds Space compound bodies: the scripts clear the list, add one entry per part, then createCompoundObject makes the body
+std::vector<CompoundShape> g_compoundShapes;
+float g_compoundDamping = 0;
+std::vector<std::pair<int, float>> g_compoundParams;   // setCompoundShapeParameter(shapes, id, value): applied to the object when createCompoundObject makes it
+int CompoundAdd(lua_State* L, int kind, Platform* p) {
+    CompoundShape cs;
+    cs.kind = kind;
+    cs.sprite = lua_isstring(L, 1) ? lua_tostring(L, 1) : "";
+    cs.x = N(L, 2); cs.y = N(L, 3); cs.angle = N(L, 4);
+    if (kind == 3) cs.w = N(L, 5);
+    else { cs.w = N(L, 5); cs.h = N(L, 6); }
+    if (kind == 1) cs.verts = p->Vertices();
+    g_compoundShapes.push_back(cs);
+    return 0;
+}
+int l_clearShapesArray(lua_State*) { g_compoundShapes.clear(); g_compoundParams.clear(); g_compoundDamping = 0; return 0; }
+int l_addBoxToCompoundList(lua_State* L) { return CompoundAdd(L, 0, P(L)); }
+int l_addPolygonToCompoundList(lua_State* L) { return CompoundAdd(L, 1, P(L)); }
+int l_addLineToCompoundList(lua_State* L) { return CompoundAdd(L, 2, P(L)); }
+int l_addCircleToCompoundList(lua_State* L) { return CompoundAdd(L, 3, P(L)); }
+int l_setCompoundShapeLinearDamping(lua_State* L) { g_compoundDamping = N(L, 2); return 0; }
+// setCompoundShapeParameter(shapes, id, value): the same ids as setObjectParameter (the scripts pass 5, the scale, and 15, disableImmovable). The parameter
+// belongs to the compound that is being built, so it is kept until createCompoundObject has made the body and is then set on it, as the exe does.
+int l_setCompoundShapeParameter(lua_State* L) { g_compoundParams.push_back({(int)N(L, 2), N(L, 3)}); return 0; }
+// createCompoundObject(name, x, y, _, density, friction, restitution, collision, controllable, z_order)
+int l_createCompoundObject(lua_State* L) {
+    BodyDef d;
+    d.name = S(L, 1); d.x = N(L, 2); d.y = N(L, 3);
+    d.density = N(L, 5); d.friction = N(L, 6); d.restitution = N(L, 7);
+    d.collision = lua_isnoneornil(L, 8) ? true : B(L, 8);
+    d.controllable = B(L, 9); d.zOrder = N(L, 10);
+    d.sprite = g_compoundShapes.empty() ? "" : g_compoundShapes[0].sprite;
+    float mass = P(L)->CreateCompound(d, g_compoundShapes, g_compoundDamping);
+    for (const auto& pr : g_compoundParams) P(L)->SetObjectParameter(d.name, pr.first, pr.second);
+    WriteWorldEntry(L, d, "compound", mass);
+    return 0;
+}
+int l_finalizeCompoundObject(lua_State*) { return 0; }
 int l_clearVertices(lua_State* L) { P(L)->ClearVertices(); return 0; }
 int l_addVertex(lua_State* L) { P(L)->AddVertex(N(L, 1), N(L, 2)); return 0; }
 
@@ -836,6 +1003,118 @@ bool BoolOr(lua_State* L, int t, const char* k, bool def) {
     return v;
 }
 float NumOr(lua_State* L, int t, const char* k, float def) { return HasNum(L, t, k) ? FieldN(L, t, k) : def; }
+
+// Angry Birds Space: createCompoundBodyFromTable(t) (0x48a690), the form gamelogic.lua uses for a compound it has assembled: name, x, y, angle, z_order,
+// material (a table with density, friction and restitution) and children, one table per part with x, y, angle, blockData (type box / circle / polygon,
+// width, height, radius, sprite) and, for a polygon, worldVertices. It builds its own part list, so the list of the add...ToCompoundList natives is not touched.
+int l_createCompoundBodyFromTable(lua_State* L) {
+    if (!lua_istable(L, 1)) return 0;
+    BodyDef d;
+    d.name = FieldS(L, 1, "name");
+    d.x = NumOr(L, 1, "x", 0); d.y = NumOr(L, 1, "y", 0);
+    d.zOrder = NumOr(L, 1, "z_order", 0);
+    d.density = 1; d.friction = 0.5f; d.restitution = 0.2f; d.collision = true; d.controllable = false;
+    lua_getfield(L, 1, "material");
+    if (lua_istable(L, -1)) {
+        int m = lua_gettop(L);
+        d.density = NumOr(L, m, "density", d.density); d.friction = NumOr(L, m, "friction", d.friction); d.restitution = NumOr(L, m, "restitution", d.restitution);
+    }
+    lua_pop(L, 1);
+    std::vector<CompoundShape> shapes;
+    lua_getfield(L, 1, "children");
+    if (lua_istable(L, -1)) {
+        for (int i = 1;; i++) {
+            lua_rawgeti(L, -1, i);
+            if (!lua_istable(L, -1)) { lua_pop(L, 1); break; }
+            int c = lua_gettop(L);
+            CompoundShape cs;
+            cs.x = NumOr(L, c, "x", 0); cs.y = NumOr(L, c, "y", 0); cs.angle = NumOr(L, c, "angle", 0);
+            lua_getfield(L, c, "blockData");
+            if (lua_istable(L, -1)) {
+                int b = lua_gettop(L);
+                std::string type = Has(L, b, "type") ? FieldS(L, b, "type") : "";
+                if (Has(L, b, "sprite")) cs.sprite = FieldS(L, b, "sprite");
+                bool ok = true;
+                if (type == "box") { cs.kind = 0; cs.w = NumOr(L, b, "width", 0); cs.h = NumOr(L, b, "height", 0); }
+                else if (type == "circle") { cs.kind = 3; cs.w = NumOr(L, b, "radius", 0); }
+                else if (type == "polygon") {
+                    cs.kind = 1;
+                    P(L)->ClearVertices();
+                    lua_getfield(L, c, "worldVertices");
+                    if (lua_istable(L, -1))
+                        for (int k = 1;; k++) {
+                            lua_rawgeti(L, -1, k);
+                            if (!lua_istable(L, -1)) { lua_pop(L, 1); break; }
+                            P(L)->AddVertex(NumOr(L, lua_gettop(L), "x", 0), NumOr(L, lua_gettop(L), "y", 0));
+                            lua_pop(L, 1);
+                        }
+                    lua_pop(L, 1);
+                    cs.verts = P(L)->Vertices();
+                } else ok = false;
+                if (ok) shapes.push_back(cs);
+            }
+            lua_pop(L, 2);      // blockData, child
+        }
+    }
+    lua_pop(L, 1);
+    if (shapes.empty()) return 0;
+    d.sprite = shapes[0].sprite;
+    float mass = P(L)->CreateCompound(d, shapes, 0);
+    WriteWorldEntry(L, d, "compound", mass);
+    return 0;
+}
+
+
+// Angry Birds Space (0x47d8b8, the tail of its createJoint): the loader links the two world entries of a joint. A sensor and the body it is tied to link
+// each other (linkedObject); an object with a levelGoal field joined to a bubble gets linkedBubble, and the bubble lists it in linkedPigs; any other partner is linkedObject
+void SpaceLinkJoint(lua_State* L, const std::string& e1, const std::string& e2) {
+    static int isSpace = -1;
+    if (isSpace < 0) isSpace = IsSpaceData(L) ? 1 : 0;
+    if (!isSpace || !PushObjectsTable(L, "world")) return;
+    int w = lua_gettop(L);
+    lua_getfield(L, w, e1.c_str()); int a = lua_gettop(L);
+    lua_getfield(L, w, e2.c_str()); int b = lua_gettop(L);
+    if (lua_istable(L, a) && lua_istable(L, b)) {
+        auto setName = [&](int t, const char* k, const std::string& v) { lua_pushlstring(L, v.data(), v.size()); lua_setfield(L, t, k); };
+        if (Has(L, a, "sensorType") || Has(L, b, "sensorType")) { setName(a, "linkedObject", e2); setName(b, "linkedObject", e1); }
+        for (int pass = 0; pass < 2; pass++) {
+            int x = pass ? b : a, y = pass ? a : b;
+            const std::string& xn = pass ? e2 : e1; const std::string& yn = pass ? e1 : e2;
+            if (!Has(L, x, "levelGoal")) continue;
+            bool bubble = false;
+            lua_getfield(L, y, "definition");
+            if (lua_isstring(L, -1)) {
+                PushEnv(L);
+                lua_getfield(L, -1, "blockTable");
+                if (lua_istable(L, -1)) {
+                    lua_getfield(L, -1, "blocks");
+                    if (lua_istable(L, -1)) {
+                        lua_pushvalue(L, -4);
+                        lua_gettable(L, -2);
+                        if (lua_istable(L, -1)) {
+                            lua_getfield(L, -1, "material");
+                            if (lua_isstring(L, -1)) bubble = strncmp(lua_tostring(L, -1), "bubble", 6) == 0;
+                            lua_pop(L, 1);
+                        }
+                        lua_pop(L, 1);
+                    }
+                    lua_pop(L, 1);
+                }
+                lua_pop(L, 2);
+            }
+            lua_pop(L, 1);
+            if (bubble) {
+                setName(x, "linkedBubble", yn);
+                lua_getfield(L, y, "linkedPigs");
+                if (!lua_istable(L, -1)) { lua_pop(L, 1); lua_newtable(L); lua_pushvalue(L, -1); lua_setfield(L, y, "linkedPigs"); }
+                lua_pushlstring(L, xn.data(), xn.size());
+                lua_rawseti(L, -2, (int)lua_objlen(L, -2) + 1);
+                lua_pop(L, 1);
+            } else setName(x, "linkedObject", yn);
+        }
+    }
+    lua_settop(L, w - 1);
+}
 
 // createJoint{ name, end1, end2, type, coordType, x1, y1, x2, y2, ... } (0x40ecd0)
 int l_createJoint(lua_State* L) {
@@ -935,6 +1214,7 @@ int l_createJoint(lua_State* L) {
     lua_pop(L, 1);
     lua_setfield(L, -2, d.name.c_str());
     lua_pop(L, 1);
+    SpaceLinkJoint(L, d.end1, d.end2);
     return 0;
 }
 // createJoints(list) (Angry Birds Rio): creates every joint of a level's joint table; a joint without a name takes its key
@@ -1054,7 +1334,33 @@ int l_setRotation(lua_State* L) {
     if (P(L)->SetRotation(n, a, a)) SetWorldField(L, n, "angle", a);
     return 0;
 }
+// setRecordVelocity(name, on): Space (0x47a5f0). Flags the object so the frame update keeps objects.world[name].xVel / yVel / angle current for it
+int l_setRecordVelocity(lua_State* L) { P(L)->SetRecordVelocity(S(L, 1), lua_toboolean(L, 2) != 0); return 0; }
 int l_setVelocity(lua_State* L) { P(L)->SetVelocity(S(L, 1), N(L, 2), N(L, 3)); return 0; }
+// Angry Birds Space: body properties (0x4... setLinearDamping, setAngularDamping, setFixedRotation, setActive, multiplyVelocity, getAngularVelocity, setAsSensor)
+int BodyCmd(lua_State* L, int cmd, bool boolArg = false) {
+    float r = 0, a = boolArg ? (lua_toboolean(L, 2) ? 1.0f : 0.0f) : N(L, 2);
+    P(L)->BodyCommand(S(L, 1), cmd, a, r);
+    return 0;
+}
+int l_enableAimingAid(lua_State* L) { float r = 0; P(L)->BodyCommand("", 20, lua_toboolean(L, 1) ? 1.0f : 0.0f, r); return 0; }
+int l_setAimingAidSprite(lua_State* L) { float r = 0; P(L)->BodyCommand(lua_isstring(L, 1) ? lua_tostring(L, 1) : "", 21, 0, r); return 0; }
+int l_clearAimingAid(lua_State* L) { float r = 0; P(L)->BodyCommand("", 23, 0, r); return 0; }
+int l_updateBirdTrajectoryTable(lua_State* L) { float r = 0; P(L)->BodyCommand(lua_isstring(L, 1) ? lua_tostring(L, 1) : "BirdSimulation", 24, 0, r); return 0; }
+int l_setSensorGravityMask(lua_State* L) { return BodyCmd(L, 10); }
+int l_setRevertGravity(lua_State* L) { float r = 0; P(L)->BodyCommand(S(L, 1), 14, B(L, 2) ? 1.0f : 0.0f, r); return 0; }
+int l_setRevertGravityWithMultiplier(lua_State* L) { float r = 0; P(L)->BodyCommand(S(L, 1), 15, B(L, 2) ? 1.0f : 0.0f, r); P(L)->BodyCommand(S(L, 1), 16, NOpt(L, 3, 0), r); P(L)->BodyCommand(S(L, 1), 17, NOpt(L, 4, 0), r); return 0; }
+int l_setObjectGravityCategory(lua_State* L) { return BodyCmd(L, 11); }
+int l_setSensorMinimumAndMaximumForces(lua_State* L) { float r = 0; P(L)->BodyCommand(S(L, 1), 12, N(L, 2), r); P(L)->BodyCommand(S(L, 1), 13, N(L, 3), r); return 0; }
+int l_setGravityForceMultiplier(lua_State* L) { float r = 0; P(L)->BodyCommand("", 8, N(L, 1), r); return 0; }
+int l_getGravityForceMultiplier(lua_State* L) { float r = 1; P(L)->BodyCommand("", 9, 0, r); lua_pushnumber(L, r); return 1; }
+int l_setLinearDamping(lua_State* L) { return BodyCmd(L, 1); }
+int l_setAngularDamping(lua_State* L) { return BodyCmd(L, 2); }
+int l_setFixedRotation(lua_State* L) { return BodyCmd(L, 3, true); }
+int l_setActive(lua_State* L) { return BodyCmd(L, 4, true); }
+int l_multiplyVelocity(lua_State* L) { return BodyCmd(L, 5); }
+int l_setAsSensor(lua_State* L) { return BodyCmd(L, 7, true); }
+int l_getAngularVelocity(lua_State* L) { float r = 0; P(L)->BodyCommand(S(L, 1), 6, 0, r); lua_pushnumber(L, r); return 1; }
 int l_setAngularVelocity(lua_State* L) { P(L)->SetAngularVelocity(S(L, 1), N(L, 2)); return 0; }
 int l_setSleeping(lua_State* L) { P(L)->SetSleeping(S(L, 1), B(L, 2)); return 0; }
 int l_getAngle(lua_State* L) { lua_pushnumber(L, P(L)->GetAngle(S(L, 1))); return 1; }
@@ -1065,8 +1371,47 @@ int l_getWorldPoint(lua_State* L) {
     lua_pushnumber(L, wy);
     return 2;
 }
-// Angry Birds Rio
-int l_getVelocity(lua_State* L) { lua_pushnumber(L, P(L)->GetSpeed(S(L, 1))); return 1; }
+// getVelocity(name) -> speed, vx, vy   (every game; Rio's own native returns the speed only, and a script that takes one value still gets exactly that)
+//   The speed of the object's body in world units per second (0 for an unknown object), then the two components of its velocity, x to the right and y
+//   downwards, as the body has them right now, whatever kind of object it is. A body that sleeps has no velocity (0, 0, 0).
+int l_getVelocity(lua_State* L) {
+    float vx = 0, vy = 0;
+    P(L)->GetVelocity(S(L, 1), vx, vy);
+    lua_pushnumber(L, P(L)->GetSpeed(S(L, 1)));
+    lua_pushnumber(L, vx);
+    lua_pushnumber(L, vy);
+    return 3;
+}
+// Angry Birds Space: getLinearVelocity(name) -> vx, vy (0x47e870) and getBGColor() -> r, g, b in 0..255 (0x4626a0)
+int l_getLinearVelocity(lua_State* L) {
+    float vx = 0, vy = 0;
+    P(L)->GetVelocity(S(L, 1), vx, vy);
+    lua_pushnumber(L, vx);
+    lua_pushnumber(L, vy);
+    return 2;
+}
+// getRayCastedObjects({x1 =, y1 =, x2 =, y2 =}) -> a flat list with six entries per object the segment crosses: name, hit x, hit y, normal x, normal y, fraction (0x46f3f0)
+int l_getRayCastedObjects(lua_State* L) {
+    std::vector<Platform::RayCastHit> hits;
+    if (lua_istable(L, 1)) P(L)->RayCastObjects(FieldN(L, 1, "x1"), FieldN(L, 1, "y1"), FieldN(L, 1, "x2"), FieldN(L, 1, "y2"), hits);
+    lua_newtable(L);
+    int i = 1;
+    for (const auto& h : hits) {
+        lua_pushlstring(L, h.name.data(), h.name.size()); lua_rawseti(L, -2, i++);
+        lua_pushnumber(L, h.px); lua_rawseti(L, -2, i++);
+        lua_pushnumber(L, h.py); lua_rawseti(L, -2, i++);
+        lua_pushnumber(L, h.nx); lua_rawseti(L, -2, i++);
+        lua_pushnumber(L, h.ny); lua_rawseti(L, -2, i++);
+        lua_pushnumber(L, h.fraction); lua_rawseti(L, -2, i++);
+    }
+    return 1;
+}
+int l_getBGColor(lua_State* L) {
+    float r, g, b;
+    P(L)->GetBGColor(r, g, b);
+    lua_pushnumber(L, r); lua_pushnumber(L, g); lua_pushnumber(L, b);
+    return 3;
+}
 int l_hasMovingObjects(lua_State* L) { lua_pushboolean(L, P(L)->HasMovingObjects(0.5f)); return 1; }
 int l_hasMovingObjectsZeroTolerance(lua_State* L) { lua_pushboolean(L, P(L)->HasMovingObjects(0.001f)); return 1; }
 int l_getLocalPoint(lua_State* L) {
@@ -1081,6 +1426,22 @@ int l_setCollisionEnabled(lua_State* L) { P(L)->SetCollisionEnabled(S(L, 1), B(L
 int l_setColliderType(lua_State* L) { P(L)->SetColliderType(S(L, 1), (int)N(L, 2)); return 0; }
 int l_getColliderType(lua_State* L) { lua_pushnumber(L, P(L)->ColliderType(S(L, 1))); return 1; }
 // setObjectAlpha(name, alpha) / getObjectAlpha(name): transparency of one object when drawGameNative draws it (0 invisible .. 1 solid; -1: no such object)
+// Space (0x47a1e0, 0x47a2e0, 0x47b8f0): per-object sprite settings; the exe also writes them into objects.world[name]
+int l_setSpriteRotation(lua_State* L) {
+    P(L)->SetSpriteLook(S(L, 1), 0, N(L, 2), 0);
+    SetWorldField(L, S(L, 1), "spriteAngle", P(L)->GetSpriteAngle(S(L, 1)));
+    return 0;
+}
+int l_setPivotOffset(lua_State* L) {
+    P(L)->SetSpriteLook(S(L, 1), 1, N(L, 2), N(L, 3));
+    SetWorldField(L, S(L, 1), "pivotOffsetX", N(L, 2), "pivotOffsetY", N(L, 3));
+    return 0;
+}
+int l_setTextureScale(lua_State* L) { P(L)->SetSpriteLook(S(L, 1), 2, N(L, 2), 0); return 0; }
+int l_setNormalTrailSprite(lua_State* L) { P(L)->SetTrailSprite(false, lua_isstring(L, 1) ? lua_tostring(L, 1) : ""); return 0; }
+int l_setSpecialTrailSprite(lua_State* L) { P(L)->SetTrailSprite(true, lua_isstring(L, 1) ? lua_tostring(L, 1) : ""); return 0; }
+// setObjectDecoration(name, sprite, amount, angleIncrement, scale): the engine half of Space's setDecorationObjects (0x479fb0, see space_natives.lua)
+int l_setObjectDecoration(lua_State* L) { P(L)->SetDecoration(S(L, 1), S(L, 2), (int)N(L, 3), N(L, 4), N(L, 5)); return 0; }
 int l_setObjectAlpha(lua_State* L) { P(L)->SetObjectAlpha(S(L, 1), N(L, 2)); return 0; }
 int l_getObjectAlpha(lua_State* L) { lua_pushnumber(L, P(L)->ObjectAlpha(S(L, 1))); return 1; }
 // setObjectZOrder(name, z) / getObjectZOrder(name): the draw order of one object in drawGameNative (the z_order of createBlock; higher = in front)
@@ -1123,10 +1484,72 @@ int l_getPolygonRadius(lua_State* L) { lua_pushnumber(L, P(L)->PolygonRadius());
 int l_removeJointsFromObject(lua_State* L) { P(L)->RemoveJointsFromObject(S(L, 1)); return 0; }
 // getIntersectingObjects{ x, y, left, right, down, up } -> { name, name, ... } (the scripts read the names as the values)
 bool RioMode(lua_State* L);
+// predictCollision(nameA, nameB [, restitution]) -> table
+//   Works out what would happen if two objects met, from where they are and how they move right now. Nothing is simulated and nothing is changed, so a
+//   script can ask before a bird is launched or every frame. Both arguments are object names (the names objects.world uses). A name that is not an
+//   object is not an error: the table is { valid = false, collides = false, filtered = false } and nothing else.
+//   The hit is Box2D's single-contact resolution on the real shapes: the closest points of the bodies' fixtures give the contact point (contactX,
+//   contactY) and the normal (nx, ny, from A to B); a normal impulse gives the bounce, a friction impulse along the tangent (ny, -nx), limited to
+//   friction * normal impulse, gives the slide, and both act at the contact point so the bodies' inertia and spin (aAngVel / bAngVel) take part.
+//   Optional arguments 4 to 7 (aVx, aVy, bVx, bVy) replace the bodies' present velocities for the estimate; nil or left out keeps the present one.
+//   restitution is optional: left out, the larger of the fixtures' restitutions is used (as Box2D does), and Box2D's velocity threshold of 1 applies.
+//   Fields: valid, filtered, collides, exactShapes, distance, gap, contactX, contactY, nx, ny, relVx, relVy, normalSpeed, tangentSpeed, closingSpeed,
+//   timeToContact, massA, massB, restitution, friction, impulse, tangentImpulse, aVx, aVy, bVx, bVy, aAngVel, bAngVel, energyLost (see the README).
+//   Box2D 2.1 worlds do not query the shapes: exactShapes is false and the contact is taken on the line between the centres, without spin.
+//   Angles are not returned because they follow from the velocities: math.atan2(vy, vx) for a direction, math.atan2(ny, nx) for the contact.
+int l_predictCollision(lua_State* L) {
+    // optional arguments 4 to 7: the velocities to test with, A's x and y then B's x and y; nil or left out keeps the body's present velocity
+    float vel[4];
+    for (int i = 0; i < 4; i++) vel[i] = lua_isnoneornil(L, 4 + i) ? std::nanf("") : N(L, 4 + i);
+    CollisionPrediction c = P(L)->PredictCollision(S(L, 1), S(L, 2), lua_isnoneornil(L, 3) ? -1.0f : N(L, 3), vel);
+    lua_newtable(L);
+    auto num = [&](const char* k, float v) { lua_pushnumber(L, v); lua_setfield(L, -2, k); };
+    auto flag = [&](const char* k, bool v) { lua_pushboolean(L, v); lua_setfield(L, -2, k); };
+    flag("valid", c.valid); flag("collides", c.collides); flag("filtered", c.filtered);
+    if (!c.valid) return 1;
+    num("distance", c.distance); num("gap", c.gap); num("nx", c.nx); num("ny", c.ny);
+    num("relVx", c.relVx); num("relVy", c.relVy); num("closingSpeed", c.closingSpeed); num("timeToContact", c.timeToContact);
+    num("impulse", c.impulse); num("restitution", c.restitution); num("massA", c.massA); num("massB", c.massB);
+    num("aVx", c.aVx); num("aVy", c.aVy); num("bVx", c.bVx); num("bVy", c.bVy); num("energyLost", c.energyLost);
+    flag("exactShapes", c.exactShapes); num("contactX", c.contactX); num("contactY", c.contactY);
+    num("normalSpeed", c.normalSpeed); num("tangentSpeed", c.tangentSpeed); num("friction", c.friction); num("tangentImpulse", c.tangentImpulse);
+    num("aAngVel", c.aAngVel); num("bAngVel", c.bAngVel);
+    return 1;
+}
+// ---- gravity of a single object, independent of the world's ----------------------------------------------------------------------------------------
+// setObjectGravity(name, gx, gy) -> true, or false when there is no such object.
+//   Gives the object a gravity of its own: from now on it accelerates by (gx, gy) world units per second squared instead of by the world's gravity.
+//   The axes are the world's, the ones getVelocity / setVelocity / setPosition use, so (0, 0) is weightless, the world's own value changes nothing, and
+//   the opposite of the world's value turns the world upside down for this one object: the ground becomes the sky and it falls the other way, while
+//   everything else still falls the usual way. Any other direction works the same: (gx, 0) is a wall that pulls sideways. Gravitation sensors still
+//   act on the object on top of this, as they do on any body. A sleeping object is woken so it starts to move at once. Static bodies are not affected
+//   (they do not move), and the call is remembered until resetObjectGravity.
+int l_setObjectGravity(lua_State* L) { lua_pushboolean(L, P(L)->SetOwnGravityVector(S(L, 1), N(L, 2), N(L, 3))); return 1; }
+// setObjectGravityScale(name, scale) -> true, or false when there is no such object.
+//   Gives the object the world's gravity times `scale`, whatever the world's gravity is (it follows the world if that changes, for example in a
+//   level that sets its own). 1 is normal, 0 is weightless, 0.2 a floaty moon-like object, 3 a heavy one, and -1 turns it round exactly: the
+//   object falls upwards as fast as everything else falls down. The factor multiplies the world's gravity, so in a world whose gravity is 0 (Angry Birds
+//   Space) it changes nothing: use setObjectGravity there.
+int l_setObjectGravityScale(lua_State* L) { lua_pushboolean(L, P(L)->SetOwnGravityScale(S(L, 1), N(L, 2))); return 1; }
+// resetObjectGravity(name) -> true, or false when there is no such object.
+//   Takes the object back to the world's gravity (and undoes setObjectGravity and setObjectGravityScale). Its speed stays as it is.
+int l_resetObjectGravity(lua_State* L) { lua_pushboolean(L, P(L)->ResetOwnGravity(S(L, 1))); return 1; }
+// getObjectGravity(name) -> gx, gy, mode, scale; nil when there is no such object.
+//   The acceleration the object has from gravity now (its own, or the world's times its factor, or the world's), and where it comes from: mode is
+//   "world", "vector" (setObjectGravity) or "scale" (setObjectGravityScale); scale is the factor of the last one (1 otherwise).
+int l_getObjectGravity(lua_State* L) {
+    int mode; float gx, gy, scale;
+    if (!P(L)->GetOwnGravity(S(L, 1), mode, gx, gy, scale)) { lua_pushnil(L); return 1; }
+    lua_pushnumber(L, gx); lua_pushnumber(L, gy); lua_pushstring(L, mode == 1 ? "vector" : mode == 2 ? "scale" : "world"); lua_pushnumber(L, scale);
+    return 4;
+}
 int l_getIntersectingObjects(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
     // Seasons passes the sizes of the four sides; Rio passes signed offsets (left and down are negative)
-    float sideSign = RioMode(L) ? -1.0f : 1.0f;
+    // Space (game.lua makeExplosion) passes left = -R, right = R, down = -R, up = R as well
+    static int isSpace = -1;
+    if (isSpace < 0) isSpace = IsSpaceData(L) ? 1 : 0;
+    float sideSign = (RioMode(L) || isSpace) ? -1.0f : 1.0f;
     std::vector<std::string> names = P(L)->IntersectingObjects(FieldN(L, 1, "x"), FieldN(L, 1, "y"), sideSign * FieldN(L, 1, "left"),
                                                                FieldN(L, 1, "right"), sideSign * FieldN(L, 1, "down"), FieldN(L, 1, "up"));
     lua_newtable(L);
@@ -1504,6 +1927,12 @@ int r_drawSprite(lua_State* L) {
     return 0;
 }
 // drawCompoSprite is drawSprite (0x4307f0); the name is looked up among the sprites and the composites
+// drawTexturedLine2D(sprite, x1, y1, x2, y2, width [, r, g, b, a])   colour 0 to 255, 255 when left out
+int r_drawTexturedLine2D(lua_State* L) {
+    P(L)->DrawTexturedLine2D(S(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6),
+        lua_isnoneornil(L, 7) ? 255.0f : N(L, 7), lua_isnoneornil(L, 8) ? 255.0f : N(L, 8), lua_isnoneornil(L, 9) ? 255.0f : N(L, 9), lua_isnoneornil(L, 10) ? 255.0f : N(L, 10));
+    return 0;
+}
 int r_drawCompoSprite(lua_State* L) { return r_drawSprite(L); }
 int r_drawString(lua_State* L) {
     P(L)->ResDrawString(S(L, 1), S(L, 2), N(L, 3), N(L, 4), S(L, 5), S(L, 6));
@@ -1601,6 +2030,18 @@ int p_addLevelParticles(lua_State* L) {
     P(L)->AddLevelParticles(S(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), lua_toboolean(L, 8) != 0);
     return 0;
 }
+// Angry Birds Space: addParticlesWithScale(type, amount, x, y, w, h, angle, scaleBegin, scaleEnd) and addParticlesWithProperties(type, amount, x, y, w, h, angle, minVel, maxVel, minEmitterAngle, maxEmitterAngle)
+// (0x494900, 0x493280): the call's values replace those of the particle definition
+int p_addParticlesWithScale(lua_State* L) {            // (type, amount, x, y, w, h, angle, scaleBegin, scaleEnd)
+    Platform::ParticleOverride ov; ov.kind = 1; ov.a = N(L, 8); ov.b = N(L, 9);
+    P(L)->AddParticlesOverride(S(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), ov);
+    return 0;
+}
+int p_addParticlesWithProperties(lua_State* L) {       // (type, amount, x, y, w, h, angle, minVel, maxVel, minEmitterAngle, maxEmitterAngle in radians)
+    Platform::ParticleOverride ov; ov.kind = 2; ov.a = N(L, 8); ov.b = N(L, 9); ov.c = N(L, 10); ov.d = N(L, 11);
+    P(L)->AddParticlesOverride(S(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), ov);
+    return 0;
+}
 int p_setSoftLimit(lua_State* L) { P(L)->SetParticleSoftLimit(N(L, 1), N(L, 2)); return 0; }
 int p_setHardLimit(lua_State* L) { P(L)->SetParticleHardLimit(N(L, 1)); return 0; }
 
@@ -1653,11 +2094,11 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"loadLuaFileToObject", l_loadLuaFileToObject}, {"loadLuaFile", l_loadLuaFileToObject},   // 2.0.0: the same without an object
         {"loadLevel", l_loadLevel}, {"loadLevelEditor", l_loadLevelEditor}, {"saveLevel", l_saveLevel}, {"saveLuaFile", l_saveLuaFile}, {"checkForPersistentFile", l_checkForPersistentFile}, {"loadPersistentFileWrapper", l_loadPersistentFileWrapper},
         {"initializePainter", l_initializePainter}, {"clearCanvas", l_clearCanvas}, {"paintToCanvas", l_paintToCanvas}, {"drawCanvasWithMask", l_drawCanvasWithMask},
-        {"getDominantCanvasColors", l_getDominantCanvasColors}, {"createSpriteFromCanvas", l_createSpriteFromCanvas}, {"loadCanvasSprite", l_loadCanvasSprite}, {"setupCompoObject", l_setupCompoObject},
+        {"getDominantCanvasColors", l_getDominantCanvasColors}, {"createSpriteFromCanvas", l_createSpriteFromCanvas}, {"loadCanvasSprite", l_loadCanvasSprite}, {"createSilhouette", l_createSilhouette}, {"predictCollision", l_predictCollision}, {"setObjectGravity", l_setObjectGravity}, {"setObjectGravityScale", l_setObjectGravityScale}, {"resetObjectGravity", l_resetObjectGravity}, {"getObjectGravity", l_getObjectGravity}, {"setupCompoObject", l_setupCompoObject},
         {"createDirectory", l_createDirectory}, {"checkDirectory", l_checkDirectory}, {"checkForLuaFile", l_checkForLuaFile},
         {"createBox", l_createBox}, {"createCircle", l_createCircle}, {"createPolygon", l_createPolygon},
         {"clearVertices", l_clearVertices}, {"addVertex", l_addVertex},
-        {"getVelocity", l_getVelocity}, {"hasMovingObjects", l_hasMovingObjects},
+        {"getVelocity", l_getVelocity}, {"createCompoundBodyFromTable", l_createCompoundBodyFromTable}, {"getLinearVelocity", l_getLinearVelocity}, {"getRayCastedObjects", l_getRayCastedObjects}, {"getBGColor", l_getBGColor}, {"hasMovingObjects", l_hasMovingObjects},
         {"hasMovingObjectsZeroTolerance", l_hasMovingObjectsZeroTolerance}, {"getLocalPoint", l_getLocalPoint},
         {"setCollisionEnabled", l_setCollisionEnabled},
         {"setObjectAlpha", l_setObjectAlpha}, {"getObjectAlpha", l_getObjectAlpha}, {"setObjectZOrder", l_setObjectZOrder}, {"getObjectZOrder", l_getObjectZOrder},
@@ -1670,9 +2111,13 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"setThemeSprite", l_setThemeSprite}, {"drawMenuParticlesNative", l_nothing}, {"updateMenuParticlesNative", l_nothing}, {"isHDVersion", l_false},
         {"createJoint", l_createJoint}, {"createJoints", l_createJoints}, {"setJointParameters", l_setJointParameters},
         {"checkJointLimits", l_checkJointLimits}, {"destroyJoint", l_destroyJoint},
-        {"removeObject", l_removeObject}, {"applyImpulse", l_applyImpulse}, {"applyForce", l_applyForce},
+        {"removeObject", l_removeObject}, {"savePersistentLuaFile", l_savePersistentLuaFile}, {"applyImpulse", l_applyImpulse}, {"applyForce", l_applyForce}, {"applyForceNative", l_applyForce}, {"setObjectDecoration", l_setObjectDecoration}, {"setNormalTrailSprite", l_setNormalTrailSprite}, {"setSpecialTrailSprite", l_setSpecialTrailSprite}, {"setSpriteRotation", l_setSpriteRotation}, {"setPivotOffset", l_setPivotOffset}, {"setTextureScale", l_setTextureScale}, {"setRecordVelocity", l_setRecordVelocity},
         {"setPosition", l_setPosition}, {"setRotation", l_setRotation}, {"setVelocity", l_setVelocity},
-        {"setAngularVelocity", l_setAngularVelocity}, {"setSleeping", l_setSleeping},
+        {"setAngularVelocity", l_setAngularVelocity}, {"setLinearDamping", l_setLinearDamping}, {"clearShapesArray", l_clearShapesArray}, {"addBoxToCompoundList", l_addBoxToCompoundList}, {"addPolygonToCompoundList", l_addPolygonToCompoundList}, {"addLineToCompoundList", l_addLineToCompoundList}, {"addCircleToCompoundList", l_addCircleToCompoundList}, {"setCompoundShapeLinearDamping", l_setCompoundShapeLinearDamping}, {"setCompoundShapeParameter", l_setCompoundShapeParameter}, {"createCompoundObject", l_createCompoundObject}, {"finalizeCompoundObject", l_finalizeCompoundObject}, {"enableAimingAid", l_enableAimingAid}, {"setAimingAidSprite", l_setAimingAidSprite}, {"clearAimingAid", l_clearAimingAid}, {"updateBirdTrajectoryTable", l_updateBirdTrajectoryTable}, {"setSensorGravityMask", l_setSensorGravityMask}, {"setRevertGravity", l_setRevertGravity}, {"setRevertGravityWithMultiplier", l_setRevertGravityWithMultiplier}, {"setObjectGravityCategory", l_setObjectGravityCategory},
+        {"setSensorMinimumAndMaximumForces", l_setSensorMinimumAndMaximumForces}, {"setGravityForceMultiplier", l_setGravityForceMultiplier},
+        {"getGravityForceMultiplier", l_getGravityForceMultiplier}, {"setAngularDamping", l_setAngularDamping},
+        {"setFixedRotation", l_setFixedRotation}, {"setActive", l_setActive}, {"multiplyVelocity", l_multiplyVelocity}, {"setAsSensor", l_setAsSensor},
+        {"getAngularVelocity", l_getAngularVelocity}, {"setSleeping", l_setSleeping},
         {"getAngle", l_getAngle}, {"getWorldPoint", l_getWorldPoint}, {"setObjectParameter", l_setObjectParameter},
         {"setPhysicsSimulationScale", l_setPhysicsSimulationScale}, {"setPhysicsEnabled", l_setPhysicsEnabled},
         {"isPhysicsEnabled", l_isPhysicsEnabled}, {"setLevelLimits", l_setLevelLimits},
@@ -1699,7 +2144,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"playVideo", l_playVideo}, {"stopVideo", l_stopVideo}, {"isVideoPlaying", l_isVideoPlaying},
         // Angry Birds Seasons additions (not implemented yet)
         {"clearParticlesNative", l_clearParticlesNative}, {"loadLevelFile", l_nothing}, {"getLoadStatus", l_getLoadStatus},
-        {"createThemeSprite", l_createThemeSprite},
+        {"createThemeSprite", l_createThemeSprite}, {"createThemeAnimation", l_createThemeAnimation},
         {"modifyThemeSprite", l_modifyThemeSprite},
         {"removeThemeSprite", l_removeThemeSprite},
         {"updateThemeSprite", l_updateThemeSprite},
@@ -1748,7 +2193,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"createCompoSpriteSet", r_createCompoSpriteSet}, {"releaseCompoSpriteSet", r_releaseCompoSpriteSet},
         {"createBitmapFont", r_createBitmapFont}, {"useFont", r_useFont},
         {"createTextGroupSet", r_createTextGroupSet}, {"loadLocale", r_loadLocale}, {"useLocale", r_useLocale},
-        {"getString", r_getString}, {"drawSprite", r_drawSprite}, {"drawCompoSprite", r_drawCompoSprite},
+        {"getString", r_getString}, {"drawSprite", r_drawSprite}, {"drawCompoSprite", r_drawCompoSprite}, {"drawTexturedLine2D", r_drawTexturedLine2D},
         {"drawString", r_drawString}, {"setClipRect", r_setClipRect},
         {"getSpriteBounds", r_getSpriteBounds}, {"getSpritePivot", r_getSpritePivot},
         {"getCompoSpriteBounds", r_getCompoSpriteBounds},
@@ -1765,6 +2210,7 @@ void RegisterApi(lua_State* L, Platform* p) {
 
     static const Entry particles[] = {
         {"addParticles", p_addParticles}, {"addLevelParticles", p_addLevelParticles}, {"setSoftLimit", p_setSoftLimit}, {"setHardLimit", p_setHardLimit},
+        {"addParticlesWithScale", p_addParticlesWithScale}, {"addParticlesWithProperties", p_addParticlesWithProperties},
     };
     lua_newtable(L);
     Register(L, p, lua_gettop(L), particles, sizeof(particles) / sizeof(particles[0]));

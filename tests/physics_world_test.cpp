@@ -352,6 +352,18 @@ static void RunAll(Box2DVersion version) {
         w.SetColliderRule(99, 2, false);                  // out of range: nothing happens
     }
 
+    // ---- per-object transparency (setObjectAlpha), kept on the object and clamped
+    {
+        std::unique_ptr<PhysicsWorld> wp = MakePhysicsWorld(version);
+        PhysicsWorld& w = *wp;
+        w.CreateBox(Def("glass", 0, 0, 1, 1, 0));
+        CHECK(Near(w.ObjectAlpha("glass"), 1.0f));
+        w.SetObjectAlpha("glass", 0.25f);  CHECK(Near(w.ObjectAlpha("glass"), 0.25f));
+        w.SetObjectAlpha("glass", 7.0f);   CHECK(Near(w.ObjectAlpha("glass"), 1.0f));
+        w.SetObjectAlpha("glass", -1.0f);  CHECK(Near(w.ObjectAlpha("glass"), 0.0f));
+        CHECK(w.ObjectAlpha("nothing") < 0);
+    }
+
     // ---- Box2D 2.2.0 skin: blocks that are placed flush (as the Angry Birds Rio levels place them) stay where they are
     {
         std::unique_ptr<PhysicsWorld> wp = MakePhysicsWorld(version);
@@ -367,6 +379,31 @@ static void RunAll(Box2DVersion version) {
             w.SetPolygonRadius(0.07f);  CHECK(Near(w.PolygonRadius(), 0.07f));
             w.SetPolygonRadius(0.05f);  CHECK(Near(w.PolygonRadius(), 0.05f));
         }
+    }
+
+    // ---- predictCollision: bounce, friction and spin from the real shapes
+    {
+        std::unique_ptr<PhysicsWorld> wp = MakePhysicsWorld(version);
+        PhysicsWorld& w = *wp;
+        w.CreateBox(Def("wall", 0, 3, 20, 1, 0));          // top at y = 2.5
+        w.CreateCircle(Def("ball", 0, 1, 0.5f, 0, 1));     // bottom at y = 1.5, so the gap is 1
+        w.SetVelocity("ball", 0, 10);
+        CollisionPrediction c = w.PredictCollision("ball", "wall", 0.5f);
+        CHECK(c.valid && c.collides && !c.filtered);
+        CHECK(Near(c.ny, 1.0f, 0.02f) && Near(c.nx, 0.0f, 0.02f));
+        CHECK(Near(c.closingSpeed, 10.0f, 0.05f));
+        CHECK(Near(c.aVy, -5.0f, 0.2f));                   // bounces back at half the speed
+        CHECK(Near(c.aAngVel, 0.0f, 0.05f));               // straight on: no spin
+        if (version == Box2DVersion::V22) {
+            CHECK(c.exactShapes && Near(c.gap, 1.0f, 0.1f));
+            w.SetVelocity("ball", 4, 10);                   // sliding as well: friction turns the sliding into spin
+            CollisionPrediction f = w.PredictCollision("ball", "wall", 0.0f);
+            CHECK(f.tangentImpulse != 0 && std::fabs(f.aAngVel) > 0.1f);
+            CHECK(std::fabs(f.aVx) < 4.0f);                // the slide is slowed
+            CHECK(f.energyLost > 0);
+        }
+        CollisionPrediction none = w.PredictCollision("ball", "nothing", 0.5f);
+        CHECK(!none.valid);
     }
 
 }

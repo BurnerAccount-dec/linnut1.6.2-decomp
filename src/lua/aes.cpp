@@ -9,6 +9,7 @@ const char kLevelKey[33] = "USCaPQpA4TSNVxMI1v9SK9UC0yZuAnb2";
 const char kSeasonsKey[33] = "zePhest5faQuX2S2Apre@4reChAtEvUt";   // Game+0x31c in Angry Birds Seasons
 const char kSpaceKey[33] = "RmgdZ0JenLFgWwkYvCL2lSahFbEhFec4";   // Angry Birds Space scripts (found by the community; every Space .lua decrypts to Lua 5.1 bytecode)
 const char kSaveKey[33] = "44iUY5aTrlaYoet9lapRlaK1Ehlec5i0";
+const char kSpaceSaveKey[33] = "TpeczKQL07HVdPbVUhAr6FjUsmRctyc5";     // Space save files (the exe builds it byte by byte at 0x496180)
 const char kSeasonsSaveKey[33] = "brU4u=EbR4s_A3APu6U#7B!axAm*We#5";   // Seasons settings.lua / highscores.lua
 
 namespace {
@@ -140,8 +141,8 @@ bool ReadSaveFile(const std::string& path, std::string& text, bool& encrypted, c
     std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>()), plain;
     encrypted = false;
     if (keyUsed) *keyUsed = kSaveKey;
-    const char* keys[] = {kSaveKey, kSeasonsSaveKey};
-    for (size_t k = 0; k < 2 && !encrypted; k++) {
+    const char* keys[] = {kSaveKey, kSeasonsSaveKey, kSpaceSaveKey};
+    for (size_t k = 0; k < 3 && !encrypted; k++) {
         if (!AesDecryptCbc((const uint8_t*)keys[k], bytes, plain)) continue;
         encrypted = true;
         for (size_t i = 0; i < plain.size() && i < 64; i++)

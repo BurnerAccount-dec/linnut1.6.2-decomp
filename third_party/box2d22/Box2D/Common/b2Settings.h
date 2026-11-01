@@ -68,7 +68,11 @@ typedef double float64;
 /// chosen to be numerically significant, but visually insignificant.
 // Angry Birds Rio changes (the exe's constants are the same as in the classic exe): linearSlop 0.05 (stock 0.005), timeToSleep 0.25 (0.5),
 // linearSleepTolerance 0.1 (0.01). The polygon skin radius is b2_polygonRadiusValue (see b2Settings.cpp).
-#define b2_linearSlop			0.05f
+// Runtime values: Rio/Classic use 0.05 / 0.25 / 0.1, AngryBirdsSpace.exe uses the stock 0.005 (0x512484), 0.5 (0x50f6ac) and a linear sleep tolerance of 0.5 (0.25 squared at 0x51270c)
+extern float b2_linearSlopValue;
+extern float b2_timeToSleepValue;
+extern float b2_linearSleepToleranceValue;
+#define b2_linearSlop			b2_linearSlopValue
 
 /// A small angle used as a collision and constraint tolerance. Usually it is
 /// chosen to be numerically significant, but visually insignificant.
@@ -82,6 +86,8 @@ extern float b2_polygonRadiusValue;
 #define b2_polygonRadius		b2_polygonRadiusValue
 // Fraction of the skin that the position solver keeps between two bodies (1 = Box2D 2.2 as shipped, 0 = the skin only decides when bodies touch).
 extern float b2_solverSkinFraction;
+extern bool b2_coincidentCircleNormal;   // Rio (0x4f2da0): circles with coinciding centres get the normal (1, 0); Space (0x4adf20) just normalizes (a zero vector stays zero)
+extern bool b2_spaceBuild;              // Space is built from a newer Box2D than Rio: tree (0x4a3220..), island solve (0x4a4720), circle solver manifold (0x4adf20)
 
 /// Maximum number of sub-steps per contact in continuous physics simulation.
 #define b2_maxSubSteps			8
@@ -125,10 +131,10 @@ extern float32 b2_maxTranslationSquared;
 // Sleep
 
 /// The time that a body must be still before it will go to sleep.
-#define b2_timeToSleep				0.25f
+#define b2_timeToSleep				b2_timeToSleepValue
 
 /// A body cannot sleep if its linear velocity is above this tolerance.
-#define b2_linearSleepTolerance		0.1f
+#define b2_linearSleepTolerance		b2_linearSleepToleranceValue
 
 /// A body cannot sleep if its angular velocity is above this tolerance.
 #define b2_angularSleepTolerance	(2.0f / 180.0f * b2_pi)

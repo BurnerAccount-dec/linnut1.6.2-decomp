@@ -1,3 +1,4 @@
+#include <type_traits>
 #include <algorithm>
 #include <cstring>
 #include <fstream>
@@ -27,6 +28,7 @@ public:
         jointNameOf = [this](int index) { return platform_.Physics().JointName(index); };
     }
     void StepWorld(float dt, int velIter, int posIter) override {
+        platform_.Physics().ApplyGravitySensors(dt);
         platform_.Physics().Step(dt, velIter, posIter);
         static const char* dumpEvery = std::getenv("AB_BODYDUMP");   // debug: print every body each N steps
         static int step = 0;
@@ -150,13 +152,22 @@ GamePlatform::GamePlatform(const std::string& dataRoot) : dataRoot_(dataRoot) {}
 // The physics world is made on first use, when the scripts have told which game this is: Rio uses Box2D 2.2.0, the others 2.1.x.
 PhysicsWorld& GamePlatform::Physics() {
     if (physics_) return *physics_;
-    Box2DVersion ver = scripts_ && scripts_->IsRio() ? Box2DVersion::V22 : Box2DVersion::V21;
+    Box2DVersion ver = scripts_ && (scripts_->IsRio() || scripts_->IsSpace()) ? Box2DVersion::V22 : Box2DVersion::V21;
     if (const char* f = std::getenv("AB_BOX2D")) ver = std::string(f) == "21" ? Box2DVersion::V21 : Box2DVersion::V22;  // test override
     if (requestedBox2D_) ver = requestedBox2D_ == 21 ? Box2DVersion::V21 : Box2DVersion::V22;
     physics_ = MakePhysicsWorld(ver);
+    physics_->SetBox2DFlavour(scripts_ && scripts_->IsSpace());   // Space (0x4a3220 tree, 0x4adf20 solver manifold) is a newer Box2D than Rio (0x4f1e00, 0x4f2da0)
+    if (scripts_ && scripts_->IsSpace()) {
+        physics_->spaceRules = true;
+        physics_->SetSolverSettings(0.005f, 0.5f, 0.5f);      // AngryBirdsSpace.exe: linearSlop 0x512484, timeToSleep 0x50f6ac, linear sleep tolerance 0.25 squared (0x51270c)
+        physics_->SetPolygonRadius(0.01f);                   // 0x50f77c
+    } else if (scripts_ && scripts_->IsRio()) physics_->SetSolverSettings(0.05f, 0.25f, 0.1f);
+    else physics_->SetSolverSettings(0.05f, 0.25f, 0.1f);
+    if (scripts_ && scripts_->IsSpace()) physics_->SetGravity(0, 0);   // Space: only the gravitation sensors pull (the scripts never call setWorldGravity)
     physics_->startAsleep = std::getenv("AB_ASLEEPSTART") != nullptr;   // v2.2: the exe creates every body awake (b2BodyDef.awake = 1 at 0x411590 and the other creators); AB_ASLEEPSTART=1 starts blocks asleep for testing
     if (std::getenv("AB_PHYSDBG")) std::fprintf(stderr, "PHYS Box2D %s\n", physics_->Version() == Box2DVersion::V22 ? "2.2.0" : "2.1.1");
     physics_->onBeginContact = [this](PhysObject& a, PhysObject& b, ContactHandle& c) { OnContact(a, b, c); };
+    physics_->onEndContact = [this](PhysObject& a, PhysObject& b) { if (scripts_ && scripts_->IsSpace() && (a.isSensor || b.isSensor)) { SpaceSensorTouch(a, b, false); CallCollisionPair("exitCollision", a.name, b.name); } };
     // the contact filter reads objects.world[name].material live
     physics_->materialOf = [this](const PhysObject& o) {
         std::string material;
@@ -206,6 +217,7 @@ void GamePlatform::RunFrame(float dt) {
         lua_settop(L, top);
     }
     Physics().Frame().physicsScale = physicsScale;
+    Physics().Frame().stepOnEqual = scripts_ && scripts_->IsSpace();
     std::string audioError = audio_.TakeError();
     if (!audioError.empty()) Print("audio: " + audioError);
     if (scripts_ && audio_.Created() && !audio_.Started()) {
@@ -252,8 +264,11 @@ void GamePlatform::RunFrame(float dt) {
         lua_settop(L, top);
     }
     if (host_) UpdateFrame(Physics().Frame(), *host_, dt);
+    static int execFrame = 0;
+    if (const char* od = std::getenv("AB_OBJDUMP")) if (execFrame + 1 == std::atoi(od))
+        for (const auto& o : Physics().Objects()) { BodyInfo bi = Physics().Inspect(o->name); std::fprintf(stderr, "OD %s spr=%s st=%d sensor=%d r=%g m=%g scaled=%d sc=%g,%g x=%.1f y=%.1f fr=%g e=%g\n", o->name.c_str(), o->sprite.c_str(), (int)bi.isStatic, (int)o->isSensor, bi.shapeRadius, bi.mass, (int)o->scaled, o->scaleX, o->scaleY, o->interpX, o->interpY, o->pbody ? o->pbody->Friction() : 0.0f, o->pbody ? o->pbody->Restitution() : 0.0f); }
+    if (const char* pn = std::getenv("AB_PROBE")) if (Physics().Frame().running) if (Physics().Find(pn)) { BodyInfo bi = Physics().Inspect(pn); std::fprintf(stderr, "PROBE %d %.3f %.3f v=%.2f,%.2f awake=%d scale=%g acc=%g dt=%g\n", execFrame, bi.posX, bi.posY, bi.velX, bi.velY, (int)bi.awake, Physics().Frame().physicsScale, Physics().Frame().accumulator, dt); }
     {   // test hook: AB_EXEC_FRAME=n AB_EXEC="lua code" runs a snippet on frame n
-        static int execFrame = 0;
         const char* at = std::getenv("AB_EXEC_FRAME");
         const char* at2 = std::getenv("AB_EXEC2_FRAME");
         const char* at3 = std::getenv("AB_EXEC3_FRAME");
@@ -262,12 +277,30 @@ void GamePlatform::RunFrame(float dt) {
         if (scripts_ && at2 && execFrame == std::atoi(at2) && std::getenv("AB_EXEC2")) scripts_->RunString(std::getenv("AB_EXEC2"));
         if (scripts_ && at3 && execFrame == std::atoi(at3) && std::getenv("AB_EXEC3")) scripts_->RunString(std::getenv("AB_EXEC3"));
     }
+    // Space: the scripts' debug keys (fps, background, hit boxes, level skip, ...) sit behind `not releaseBuild`, and options.lua sets releaseBuild
+    // (so the retail game has none). They are switched on the way the other games' are: cheats on, and the functions that read the keys run in a
+    // view where releaseBuild reads false (the real flag stays true: false would unlock every level). AB_NODEBUGKEYS=1 turns this off.
+    if (scripts_ && scripts_->IsSpace() && execFrame % 20 == 0 && !std::getenv("AB_NODEBUGKEYS"))
+        scripts_->RunString(
+            "local env = _G.getfenv(1)\n"
+            "env.cheatsEnabled = true\n"
+            "local view = env.__abview\n"
+            "if not view then view = _G.setmetatable({releaseBuild = false}, {__index = env, __newindex = env}); env.__abview = view; env.__abwrapped = _G.setmetatable({}, {__mode = 'k'}) end\n"
+            "local function wrap(f) if _G.type(f) == 'function' and not env.__abwrapped[f] then env.__abwrapped[f] = true; _G.setfenv(f, view) end end\n"
+            "wrap(env.update) wrap(env.updateGame) wrap(env.updateMenu)\n"
+            "local gs = env.GameScene\n"
+            "if _G.type(gs) == 'table' then wrap(gs.update) wrap(gs.onEntry) end\n");
+    // Space: AB_UNLOCKALL=1 opens every level and episode of the select pages for playtesting (the retail progress rules stay otherwise)
+    if (scripts_ && scripts_->IsSpace() && execFrame % 60 == 0 && std::getenv("AB_UNLOCKALL"))
+        scripts_->RunString("local e=_G.getfenv(1); local W=e.SettingsWrapper; if W and not W.__abUnlocked then W.__abUnlocked=true; "
+                            "W.getLevelProgress=function() return 99999 end; W.isComicWatched=function() return true end; "
+                            "W.isEpisodePurchased=function() return true end; W.isEggsteroidLevelUnlocked=function() return true end end");
     if (scripts_ && scripts_->IsRio() && dt > 0) {
         if (Physics().Frame().running) UpdateRioGettingUp(dt);
         SelectRioAnimations(dt);
         if (Physics().Frame().running) { UpdateRioBirdFaces(dt); UpdateRioSquash(dt); }
     }
-    if (scripts_ && scripts_->IsRio()) scripts_->Draw();      // Rio: the exe calls draw() after update()
+    if (scripts_ && (scripts_->IsRio() || scripts_->IsSpace())) { bool ok = scripts_->Draw(); if (!ok && std::getenv("AB_DRAWDBG")) std::fprintf(stderr, "draw() failed\n"); }      // Rio: the exe calls draw() after update()
     // 0x40a8cb: the particles move only while the physics is enabled
     bool seasons = IsSeasonsScripts();
     if (Physics().Frame().running) UpdateParticles(dt, true, seasons ? -1 : 0);
@@ -302,9 +335,13 @@ void GamePlatform::BeginLevelLoad() {
     if (physics_ && std::getenv("AB_KEEPWORLD") == nullptr) {
         float gx = 0, gy = 0;
         physics_->GetGravity(gx, gy);
+        bool wasRunning = physics_->Frame().running;
         physics_->Clear();
         physics_.reset();
         Physics().SetGravity(gx, gy);
+        // Space: onEntry enables physics before the level file loads, and the flag belongs to the game, not the world; without it the menu
+        // levels (level / episode selection) never ran their camera, so the scroll arrows did nothing
+        if (scripts_ && scripts_->IsSpace()) Physics().SetRunning(wasRunning);
     }
     Physics().Clear();
     Physics().SetMaxTranslation(2.0f);          // 0x40d2c0 writes 2.0 and 4.0 to the two translation limits
@@ -328,6 +365,14 @@ void GamePlatform::CreateThemeSpriteRio(const std::string& name, const std::stri
     themeSprites_.push_back(t);
 }
 
+// Space createThemeAnimation (0x484cc0): an entry of the layer list with the frames to cycle through
+void GamePlatform::CreateThemeAnimation(const ThemeAnimation& a) {
+    ThemeSprite t{a.name, a.sprite, a.x, a.y, a.scaleX, a.scaleY, a.angle, 0, a.layer};
+    t.frames = a.frames; t.animTimer = a.animTimer; t.animDelay = a.animDelay; t.startDelay = a.startingDelay; t.loop = a.loop;
+    if (t.sprite.empty() && !t.frames.empty()) t.sprite = t.frames[0];
+    themeSprites_.push_back(t);
+}
+
 void GamePlatform::SetThemeSprite(const std::string& name, const std::string& sprite, int layer) {
     for (ThemeSprite& t : themeSprites_)
         if (t.name == name && t.layer == layer) { t.sprite = sprite; break; }
@@ -336,6 +381,17 @@ void GamePlatform::SetThemeSprite(const std::string& name, const std::string& sp
 void GamePlatform::RotateThemeSprites(float dt) {
     const float twoPi = 6.2831855f;
     for (ThemeSprite& t : themeSprites_) {
+        if (t.frames.size() > 1 && t.animDelay > 0) {          // an animation: the next frame every animDelay seconds, after the starting delay
+            if (t.startDelay > 0) t.startDelay -= dt;
+            else {
+                t.animTimer += dt;
+                while (t.animTimer >= t.animDelay) {
+                    t.animTimer -= t.animDelay;
+                    if (t.frame + 1 < (int)t.frames.size()) t.frame++; else if (t.loop) t.frame = 0;
+                    t.sprite = t.frames[t.frame];
+                }
+            }
+        }
         if (t.angleVel == 0) continue;
         t.angle = std::fmod(t.angle + t.angleVel * dt, twoPi);
         if (t.angle < 0) t.angle += twoPi;
@@ -508,7 +564,58 @@ void GamePlatform::SelectRioAnimations(float dt) {
 // Box2D BeginContact -> the exe's collision damage code (0x40b670). The rules are in ResolveContact;
 // this reads the Lua fields it needs, applies the result and calls birdCollision / blockCollision.
 // (The two skip flags at Game+0x1e9 / 0x1ea are only ever set to 0 in the exe, so they are left out.)
+// Angry Birds Space: a contact with a sensor goes to the global enterCollision(a, b) / exitCollision(a, b) (the trigger actions), not to blockCollision
+void GamePlatform::CallCollisionPair(const char* fn, const std::string& a, const std::string& b) {
+    lua_State* L = scripts_->State();
+    int top = lua_gettop(L);
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    lua_getfield(L, -1, fn);
+    if (lua_isfunction(L, -1)) {
+        lua_pushlstring(L, a.data(), a.size());
+        lua_pushlstring(L, b.data(), b.size());
+        if (lua_pcall(L, 2, 0, 0) != 0) std::fprintf(stderr, "script error: %s: %s\n", fn, lua_tostring(L, -1));
+    }
+    lua_settop(L, top);
+}
+
+// Space (exe 0x46a500 / 0x470398): touching a gravitation sensor (type 2) sets the Lua field insideGravity on the other object; leaving the last one clears it
+void GamePlatform::SpaceSensorTouch(PhysObject& pa, PhysObject& pb, bool enter) {
+    PhysObject* pair[2][2] = {{&pa, &pb}, {&pb, &pa}};
+    for (auto& pr : pair) {
+        PhysObject* sen = pr[0]; PhysObject* other = pr[1];
+        if (!sen->isSensor) continue;
+        lua_State* L = scripts_->State();
+        int top = lua_gettop(L);
+        if (enter) {                                                     // 0x46a500: kinds 2 and 3 wake the object and list the sensor; kind 2 sets insideGravity
+            if (sen->sensorKind != 2 && sen->sensorKind != 3) continue;
+            if (other->pbody && !other->pbody->IsStatic()) other->pbody->SetAwake(true);
+            physics_->SensorPair(sen, other, true);
+            if (sen->sensorKind == 2) {
+                PushWorldEntry(L, other->name);
+                if (lua_istable(L, -1)) { lua_pushboolean(L, 1); lua_setfield(L, -2, "insideGravity"); }
+            }
+        } else {                                                         // 0x470380: drop one entry; the last one clears insideGravity
+            if (physics_->SensorPair(sen, other, false) == 0) {
+                PushWorldEntry(L, other->name);
+                if (lua_istable(L, -1)) { lua_pushboolean(L, 0); lua_setfield(L, -2, "insideGravity"); }
+            }
+            lua_settop(L, top);
+            if (sen->spaceFlagA && !other->spaceFlagA) {                 // a sensor with parameter 19: what an object does when it leaves it
+                if (other->isBird) {
+                    PushWorldEntry(L, other->name);
+                    if (lua_istable(L, -1)) { lua_pushboolean(L, 1); lua_setfield(L, -2, "killingVolumeRemovalTime"); }
+                } else if (other->pbody && (other->stopOnExit || other->drawWithBirds)) {
+                    if (!other->stopOnExit) physics_->SetVelocity(other->name, 0, 0);   // parameter 1 (+0x1a4) also stops the object
+                    other->pbody->SetLinearDamping(100.0f);
+                }
+            }
+        }
+        lua_settop(L, top);
+    }
+}
+
 void GamePlatform::OnContact(PhysObject& pa, PhysObject& pb, ContactHandle& contact) {
+    if (scripts_ && scripts_->IsSpace() && (pa.isSensor || pb.isSensor)) { SpaceSensorTouch(pa, pb, true); CallCollisionPair("enterCollision", pa.name, pb.name); return; }
     if (scripts_ && scripts_->IsRio()) {         // Rio (0x40daa6): a hit starts the scale wobble of both objects that have a bounce multiplier
         float dpx = pa.pbody->Mass() * pa.pbody->VelX() - pb.pbody->Mass() * pb.pbody->VelX();
         float dpy = pa.pbody->Mass() * pa.pbody->VelY() - pb.pbody->Mass() * pb.pbody->VelY();
@@ -771,6 +878,24 @@ void GamePlatform::Transform(float x, float y, float cx, float cy, float& ox, fl
 // Sprite_handleEvent (0x43aab0) and drawSprite (0x434b30 / 0x434c60): the anchors move the sprite's
 // top left corner away from (x, y) by a part of its own size, the quad is drawn at the sprite's size
 // (or the size passed), with the sprite's rectangle of the sheet as texture coordinates.
+// drawTexturedLine2D(sprite, x1, y1, x2, y2, width, r, g, b, a) (0x469040): the sprite's picture stretched along the line from (x1, y1) to (x2, y2) and
+// `width` thick, centred on the line; the colour is 0 to 255 and multiplies the sprite (the slingshot's rubber bands are drawn with it)
+void GamePlatform::DrawTexturedLine2D(const std::string& name, float x1, float y1, float x2, float y2, float width, float r, float g, float b, float a) {
+    if (!backend_) return;
+    const SpriteSheet* sheet = nullptr;
+    const Sprite* sp = sprites_.Find(name, &sheet);
+    if (!sp) return;
+    float dx = x2 - x1, dy = y2 - y1, len = std::sqrt(dx * dx + dy * dy);
+    if (len <= 0) return;
+    RenderState keep = state_;
+    state_.angle = keep.angle + std::atan2(dy, dx);
+    state_.pivotX = 0; state_.pivotY = width * 0.5f;
+    state_.tintR = keep.tintR * r / 255.0f; state_.tintG = keep.tintG * g / 255.0f; state_.tintB = keep.tintB * b / 255.0f;
+    state_.alpha = keep.alpha * a / 255.0f;
+    DrawSpriteAt(*sheet, *sp, x1, y1 - width * 0.5f, 0, 0, true, len, width);
+    state_ = keep;
+}
+
 void GamePlatform::ResDrawSprite(const std::string& name, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height) {
     if (!backend_) return;
     if (!drawingCursor_ && name.compare(0, 7, "CURSOR_") == 0) {
@@ -830,7 +955,7 @@ void GamePlatform::ResGetCompoSpriteBounds(const std::string&, const std::string
 void GamePlatform::DrawSpriteAt(const SpriteSheet& sheet, const Sprite& spr, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height) {
     const Sprite* sp = &spr;
     const TextureInfo* tex = TextureFor(sheet);
-    if (!tex) return;
+    if (!tex) { if (std::getenv("AB_DRAWDBG")) { static int n = 0; if (n++ < 5) std::fprintf(stderr, "NOTEX %s/%s\n", sheet.directory.c_str(), sheet.image.c_str()); } return; }
 
     switch (vAnchor) {
         case 1: y -= (float)(sp->h >> 1); break;
@@ -1189,6 +1314,24 @@ void GamePlatform::SetTheme(const std::string& theme) {
                         lua_rawgeti(L, -1, i);
                         if (lua_istable(L, -1)) {
                             BgLayer layer;
+                            lua_getfield(L, -1, "sprite");
+                            if (lua_isstring(L, -1)) {      // Angry Birds Space: named fields (xMult is the parallax, bLoop false pins the picture at offsetX)
+                                if (lua_tostring(L, -1)[0]) {
+                                    layer.space = true;
+                                    layer.sprite = lua_tostring(L, -1);
+                                    int lt = lua_gettop(L) - 1;
+                                    layer.speed = number(lt, "xMult", number(lt, "zDistance", 1));
+                                    layer.scale = number(lt, "scale", 1);
+                                    layer.offX = number(lt, "offsetX", 0); layer.offY = number(lt, "offsetY", 0);
+                                    lua_getfield(L, lt, "bLoop");
+                                    layer.looping = !lua_isboolean(L, -1) || lua_toboolean(L, -1);
+                                    lua_pop(L, 1);
+                                    bgLayers_.push_back(layer);
+                                }
+                                lua_pop(L, 2);
+                                continue;
+                            }
+                            lua_pop(L, 1);
                             lua_rawgeti(L, -1, 2);
                             if (lua_isstring(L, -1)) layer.sprite = lua_tostring(L, -1);
                             lua_pop(L, 1);
@@ -1286,6 +1429,7 @@ void GamePlatform::Wheel(int notches) {
 // drawBackgroundNative: every looping layer is a row of copies of its sprite, shifted by the camera
 // times the layer's parallax speed.
 void GamePlatform::DrawBackground() {
+    if (std::getenv("AB_DRAWDBG")) { static int n = 0; if (n++ < 3) std::fprintf(stderr, "DrawBackground layers=%d\n", (int)bgLayers_.size()); }
     if (!backend_) return;
     // The non-looping layers (the cranes) are placed one after another: the first at episode4BGCranes.startX / 16
     // sprite widths, each next one half a sprite width further.
@@ -1301,6 +1445,7 @@ void GamePlatform::DrawBackground() {
     float place = 0;
     bool firstFixed = true;
     for (const BgLayer& layer : bgLayers_) {
+        if (std::getenv("AB_DRAWDBG")) std::fprintf(stderr, "BGLAYER %s scale=%.3f speed=%.3f off=%.1f loop=%d\n", layer.sprite.c_str(), layer.scale, layer.speed, layer.offset, (int)layer.looping);
         // a layer is a sprite or a composite sprite (the Seasons hills are composites)
         const Sprite* sp = sprites_.Find(layer.sprite);
         const CompoSprite* compo = sp ? nullptr : sprites_.FindCompo(layer.sprite);
@@ -1309,6 +1454,16 @@ void GamePlatform::DrawBackground() {
         float w = sp ? (float)sp->w : (float)cw, pivotX = sp ? (float)sp->pivotX : (float)ox;
         if (w <= 0) continue;
         float s = layer.scale, inv = 1.0f / s;
+        if (layer.space) {   // Space: screen-space layers (no world scale): pinned ones sit at (offsetX, offsetY), looping ones repeat across the screen
+            state_ = RenderState();
+            state_.sx = state_.sy = s;
+            float shift = layer.speed * camX_ * 0.05f * worldScale_;
+            if (layer.looping) {
+                float m = std::fmod(shift, w * s);
+                for (float x = -(m + w * s) * inv; x * s <= (float)screenWidth_; x += w) ResDrawSprite(layer.sprite, x, layer.offY, 4, 3, false, 0, 0);
+            } else ResDrawSprite(layer.sprite, layer.offX - shift * inv, layer.offY, 4, 3, false, 0, 0);
+            continue;
+        }
         float baseShift = layer.speed * camX_, shift = layer.speed * (camX_ + layer.offset);   // 0x41a6e7: (offset + camera) * parallax
         state_ = RenderState();
         state_.ty = -camY_ * inv;
@@ -1334,7 +1489,7 @@ void GamePlatform::DrawBackground() {
 // drawForegroundNative: the ground colour below the first foreground sprite, then the foreground
 // sprites repeated at 1.5 times the world scale.
 void GamePlatform::DrawForeground() {
-    if (!backend_) return;
+    if (!backend_ || (scripts_ && scripts_->IsSpace())) return;   // Space has no ground: drawForeground (a different routine there) is still to be decompiled
     // a foreground layer is a sprite or a composite sprite (the Ham 'o' Ween menu draws its trees and pumpkins as composites)
     auto extent = [&](const std::string& name, float& w, float& pivotX, float& h, float& pivotY) {
         const Sprite* sp = sprites_.Find(name);
@@ -1377,9 +1532,46 @@ void GamePlatform::DrawPhysObject(PhysObject& o) {
     const SpriteSheet* sheet = nullptr;
     const Sprite* sp = sprites_.Find(o.sprite, &sheet);
     const CompoSprite* compo = sp ? nullptr : sprites_.FindCompo(o.sprite);
+    if (std::getenv("AB_DRAWDBG")) { static int n = 0; if (n++ < 3000) std::fprintf(stderr, "DRAW %s sprite=%s found=%d x=%.0f y=%.0f cam=%.0f,%.0f ws=%.3f\n", o.name.c_str(), o.sprite.c_str(), (int)(sp || compo), o.interpX * 20, o.interpY * 20, camX_, camY_, worldScale_); }
+    if (!o.parts.empty()) {      // Angry Birds Space compound body: every part is a sprite placed about the body and turning with it
+        float bx = o.interpX * 20.0f, by = o.interpY * 20.0f, c = std::cos(o.interpAngle), sn = std::sin(o.interpAngle);
+        for (const CompoundShape& part : o.parts) {
+            const SpriteSheet* psheet = nullptr;
+            const Sprite* ps = part.sprite.empty() ? nullptr : sprites_.Find(part.sprite, &psheet);
+            if (!ps) continue;
+            float lx = part.x * 20.0f, ly = part.y * 20.0f;
+            float px = bx + c * lx - sn * ly, py = by + sn * lx + c * ly;
+            RenderState keep = state_;
+            state_.angle = o.interpAngle + part.angle;
+            state_.alpha = o.alpha;
+            state_.pivotX = (float)ps->pivotX; state_.pivotY = (float)ps->pivotY;
+            DrawSpriteAt(*psheet, *ps, px - (float)ps->pivotX, py - (float)ps->pivotY, 0, 0, false, 0, 0);
+            state_ = keep;
+        }
+        return;
+    }
     if (!sp && !compo) return;
+    if (!o.decoSprite.empty() && o.decoAmount > 0 && !o.hidden) {   // 0x48d41b: the copies of the decoration sprite, each turned o.decoIncrement degrees more
+        const SpriteSheet* dsheet = nullptr;
+        if (const Sprite* ds = sprites_.Find(o.decoSprite, &dsheet)) {
+            float dx = o.interpX * 20.0f, dy = o.interpY * 20.0f, ang = o.interpAngle;
+            for (int i = 0; i < o.decoAmount; i++) {
+                RenderState keep = state_;
+                state_.angle = ang; state_.alpha = o.alpha;
+                state_.pivotX = (float)ds->pivotX; state_.pivotY = (float)ds->pivotY;
+                state_.sx *= o.decoScale; state_.sy *= o.decoScale;
+                state_.tx = (dx + keep.tx) / o.decoScale - dx; state_.ty = (dy + keep.ty) / o.decoScale - dy;
+                DrawSpriteAt(*dsheet, *ds, dx, dy, 4, 3, false, 0, 0);
+                state_ = keep;
+                ang = std::fmod(ang + o.decoIncrement * 3.14159265f / 180.0f, 6.2831853f);
+                if (ang < 0) ang += 6.2831853f;
+            }
+        }
+    }
+    if (o.hidden) return;                      // Space: setObjectParameter(n, 33, 0)
+    if (o.isSensor && o.sensorKind == 2 && Physics().spaceRules) return;   // the gravity area is invisible in retail (its sprite is the blue dot at the planet centre)
     float x = o.interpX * 20.0f, y = o.interpY * 20.0f;
-    state_.angle = o.interpAngle;
+    state_.angle = o.interpAngle + o.spriteAngle;   // Space: 0x48d2a9 adds setSpriteRotation's angle
     if (!o.texture.empty() && sp) {
         const TextureInfo* t = TextureFile(sheet->directory + "/" + o.texture + ".png", true);
         if (t) tileTexture_ = t;
@@ -1389,15 +1581,16 @@ void GamePlatform::DrawPhysObject(PhysObject& o) {
     RenderState saved = state_;
     if (o.disableRotation) state_.angle = 0;     // 0x41b2c0: setObjectParameter 10 draws the sprite upright
     // the draw scale is the object's own scale plus the wobble after a hit (0x40b2xx: x gets +sin, y gets -sin of the same phase)
-    float drawSX = (o.scaled ? o.scaleX : 1.0f) + o.wobDX, drawSY = (o.scaled ? o.scaleY : 1.0f) + o.wobDY;
-    if ((o.scaled || o.wobDX != 0 || o.wobDY != 0) && drawSX != 0 && drawSY != 0) {
+    bool useScale = o.scaled || Physics().spaceRules;       // Space always draws the scale (ids 5, 17, 18 and setScale)
+    float drawSX = (useScale ? o.scaleX : 1.0f) + o.wobDX, drawSY = (useScale ? o.scaleY : 1.0f) + o.wobDY;
+    if ((useScale || o.wobDX != 0 || o.wobDY != 0) && drawSX != 0 && drawSY != 0) {
         state_.sx *= drawSX; state_.sy *= drawSY;
         state_.tx = (x + saved.tx) / drawSX - x;
         state_.ty = (y + saved.ty) / drawSY - y;
     }
     if (sp && !o.flipX) {
-        state_.pivotX = (float)sp->pivotX;
-        state_.pivotY = (float)sp->pivotY;
+        state_.pivotX = (float)sp->pivotX + o.pivotOffX;     // 0x48d274: setPivotOffset moves the pivot
+        state_.pivotY = (float)sp->pivotY + o.pivotOffY;
         DrawSpriteAt(*sheet, *sp, x, y, 4, 3, false, 0, 0);
     } else {
         // Angry Birds Rio draws its monkeys and caged birds as composite sprites (every part is drawn relative to the
@@ -1436,6 +1629,12 @@ void GamePlatform::DrawPhysObject(PhysObject& o) {
                     state_ = keep;
                     continue;
                 }
+                if (std::getenv("AB_DRAWDBG") && o.name.compare(0, 3, "PIG") == 0) { static int pn = 0; if (pn++ < 400) std::fprintf(stderr, "COMPOPART alpha=%.2f sx=%.2f flip=%d w=%d h=%d %s part=%s found=%d x=%d y=%d exact=%d scale=%.2f\n", o.alpha, state_.sx, (int)o.flipX, ps ? ps->w : -1, ps ? ps->h : -1, o.name.c_str(), part.sprite.c_str(), (int)(ps != nullptr), part.x, part.y, (int)part.exact, part.scale); }
+                if (ps && scripts_ && scripts_->IsSpace()) {
+                    // Angry Birds Space: a part's (x, y) is where its sprite's pivot lands, relative to the object's position
+                    drawPart(*partSheet, *ps, (float)part.x - (float)ps->pivotX, (float)part.y - (float)ps->pivotY);
+                    continue;
+                }
                 if (ps) drawPart(*partSheet, *ps, (float)(part.x - ps->pivotX), (float)(part.y - ps->pivotY));
             }
         }
@@ -1449,6 +1648,27 @@ void GamePlatform::DrawPhysObject(PhysObject& o) {
 std::vector<PhysObject*> GamePlatform::DrawGroup(int which) {
     bool rio = scripts_ && scripts_->IsRio();
     std::vector<PhysObject*> group;
+    if (scripts_ && scripts_->IsSpace()) {
+        // Space (drawGameNative 0x48cbd0): one pass over the z layers 0 to 169, lowest first. Every create native files the object under (int)z_order
+        // (0x4893b6, ftol) and keeps the names of one layer sorted, so inside a layer the order is the name's. An object outside 0..169 is never drawn.
+        if (which != 0) return group;
+        for (auto& up : Physics().Objects()) {
+            int z = (int)up->zOrder;
+            if (z >= 0 && z < 170) group.push_back(up.get());
+        }
+        std::sort(group.begin(), group.end(), [](PhysObject* a, PhysObject* b) {
+            int za = (int)a->zOrder, zb = (int)b->zOrder;
+            return za != zb ? za < zb : a->name < b->name; });
+        return group;
+    }
+    if (rio) {
+        // Rio (drawGameNative 0x41b660): the create natives file each object's name under (int)z_order (0x41752d, ftol) in a table that is walked from
+        // the lowest layer up, one pass for every object; the names of a layer stay in creation order. There are no static / moving / bird groups.
+        if (which != 0) return group;
+        for (auto& up : Physics().Objects()) group.push_back(up.get());
+        std::stable_sort(group.begin(), group.end(), [](PhysObject* a, PhysObject* b) { return (int)a->zOrder < (int)b->zOrder; });
+        return group;
+    }
     for (auto& up : Physics().Objects()) {
         PhysObject& o = *up;
         bool isStatic = o.pbody && o.pbody->IsStatic(), bird = o.isBird || o.drawWithBirds;
@@ -1476,7 +1696,40 @@ std::vector<std::string> GamePlatform::GameDrawOrder() {
 
 // drawGameNative: static blocks, then the other blocks, the trajectory dots, the birds, and
 // finally everything with a z of 5 or more.
+// Space aiming aid natives (0x461bd0 enableAimingAid, 0x46d200 setAimingAidSprite, 0x4634a0 populateAimingAid, 0x463a60 clearAimingAid, 0x479ab0 updateBirdTrajectoryTable)
+bool GamePlatform::BodyCommand(const std::string& n, int cmd, float a, float& result) {
+    if (cmd < 20 || cmd > 24) return Physics().BodyCommand(n, cmd, a, result);
+    if (cmd == 20) aimEnabled_ = a != 0;
+    else if (cmd == 21) aimSprite_ = n;
+    else if (cmd == 23) aimDots_.clear();
+    else if (cmd == 24) {
+        aimDots_.clear();
+        std::vector<std::pair<float, float>> pts;
+        // 0x479ab0: simulationIterations (50) steps of objects.currentTimeStep * simulationTimeStepMultiplier (3) seconds, a point stored every simulationStorePointsSampler (1)
+        // steps. currentTimeStep is 1/90 while a bird is aimed (gamescene.lua sets it), 1/30 otherwise; without it the exe uses 0.0285714 (0x50fb74).
+        int iterations = 50, sampler = 1;
+        float mult = 3, timeStep = 0.028571429f;
+        if (scripts_) {
+            lua_State* L = scripts_->State();
+            int top = lua_gettop(L);
+            lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+            auto num = [&](const char* k, auto& v) { lua_getfield(L, -1, k); if (lua_isnumber(L, -1)) v = (std::remove_reference_t<decltype(v)>)lua_tonumber(L, -1); lua_pop(L, 1); };
+            num("simulationIterations", iterations); num("simulationTimeStepMultiplier", mult); num("simulationStorePointsSampler", sampler);
+            lua_getfield(L, -1, "objects");
+            if (lua_istable(L, -1)) { lua_getfield(L, -1, "currentTimeStep"); if (lua_isnumber(L, -1)) timeStep = (float)lua_tonumber(L, -1); lua_pop(L, 1); }
+            lua_settop(L, top);
+        }
+        if (sampler < 1) sampler = 1;
+        Physics().SimulateTrajectory(n.empty() ? "BirdSimulation" : n, iterations, sampler, timeStep * mult, pts);
+        if (std::getenv("AB_TRAJDBG")) for (auto& p : pts) std::fprintf(stderr, "TRAJ %.3f %.3f\n", p.first, p.second);
+        for (auto& p : pts) aimDots_.push_back({p.first * 20.0f, p.second * 20.0f});
+        if (std::getenv("AB_DRAWDBG")) std::fprintf(stderr, "AIM %s dots=%d first=%.0f,%.0f sprite=%s found=%d\n", n.c_str(), (int)aimDots_.size(), aimDots_.empty() ? 0.f : aimDots_[0].x, aimDots_.empty() ? 0.f : aimDots_[0].y, aimSprite_.c_str(), (int)(sprites_.Find(aimSprite_) != nullptr));
+    }
+    return true;
+}
+
 void GamePlatform::DrawGame() {
+    if (std::getenv("AB_DRAWDBG")) { static int n = 0; if (n++ < 3) std::fprintf(stderr, "DrawGame objects=%d backend=%d\n", (int)Physics().Objects().size(), (int)(backend_ != nullptr)); }
     gameDrawn_ = true;
     if (!backend_) return;
     state_ = RenderState();
@@ -1509,6 +1762,15 @@ void GamePlatform::DrawGame() {
             const Sprite* sp = custom[3].empty() ? nullptr : sprites_.Find(custom[3], &sheet);
             if (!sp) sp = sprites_.Find("BIRD_SPECIAL", &sheet);
             if (sp) DrawSpriteAt(*sheet, *sp, p.x, p.y, 4, 3, false, 0, 0);
+        }
+    }
+    if (aimEnabled_ && !aimSprite_.empty()) {
+        const SpriteSheet* sheet = nullptr;
+        if (const Sprite* sp = sprites_.Find(aimSprite_, &sheet)) {
+            RenderState keep = state_;
+            state_.angle = 0; state_.pivotX = state_.pivotY = 0;
+            for (const TrajectoryPoint& d : aimDots_) DrawSpriteAt(*sheet, *sp, d.x, d.y, 4, 3, false, 0, 0);
+            state_ = keep;
         }
     }
     drawGroup(2);
@@ -1568,6 +1830,18 @@ const GamePlatform::ParticleDef* GamePlatform::ParticleDefFor(const std::string&
     lua_getfield(L, t, "animation");
     if (lua_type(L, -1) == LUA_TSTRING) d.animated = std::string(lua_tostring(L, -1)) == "lifeTime";
     lua_pop(L, 1);
+    if (scripts_->IsSpace()) {          // 0x493e20
+        d.space = true; d.seasons = false;
+        d.minVelX = d.minVelY = 0; d.maxVelX = d.maxVelY = 0;
+        GetNumber(L, t, "minVel", d.minVelX); GetNumber(L, t, "maxVel", d.maxVelX);
+        d.angleMinEmitter = d.angleMaxEmitter = 0;
+        GetNumber(L, t, "minAngleEmitter", d.angleMinEmitter); GetNumber(L, t, "maxAngleEmitter", d.angleMaxEmitter);
+        GetNumber(L, t, "minAngle", d.minAngle); GetNumber(L, t, "maxAngle", d.maxAngle);
+        GetNumber(L, t, "emitAreaScaleX", d.areaX); GetNumber(L, t, "emitAreaScaleY", d.areaY);
+        lua_getfield(L, t, "useAngleFromSpawner"); d.useSpawnerAngle = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
+        lua_getfield(L, t, "ignoreLimits"); d.ignoreLimits = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
+        lua_getfield(L, t, "background"); d.background = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
+    }
     lua_getfield(L, t, "sprites");
     if (lua_istable(L, -1)) {
         int n = (int)lua_objlen(L, -1);
@@ -1584,6 +1858,24 @@ const GamePlatform::ParticleDef* GamePlatform::ParticleDefFor(const std::string&
 // MSVC's rand() gives 0..32767
 static float Rand01() { return (float)(std::rand() & 0x7fff) * 3.0517578e-05f; }
 
+// Space addParticlesWithScale / addParticlesWithProperties (0x494900, 0x493280): the definition with the call's scale or speed and emitter angles
+void GamePlatform::AddParticlesOverride(const std::string& type, float amount, float x, float y, float w, float h, float angle, const ParticleOverride& ov) {
+    const ParticleDef* base = ParticleDefFor(type);
+    if (!base) return;
+    char key[160];
+    std::snprintf(key, sizeof key, "%s|%d|%g|%g|%g|%g", type.c_str(), ov.kind, ov.a, ov.b, ov.c, ov.d);
+    auto it = particleOverrideDefs_.find(key);
+    if (it == particleOverrideDefs_.end()) {
+        ParticleDef d = *base;
+        if (ov.kind == 1) { d.minScaleBegin = d.maxScaleBegin = ov.a; d.minScaleEnd = d.maxScaleEnd = ov.b; }
+        else { d.minVelX = ov.a; d.maxVelX = ov.b; d.angleMinEmitter = ov.c / 0.017453292f; d.angleMaxEmitter = ov.d / 0.017453292f; }
+        it = particleOverrideDefs_.emplace(key, d).first;
+    }
+    forcedDef_ = &it->second;
+    AddParticles(type, amount, x, y, w, h, angle, false, false);
+    forcedDef_ = nullptr;
+}
+
 void GamePlatform::AddLevelParticles(const std::string& type, float amount, float x, float y, float w, float h, float angle, bool ignoreLimits) {
     size_t before = particles_.size();
     AddParticles(type, amount, x, y, w, h, angle, ignoreLimits, false);
@@ -1592,14 +1884,18 @@ void GamePlatform::AddLevelParticles(const std::string& type, float amount, floa
 }
 
 void GamePlatform::AddParticles(const std::string& type, float amount, float x, float y, float w, float h, float angle, bool ignoreLimits, bool second) {
+    const ParticleDef* d = forcedDef_ ? forcedDef_ : ParticleDefFor(type);
+    // Space (0x494364): the limits are 60 (halved above that) and 225, and the definition decides whether they apply
+    bool space = d && d->space;
+    if (space) ignoreLimits = d->ignoreLimits;
     if (!ignoreLimits) {
         int count = 0;
         for (const Particle& q : particles_) if (q.second == second && !q.level) count++;
-        if ((float)softLimit_ < amount + (float)count) amount *= softFactor_;
-        if ((float)hardLimit_ < (float)count + amount) amount = (float)(hardLimit_ - count);
+        float soft = space ? 60.0f : (float)softLimit_, hard = space ? 225.0f : (float)hardLimit_;
+        if (soft < amount + (float)count) amount *= space ? 0.5f : softFactor_;
+        if (hard < (float)count + amount) amount = hard - (float)count;
         if (!(amount > 0)) return;
     }
-    const ParticleDef* d = ParticleDefFor(type);
     static const bool partDbg = std::getenv("AB_PARTDBG") != nullptr;
     if (partDbg) std::fprintf(stderr, "THEME addParticles %s amount=%g def=%d sprites=%d\n", type.c_str(), amount, d ? 1 : 0, d ? (int)d->sprites.size() : -1);
     if (!d || d->sprites.empty()) return;
@@ -1609,14 +1905,20 @@ void GamePlatform::AddParticles(const std::string& type, float amount, float x, 
         p.def = d;
         p.second = second;
         if (d->randomizeBirth) {
-            float a = (Rand01() - 0.5f) * w;
-            float b = (Rand01() - 0.5f) * h;
+            float a = (Rand01() - 0.5f) * w * d->areaX;
+            float b = (Rand01() - 0.5f) * h * d->areaY;
             p.x = (x + a * c) - b * s;
             p.y = c * b + s * a + y;
         } else {
             p.x = x; p.y = y;
         }
-        if (d->roundExplosions) {
+        if (d->space) {          // 0x4944db: direction and rotation, both turned by the spawner's angle when useAngleFromSpawner is set
+            float emit = ((d->angleMaxEmitter - d->angleMinEmitter) * Rand01() + d->angleMinEmitter) * 0.017453292f;
+            float speed = (d->maxVelX - d->minVelX) * Rand01() + d->minVelX;
+            if (d->useSpawnerAngle) emit += angle;
+            p.vx = std::cos(emit) * speed;
+            p.vy = std::sin(emit) * speed;
+        } else if (d->roundExplosions) {
             float speed = (d->maxVelX - d->minVelX) * Rand01() + d->minVelX;
             float a = Rand01() * 6.2831855f;
             p.vx = std::cos(a) * speed;
@@ -1630,7 +1932,8 @@ void GamePlatform::AddParticles(const std::string& type, float amount, float x, 
             p.vx = (d->maxVelX - d->minVelX) * Rand01() + d->minVelX;
             p.vy = (d->maxVelY - d->minVelY) * Rand01() + d->minVelY;
         }
-        if (d->seasons || d->v2Emitter) p.angle = ((d->angleMaxEmitter - d->angleMinEmitter) * Rand01() + d->angleMinEmitter) * 0.017453292f;
+        if (d->space) p.angle = ((d->maxAngle - d->minAngle) * Rand01() + d->minAngle) * 0.017453292f + (d->useSpawnerAngle ? angle : 0.0f);
+        else if (d->seasons || d->v2Emitter) p.angle = ((d->angleMaxEmitter - d->angleMinEmitter) * Rand01() + d->angleMinEmitter) * 0.017453292f;
         else p.angle = Rand01() * 3.1415927f + Rand01() * 3.1415927f;   // 1.x: the exe uses one random number twice
         p.angleVel = (d->maxAngleVel - d->minAngleVel) * Rand01() + d->minAngleVel;
         p.scaleBegin = (d->maxScaleBegin - d->minScaleBegin) * Rand01() + d->minScaleBegin;
@@ -2256,6 +2559,53 @@ bool GamePlatform::CanvasMakeSprite(const std::string& name, int width, int heig
     textures_["canvas:/" + name] = info;
     AddRuntimeSprite(sprites_, name, picture.width, picture.height, pivotX, pivotY);
     return true;
+}
+
+// A sprite with the shape of another one, filled with one colour: every pixel the source draws (alpha > 0) takes the colour and keeps its alpha times
+// the colour's. With an outline width only the pixels that close to the edge of the shape are kept. Returns the number of pixels of the shape, -1 when
+// the source sprite or its picture cannot be found.
+int GamePlatform::CreateSilhouette(const std::string& name, const std::string& source, float r, float g, float b, float a, int outline) {
+    if (!backend_) return -1;
+    const SpriteSheet* sheet = nullptr;
+    const Sprite* sp = sprites_.Find(source, &sheet);
+    if (!sp || !sheet) return -1;
+    Image whole;
+    std::string error;
+    if (!LoadPngFile(sheet->directory + "/" + sheet->image, whole, &error)) { Print("createSilhouette: " + error); return -1; }
+    const int w = sp->w, h = sp->h;
+    if (w <= 0 || h <= 0) return -1;
+    auto channel = [](float v) { return (uint8_t)std::lround(std::min(255.0f, std::max(0.0f, v > 1.0f ? v : v * 255.0f))); };
+    const uint8_t cr = channel(r), cg = channel(g), cb = channel(b);
+    const float ca = a > 1.0f ? std::min(a, 255.0f) / 255.0f : std::max(0.0f, a);
+    auto alphaAt = [&](int x, int y) -> int {
+        if (x < 0 || y < 0 || x >= w || y >= h) return 0;
+        int sx = sp->x + x, sy = sp->y + y;
+        if (sx >= whole.width || sy >= whole.height) return 0;
+        return whole.rgba[((size_t)sy * whole.width + sx) * 4 + 3];
+    };
+    Image out;
+    out.width = w; out.height = h;
+    out.rgba.assign((size_t)w * h * 4, 0);
+    int count = 0;
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++) {
+            int al = alphaAt(x, y);
+            if (al == 0) continue;
+            count++;
+            if (outline > 0) {                           // keep only pixels with a see-through pixel within `outline` pixels
+                bool edge = false;
+                for (int dy = -outline; dy <= outline && !edge; dy++)
+                    for (int dx = -outline; dx <= outline && !edge; dx++)
+                        if (alphaAt(x + dx, y + dy) == 0) edge = true;
+                if (!edge) continue;
+            }
+            uint8_t* px = &out.rgba[((size_t)y * w + x) * 4];
+            px[0] = cr; px[1] = cg; px[2] = cb; px[3] = (uint8_t)std::lround(al * ca);
+        }
+    TextureInfo info; info.handle = backend_->CreateTexture(out); info.width = w; info.height = h;
+    textures_["canvas:/" + name] = info;
+    AddRuntimeSprite(sprites_, name, w, h, sp->pivotX, sp->pivotY);
+    return count;
 }
 
 bool GamePlatform::CanvasLoadSprite(const std::string& name, const std::string& file, int pivotX, int pivotY) {

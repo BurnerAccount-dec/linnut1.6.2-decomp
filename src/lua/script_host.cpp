@@ -165,6 +165,13 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
 
     LoadPersisted("settings", "settings.lua");
     LoadPersisted("highscores", "highscores.lua");
+    // Angry Birds Space keeps more tables in files of their own (the exe loads them next to settings and highscores; the scripts read bi_data.root.x and so on)
+    if (IsSpaceDataFolder()) {
+        LoadPersisted("bi_data", "bi_data.lua", true);
+        LoadPersisted("g_eaglePurchasesTable", "eaglepurchases.lua", true);
+        LoadPersisted("g_episodePurchasesTable", "episodepurchases.lua", true);
+        LoadPersisted("g_gamePurchasesTable", "gamepurchases.lua", true);
+    }
 }
 
 ScriptHost::~ScriptHost() { lua_close(L_); }
@@ -210,9 +217,12 @@ void ScriptHost::NewGlobalTable(const char* name) {
 // settings.lua / highscores.lua: either `tableName = {...}` (written by this engine) or, in the original
 // (encrypted) files, one assignment per entry (`Level27 = {...}`). The file runs in a table of its own and
 // that table, or the table inside it, becomes the global. A missing file means an empty table.
-void ScriptHost::LoadPersisted(const char* tableName, const char* fileName) {
+bool ScriptHost::IsSpaceDataFolder() const { return !config_.commonScriptPath.empty(); }
+
+void ScriptHost::LoadPersisted(const char* tableName, const char* fileName, bool onlyIfExists) {
     std::string path = platform_.ResolveUserFile(fileName, true), text;
     bool encrypted = false;
+    if (onlyIfExists && !ab::ReadSaveFile(path, text, encrypted)) return;
     lua_newtable(L_);                                           // the file's own environment
     if (!ab::ReadSaveFile(path, text, encrypted)) {
         platform_.Print("no saved file " + path);
@@ -232,7 +242,7 @@ void ScriptHost::LoadPersisted(const char* tableName, const char* fileName) {
     }
     lua_getfield(L_, -1, tableName);
     if (lua_istable(L_, -1)) lua_remove(L_, -2);
-    else lua_pop(L_, 1);
+    else lua_pop(L_, 1);                                        // Space: the file's own table, whose `root` field the scripts read (settings.root.x)
     SetEnvField(tableName);
 }
 
@@ -246,7 +256,11 @@ bool ScriptHost::RunFile(const std::string& path) {
 }
 
 bool ScriptHost::LoadScripts() {
-    if (!config_.commonScriptPath.empty()) return RunFile(config_.commonScriptPath + "/gamelogic.lua");   // Space: its gamelogic.lua loads the rest
+    if (!config_.commonScriptPath.empty()) {
+        space_ = true;
+        if (!LoadTableFile(L_, "starTable", config_.scriptPath + "/starLimits.lua", &error_)) return false;   // the star limits per level
+        return RunFile(config_.commonScriptPath + "/gamelogic.lua");
+    }   // Space: its gamelogic.lua loads the rest
     const char* files[] = {"/loadlist.lua", "/gamelogic.lua"};
     for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
         if (!RunFile(config_.scriptPath + files[i])) return false;
@@ -257,6 +271,9 @@ bool ScriptHost::LoadScripts() {
     if (ReadLuaFile(config_.scriptPath + "/blocks.lua", blocksBytes) && !blocksBytes.empty()) {
         if (!LoadTableFile(L_, "blockTable", config_.scriptPath + "/blocks.lua", &error_)) return false;
         if (!LoadTableFile(L_, "particleTable", config_.scriptPath + "/particles.lua", &error_)) return false;
+    } else if (ReadLuaFile(config_.scriptPath + "/blocks_planets.lua", blocksBytes) && !blocksBytes.empty()) {
+        // Angry Birds Space: loadBlockData in the scripts loads the block files
+        space_ = true;
     } else { rio_ = true; if (!LoadRioTables(L_)) { error_ = "Rio data files could not be loaded"; return false; }
         // the game scene draws with objects.theme before a level has told it which theme it uses
         lua_pushboolean(L_, 1);
@@ -440,6 +457,11 @@ bool ScriptHost::BlockCollision(const std::string& a, const std::string& b, floa
     lua_pushlstring(L_, b.data(), b.size());
     lua_pushnumber(L_, force);
     lua_pushboolean(L_, wasDamageDone);
+    if (space_) {      // Space: blockCollision(name, other, force, wasDamageDone, dot, resultDamage)
+        lua_pushboolean(L_, wasDamageDone);
+        lua_pushnumber(L_, 0);
+        return CallWithArgs("blockCollision", 6);
+    }
     return CallWithArgs("blockCollision", 4);
 }
 
