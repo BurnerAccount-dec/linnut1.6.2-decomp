@@ -2,7 +2,7 @@
 
 An unofficial, from-scratch reimplementation of the Angry Birds PC engine, rebuilt from a Ghidra decompile of the 1.6.2 executable. It is written in C++ (SDL2, OpenGL 1.x, Lua 5.1, Box2D 2.1 and 2.2) and does not re-implement the game logic: it runs the game's **original Lua scripts** and provides the native functions those scripts expect, so levels, menus, physics and scoring behave like the original.
 
-Version 2.2.2. What works, per game:
+Version 2.2.3. What works, per game:
 
 | Game | Play | Level editor | Notes |
 |---|---|---|---|
@@ -25,6 +25,22 @@ Version 2.2.2. What works, per game:
 - Menus, level select, tutorials, pause, restart and level-complete flows in all supported versions, including Seasons 2.2.0's theme menus (parallax foregrounds) and its own in-game cursor.
 - Saves that are shared with the original game (both the encrypted and the plain format). The save folder is `%APPDATA%\<publisher>\<product>` from the game's `config.lua`.
 - The window is DPI-aware like the original exes, resizing it re-lays the game out (the scripts' `resolutionChanged`), and frame times are smoothed to avoid stutter.
+
+## New in 2.2.3
+
+**Reading and changing the z of objects.** Everything about the `z_order` of blocks can now be asked for and changed from the scripts and the console (the rules of the draw order are under "Draw order and z"):
+
+| Call | Meaning |
+|---|---|
+| `getObjectZOrder(name)` | the object's current `z_order`; `nil` if there is no such object (before: -1e9) |
+| `objects.world[name].z_order` | the same value, from the table the scripts already read. It is kept up to date: `setObjectZOrder`, `bringObjectToFront`, `sendObjectToBack` and the console commands below write the new value into it |
+| `setObjectZOrder(name, z)` | sets it (as before; now also updates `objects.world`) |
+| `bringObjectToFront(name)` | puts the object in front of every other one and returns its new `z_order` (the highest z in the world plus 1, at least 5, so it is in the group that is drawn last in every game); `nil` if there is no such object |
+| `sendObjectToBack(name)` | puts it behind every other object of its group (the lowest z in the world minus 1) and returns the new `z_order`. The static blocks below z 5 are drawn first whatever z the others have, so a moving block cannot go behind those |
+| `getObjectDrawOrder()` | a table of object names from the back to the front, in the order `drawGameNative` draws them (the trajectory dots are not objects and are not listed) |
+| `getRenderZ()` | the `z` of the current render state (`setRenderZ(z)`, which already existed, changes only that value) |
+
+Console: `zorder` lists every object back to front with its `z_order`; `zorder <name>` shows one and where it is drawn; `zorder <name> <z>` sets it; `zfront <name>` and `zback <name>` bring it to the front or send it to the back. For example `zorder BLOCK_WOOD_3 20`.
 
 ## New in 2.2.2
 
@@ -76,7 +92,7 @@ The single values also have their own functions, so you do not have to repeat th
 | `setAlpha(a)` | transparency, 0 to 1 |
 | `setSkew(x, y)` | shear (arguments 9, 10) |
 | `setBend(x, y)` | bend (arguments 11, 12) |
-| `setRenderZ(z)` | draw order of sprites (argument 13) |
+| `setRenderZ(z)` / `getRenderZ()` | the z of the render state alone (argument 13 of `setRenderState`), see "Draw order and z" |
 | `setBlur(pixels)` / `resetBlur()` | sprites are smeared over this many pixels (nine copies, each with 1/n of the alpha; `setRenderState` argument 18); 0 is sharp |
 | `setPixelate(size)` / `resetPixelate()` | sprites are drawn in blocks of size x size sprite pixels, at most 64 x 64 blocks (`setRenderState` argument 19); 0 is off |
 
@@ -221,6 +237,8 @@ Everything the engine draws in a frame is first collected in one list and sent t
 | a sprite, `drawRect` or `drawLine2D` after `setRenderState(..., z)` with `z` not 0 | that `z` | placed by z, see the rule below |
 | everything else: sprites with `z` 0, text, backgrounds, foregrounds, particles, trajectory dots, the hand cursor | none | in the order the script (or the engine) drew it; never moved |
 
+The z of an object is read with `getObjectZOrder(name)` or `objects.world[name].z_order`, and `getObjectDrawOrder()` lists the objects in the order they are drawn (see "New in 2.2.3").
+
 Because `z` is reset by `setRenderState` like the other render state values, set it right before the sprites that need it and set it back to 0 afterwards.
 
 **The groups of `drawGameNative`.** The game draws the physics objects in this order, whatever their z: static blocks with `z_order` below 5, the other blocks below 5, the trajectory dots and puffs, the birds (and objects that draw with the birds) below 5, and last everything with `z_order` 5 or more. Inside a group Rio sorts by `z_order` (equal z: creation order); the earlier games keep creation order unless `setObjectZOrder` was used for an object of that group. The objects therefore keep their own order, and a sprite with `z` is fitted around them.
@@ -285,6 +303,7 @@ The window that opens behind the game accepts typed lines. Click into it, type a
 | `box2d` | shows which physics library is running |
 | `box2d 21` / `box2d 22` | choose Box2D 2.1.1 or 2.2.0; it is switched when the next level loads (restart the level). The same as the `AB_BOX2D` variable, without restarting the engine |
 | `polyradius 0.1` | collision skin of boxes and polygons made from now on (Box2D 2.2) |
+| `zorder`, `zorder <name>`, `zorder <name> <z>`, `zfront <name>`, `zback <name>` | list the objects back to front with their `z_order`, show or set one object's z, bring it to the front / send it to the back |
 | `lua <code>` or just the code | runs Lua among the game's scripts, for example `lua print(score)` or `lua setAlpha(0.5)` |
 
 Environment variables, set in the command prompt before starting the engine (`set NAME=value`, `set NAME=` to clear):

@@ -317,6 +317,22 @@ float PhysicsWorld::ObjectZOrder(const std::string& n) const {
     PhysObject* o = Find(n);
     return o ? o->zOrder : -1e9f;
 }
+// front: one above the highest z, and at least 5 so that the object is in the group that is drawn last in every game;
+// back: one below the lowest z, which makes it the first of its group
+float PhysicsWorld::MoveObjectZ(const std::string& n, bool front) {
+    PhysObject* o = Find(n);
+    if (!o) return -1e9f;
+    float hi = -1e9f, lo = 1e9f;
+    for (auto& p : objects_) {
+        if (p.get() == o) continue;
+        hi = std::max(hi, p->zOrder);
+        lo = std::min(lo, p->zOrder);
+    }
+    if (hi < lo) { hi = lo = o->zOrder; }                       // the only object
+    o->zOrder = front ? std::max(hi + 1.0f, 5.0f) : lo - 1.0f;
+    o->zSet = true;
+    return o->zOrder;
+}
 void PhysicsWorld::SetColliderRule(int a, int b, bool collide) {
     if (a < 0 || b < 0 || a >= kColliderTypes || b >= kColliderTypes) return;
     colliderRules_.pair[a][b] = colliderRules_.pair[b][a] = collide;
