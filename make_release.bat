@@ -24,11 +24,11 @@ copy third_party\box2d\LICENSE dist\LICENSE-Box2D.txt || goto fail
 copy third_party\minimp3\LICENSE dist\LICENSE-minimp3.txt || goto fail
 copy third_party\h264bsd\LICENSE.md dist\LICENSE-h264bsd.txt || goto fail
 xcopy /e /i /y tools dist\tools || goto fail
-powershell -NoProfile -Command "Compress-Archive -Force -Path dist\* -DestinationPath AngryBirdsEngine-v2.2.2.zip" || goto fail
+powershell -NoProfile -Command "Compress-Archive -Force -Path dist\* -DestinationPath AngryBirdsEngine-v2.2.3.zip" || goto fail
 
 echo.
 echo DONE. The exe is clean. Upload this file to the GitHub release:
-echo   C:\abbuild\AngryBirdsEngine-v2.2.2.zip
+echo   C:\abbuild\AngryBirdsEngine-v2.2.3.zip
 exit /b 0
 
 :personal

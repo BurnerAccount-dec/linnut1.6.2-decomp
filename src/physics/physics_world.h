@@ -158,6 +158,7 @@ public:
     float ObjectAlpha(const std::string& n) const;            // -1 if there is no such object
     void SetObjectZOrder(const std::string& n, float z);     // draw order: higher is drawn later (in front)
     float ObjectZOrder(const std::string& n) const;          // -1e9 if there is no such object
+    float MoveObjectZ(const std::string& n, bool front);     // v2.2.3: in front of / behind every other object; returns the new z (-1e9: no such object)
     void SetColliderRule(int a, int b, bool collide);
     bool ColliderRule(int a, int b) const;
     void RemoveJointsFromObject(const std::string& n);

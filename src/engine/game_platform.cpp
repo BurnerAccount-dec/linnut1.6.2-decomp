@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
+#include <sstream>
 #include <iterator>
 #include "engine/game_platform.h"
 #include "video/video_audio.h"
@@ -1443,6 +1444,36 @@ void GamePlatform::DrawPhysObject(PhysObject& o) {
     tileTexture_ = nullptr;
 }
 
+// The four groups of drawGameNative (see DrawGame), each in the order it is drawn: Rio sorts a group by z order (equal z keeps the creation
+// order); the earlier games keep the creation order unless setObjectZOrder was used (those objects are then sorted among the others, stable).
+std::vector<PhysObject*> GamePlatform::DrawGroup(int which) {
+    bool rio = scripts_ && scripts_->IsRio();
+    std::vector<PhysObject*> group;
+    for (auto& up : Physics().Objects()) {
+        PhysObject& o = *up;
+        bool isStatic = o.pbody && o.pbody->IsStatic(), bird = o.isBird || o.drawWithBirds;
+        bool in = which == 0 ? isStatic && o.zOrder < 5
+                : which == 1 ? !o.isBird && !isStatic && !o.drawWithBirds && o.zOrder < 5
+                : which == 2 ? bird && o.zOrder < 5
+                : o.zOrder >= 5;
+        if (in) group.push_back(&o);
+    }
+    bool anySet = false;
+    for (PhysObject* o : group) anySet = anySet || o->zSet;
+    if (rio || anySet)
+        std::stable_sort(group.begin(), group.end(), [rio](PhysObject* a, PhysObject* b) {
+            return (rio || a->zSet ? a->zOrder : 0) < (rio || b->zSet ? b->zOrder : 0); });
+    return group;
+}
+
+// v2.2.3: back to front, as drawGameNative draws them (the trajectory dots are not objects and are not listed)
+std::vector<std::string> GamePlatform::GameDrawOrder() {
+    std::vector<std::string> names;
+    for (int which = 0; which < 4; which++)
+        for (PhysObject* o : DrawGroup(which)) names.push_back(o->name);
+    return names;
+}
+
 // drawGameNative: static blocks, then the other blocks, the trajectory dots, the birds, and
 // finally everything with a z of 5 or more.
 void GamePlatform::DrawGame() {
@@ -1451,20 +1482,9 @@ void GamePlatform::DrawGame() {
     state_ = RenderState();
     state_.tx = -camX_; state_.ty = -camY_;
     state_.sx = state_.sy = worldScale_;
-    const auto& objects = Physics().Objects();
-    auto isStatic = [](PhysObject& o) { return o.pbody && o.pbody->IsStatic(); };
-    // Angry Birds Rio draws each group by z order (equal z keeps the creation order); the earlier games use creation order
     bool rio = scripts_ && scripts_->IsRio();
-    auto drawGroup = [&](auto pick) {
-        // Rio sorts by z order; the earlier games keep the creation order unless setObjectZOrder was used (then those objects are sorted among the others, stable)
-        std::vector<PhysObject*> group;
-        for (auto& o : objects) if (pick(*o)) group.push_back(o.get());
-        bool anySet = false;
-        for (PhysObject* o : group) anySet = anySet || o->zSet;
-        if (rio || anySet)
-            std::stable_sort(group.begin(), group.end(), [rio](PhysObject* a, PhysObject* b) {
-                return (rio || a->zSet ? a->zOrder : 0) < (rio || b->zSet ? b->zOrder : 0); });
-        for (PhysObject* o : group) {
+    auto drawGroup = [&](int which) {
+        for (PhysObject* o : DrawGroup(which)) {
             drawingNative_ = true;                          // v2.2.1: the object's quads are sorted against render state z sprites by its z_order
             nativeKey_ = (rio || o->zSet) ? o->zOrder : 0;
             DrawPhysObject(*o);
@@ -1472,8 +1492,8 @@ void GamePlatform::DrawGame() {
         }
         state_.alpha = 1;                          // setObjectAlpha belongs to one object, not to what is drawn next
     };
-    drawGroup([&](PhysObject& o) { return isStatic(o) && o.zOrder < 5; });
-    drawGroup([&](PhysObject& o) { return !o.isBird && !isStatic(o) && !o.drawWithBirds && o.zOrder < 5; });
+    drawGroup(0);
+    drawGroup(1);
     // each of the six lists: its dots go through TRAIL_WHITE_1, _2, _3 and start again, then its puffs (BIRD_SPECIAL)
     state_.angle = 0; state_.pivotX = state_.pivotY = 0;
     for (int list = 0; list < 6; list++) {
@@ -1491,8 +1511,8 @@ void GamePlatform::DrawGame() {
             if (sp) DrawSpriteAt(*sheet, *sp, p.x, p.y, 4, 3, false, 0, 0);
         }
     }
-    drawGroup([&](PhysObject& o) { return (o.isBird || o.drawWithBirds) && o.zOrder < 5; });
-    drawGroup([&](PhysObject& o) { return o.zOrder >= 5; });
+    drawGroup(2);
+    drawGroup(3);
     if (IsSeasonsScripts()) { if (!levelParticlesByScript_) DrawParticles(); }
     else DrawParticlesOf(true, 0);
     state_ = RenderState();
@@ -1869,6 +1889,7 @@ void GamePlatform::ConsoleCommand(const std::string& raw) {
             "Console commands (anything else is run as Lua code among the game's scripts):\n"
             "  help                    this list\n"
             "  box2d [21|22]           show / choose the physics library; it changes when the next level loads (restart the level)\n"
+            "  zorder [name [z]]       list the objects back to front / show or set one object's z_order; zfront <name>, zback <name>\n"
             "  polyradius [r]          show / set the collision skin of boxes and polygons made from now on (Box2D 2.2)\n"
             "  fps [n]                 limit the frame rate (0 = unlimited, the default); vsync [on|off] synchronises to the display\n"
             "  gamespeed [x]           gameSpeedFactor: the time step of everything (default 1)\n"
@@ -1910,6 +1931,29 @@ void GamePlatform::ConsoleCommand(const std::string& raw) {
         if (cmd == "audiospeed") { if (n >= 1) audio_.SetSpeed(a, n >= 2 ? (int)b : -1); std::printf("console: audio speed %g\n", audio_.Speed(n >= 2 ? (int)b : -1)); }
         else if (cmd == "mastervolume") { if (n >= 1) audio_.SetMasterVolume(a); std::printf("console: master volume %g\n", audio_.MasterVolume()); }
         else { int t = n >= 1 ? (int)a : -1; audio_.Pause(cmd == "audiopause", t); std::printf("console: audio %s\n", cmd == "audiopause" ? "paused" : "resumed"); }
+    } else if (cmd == "zorder" || cmd == "zfront" || cmd == "zback") {
+        // v2.2.3: zorder (list, back to front) | zorder <name> (show) | zorder <name> <z> (set); zfront <name> / zback <name>
+        std::istringstream ss(arg);
+        std::string name, zs;
+        ss >> name >> zs;
+        if (cmd == "zorder" && name.empty()) {
+            std::vector<std::string> order = GameDrawOrder();
+            int i = 0;
+            for (const std::string& n : order) std::printf("console: %3d  z_order %-6g %s\n", ++i, Physics().ObjectZOrder(n), n.c_str());
+            std::printf("console: %d objects, back to front (drawGameNative's order)\n", i);
+        } else if (name.empty()) {
+            std::printf("console: %s <name>\n", cmd.c_str());
+        } else if (Physics().ObjectZOrder(name) <= -1e8f) {
+            std::printf("console: no object called %s\n", name.c_str());
+        } else {
+            if (cmd == "zfront" || cmd == "zback") Physics().MoveObjectZ(name, cmd == "zfront");
+            else if (!zs.empty()) Physics().SetObjectZOrder(name, (float)std::atof(zs.c_str()));
+            SyncObjectZ(name);
+            std::vector<std::string> order = GameDrawOrder();
+            size_t at = 0;
+            while (at < order.size() && order[at] != name) at++;
+            std::printf("console: %s z_order %g, drawn %zu of %zu (1 = at the back)\n", name.c_str(), Physics().ObjectZOrder(name), at + 1, order.size());
+        }
     } else if (cmd == "polyradius") {
         if (!arg.empty()) Physics().SetPolygonRadius((float)std::atof(arg.c_str()));
         if (Physics().Version() == Box2DVersion::V22) std::printf("console: polygon radius %g (applies to shapes made afterwards)\n", Physics().PolygonRadius());
@@ -2225,4 +2269,12 @@ bool GamePlatform::CanvasLoadSprite(const std::string& name, const std::string& 
     return true;
 }
 
+}  // namespace ab
+
+// v2.2.3: the z_order in objects.world[name] follows the object (console zorder / zfront / zback)
+namespace ab {
+void SyncWorldZ(lua_State* L, const std::string& name, float z);
+void GamePlatform::SyncObjectZ(const std::string& name) {
+    if (scripts_) SyncWorldZ(scripts_->State(), name, Physics().ObjectZOrder(name));
+}
 }  // namespace ab

@@ -33,6 +33,7 @@ extern const unsigned int kCompoImageLuaSize;
 extern const unsigned char kInvisibleButtonLua[];
 extern const unsigned int kInvisibleButtonLuaSize;
 bool LoadTableFile(lua_State* L, const char* name, const std::string& path, std::string* error, bool append);
+void SyncWorldZ(lua_State* L, const std::string& name, float z);     // v2.2.3, defined at the end
 namespace {
 
 Platform* P(lua_State* L) { return static_cast<Platform*>(lua_touserdata(L, lua_upvalueindex(1))); }
@@ -1083,8 +1084,37 @@ int l_getColliderType(lua_State* L) { lua_pushnumber(L, P(L)->ColliderType(S(L, 
 int l_setObjectAlpha(lua_State* L) { P(L)->SetObjectAlpha(S(L, 1), N(L, 2)); return 0; }
 int l_getObjectAlpha(lua_State* L) { lua_pushnumber(L, P(L)->ObjectAlpha(S(L, 1))); return 1; }
 // setObjectZOrder(name, z) / getObjectZOrder(name): the draw order of one object in drawGameNative (the z_order of createBlock; higher = in front)
-int l_setObjectZOrder(lua_State* L) { P(L)->SetObjectZOrder(S(L, 1), N(L, 2)); return 0; }
-int l_getObjectZOrder(lua_State* L) { lua_pushnumber(L, P(L)->ObjectZOrder(S(L, 1))); return 1; }
+// v2.2.3: objects.world[name].z_order always shows the current z (a script that reads it sees what setObjectZOrder, bringObjectToFront or the console set)
+int l_setObjectZOrder(lua_State* L) {
+    P(L)->SetObjectZOrder(S(L, 1), N(L, 2));
+    SyncWorldZ(L, S(L, 1), P(L)->ObjectZOrder(S(L, 1)));
+    return 0;
+}
+// nil for an object that does not exist (before: -1e9)
+int l_getObjectZOrder(lua_State* L) {
+    float z = P(L)->ObjectZOrder(S(L, 1));
+    if (z <= -1e8f) lua_pushnil(L); else lua_pushnumber(L, z);
+    return 1;
+}
+// bringObjectToFront(name) / sendObjectToBack(name) -> the new z_order: in front of / behind every other object
+int l_moveObjectZ(lua_State* L, bool front) {
+    float z = P(L)->MoveObjectZ(S(L, 1), front);
+    if (z <= -1e8f) { lua_pushnil(L); return 1; }
+    SyncWorldZ(L, S(L, 1), z);
+    lua_pushnumber(L, z);
+    return 1;
+}
+int l_bringObjectToFront(lua_State* L) { return l_moveObjectZ(L, true); }
+int l_sendObjectToBack(lua_State* L) { return l_moveObjectZ(L, false); }
+// getObjectDrawOrder() -> { name, ... } the objects of drawGameNative from the back to the front
+int l_getObjectDrawOrder(lua_State* L) {
+    std::vector<std::string> names = P(L)->GameDrawOrder();
+    lua_createtable(L, (int)names.size(), 0);
+    for (size_t i = 0; i < names.size(); i++) { lua_pushlstring(L, names[i].data(), names[i].size()); lua_rawseti(L, -2, (int)i + 1); }
+    return 1;
+}
+// getRenderZ(): the z of the render state (setRenderZ(z) sets it alone)
+int l_getRenderZ(lua_State* L) { lua_pushnumber(L, P(L)->RenderZ()); return 1; }
 int l_setColliderRule(lua_State* L) { P(L)->SetColliderRule((int)N(L, 1), (int)N(L, 2), B(L, 3)); return 0; }
 int l_getColliderRule(lua_State* L) { lua_pushboolean(L, P(L)->ColliderRule((int)N(L, 1), (int)N(L, 2))); return 1; }
 // setPolygonRadius(r) / getPolygonRadius(): the skin of the boxes and polygons that are created afterwards (Angry Birds Rio's Box2D 2.2)
@@ -1630,7 +1660,9 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"getVelocity", l_getVelocity}, {"hasMovingObjects", l_hasMovingObjects},
         {"hasMovingObjectsZeroTolerance", l_hasMovingObjectsZeroTolerance}, {"getLocalPoint", l_getLocalPoint},
         {"setCollisionEnabled", l_setCollisionEnabled},
-        {"setObjectAlpha", l_setObjectAlpha}, {"getObjectAlpha", l_getObjectAlpha}, {"setObjectZOrder", l_setObjectZOrder}, {"getObjectZOrder", l_getObjectZOrder}, {"setColliderType", l_setColliderType}, {"getColliderType", l_getColliderType}, {"setColliderRule", l_setColliderRule}, {"getColliderRule", l_getColliderRule},
+        {"setObjectAlpha", l_setObjectAlpha}, {"getObjectAlpha", l_getObjectAlpha}, {"setObjectZOrder", l_setObjectZOrder}, {"getObjectZOrder", l_getObjectZOrder},
+        {"bringObjectToFront", l_bringObjectToFront}, {"sendObjectToBack", l_sendObjectToBack}, {"getObjectDrawOrder", l_getObjectDrawOrder},
+        {"getRenderZ", l_getRenderZ}, {"setColliderType", l_setColliderType}, {"getColliderType", l_getColliderType}, {"setColliderRule", l_setColliderRule}, {"getColliderRule", l_getColliderRule},
         {"setPolygonRadius", l_setPolygonRadius}, {"getPolygonRadius", l_getPolygonRadius}, {"removeJointsFromObject", l_removeJointsFromObject},
         {"getIntersectingObjects", l_getIntersectingObjects},
         {"setParticleSystemLimits", l_nothing}, {"clearParticleCache", l_nothing}, {"enableInGameParticlesNative", l_nothing},
@@ -1884,6 +1916,14 @@ bool LoadRioTables(lua_State* L) {
     }
     ok = load("particleTable", "/particles.lua", false) && ok;
     return ok;
+}
+
+// v2.2.3: objects.world[name].z_order = z, when the scripts still know the object
+void SyncWorldZ(lua_State* L, const std::string& name, float z) {
+    if (!PushObjectsTable(L, "world")) return;
+    lua_getfield(L, -1, name.c_str());
+    if (lua_istable(L, -1)) { lua_pushnumber(L, z); lua_setfield(L, -2, "z_order"); }
+    lua_pop(L, 2);
 }
 
 }  // namespace ab

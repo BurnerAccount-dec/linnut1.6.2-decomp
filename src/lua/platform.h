@@ -117,6 +117,9 @@ public:
     virtual float ObjectAlpha(const std::string& n) { (void)n; return -1; }
     virtual void SetObjectZOrder(const std::string& n, float z) { (void)n; (void)z; }
     virtual float ObjectZOrder(const std::string& n) { (void)n; return -1e9f; }
+    virtual float MoveObjectZ(const std::string& n, bool front) { (void)n; (void)front; return -1e9f; }   // v2.2.3: bringObjectToFront / sendObjectToBack
+    virtual std::vector<std::string> GameDrawOrder() { return {}; }                   // v2.2.3: the objects in the order drawGameNative draws them (back to front)
+    virtual float RenderZ() { return 0; }                                              // v2.2.3: the z of the current render state
     virtual void SetColliderRule(int a, int b, bool collide) { (void)a; (void)b; (void)collide; }
     virtual bool ColliderRule(int a, int b) { (void)a; (void)b; return true; }
     virtual void SetPolygonRadius(float r) { (void)r; }

@@ -168,6 +168,11 @@ public:
     float ObjectAlpha(const std::string& n) override { return Physics().ObjectAlpha(n); }
     void SetObjectZOrder(const std::string& n, float z) override { Physics().SetObjectZOrder(n, z); }
     float ObjectZOrder(const std::string& n) override { return Physics().ObjectZOrder(n); }
+    float MoveObjectZ(const std::string& n, bool front) override { return Physics().MoveObjectZ(n, front); }
+    std::vector<std::string> GameDrawOrder() override;
+    float RenderZ() override { return state_.z; }
+    void SyncObjectZ(const std::string& name);              // writes the z_order of an object into objects.world[name]
+    std::vector<PhysObject*> DrawGroup(int which);        // v2.2.3: the objects of one of the four groups of DrawGame (0 statics, 1 blocks, 2 birds, 3 z >= 5), in drawing order
     void SetColliderRule(int a, int b, bool collide) override { Physics().SetColliderRule(a, b, collide); }
     bool ColliderRule(int a, int b) override { return Physics().ColliderRule(a, b); }
     void SetPolygonRadius(float r) override { Physics().SetPolygonRadius(r); }
