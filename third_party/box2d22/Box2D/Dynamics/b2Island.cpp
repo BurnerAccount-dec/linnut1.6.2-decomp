@@ -225,6 +225,8 @@ void b2Island::Solve(b2Profile* profile, const b2TimeStep& step, const b2Vec2& g
 
 	// AngryBirdsRio.exe b2Island::Solve (0x4e9700): before the solver is built the contacts between two
 	// non-static bodies are swapped to the front of the island's list, so the solver visits them first.
+	// AngryBirdsSpace.exe's Solve (0x4a4720) has no such loop: the solver is built right after the body state is copied.
+	if (!b2_spaceBuild)
 	{
 		int32 front = 0;
 		for (int32 i = 0; i < m_contactCount; ++i)
@@ -389,7 +391,8 @@ void b2Island::Solve(b2Profile* profile, const b2TimeStep& step, const b2Vec2& g
 		}
 
 		// AngryBirdsRio.exe (0x4e9700): the bodies fall asleep once the sleep time is reached; whether the position solver converged is not asked
-		if (minSleepTime >= b2_timeToSleep)
+		// Space (0x4a5009 area, the flag at ebp-0xa5) asks whether the position solver converged, as Box2D 2.3 does
+		if (minSleepTime >= b2_timeToSleep && (positionSolved || !b2_spaceBuild))
 		{
 			for (int32 i = 0; i < m_bodyCount; ++i)
 			{
@@ -468,10 +471,12 @@ void b2Island::SolveTOI(const b2TimeStep& subStep, int32 toiIndexA, int32 toiInd
 #endif
 
 	// Leap of faith to new safe state.
-	m_bodies[toiIndexA]->m_sweep.c0 = m_positions[toiIndexA].c;
-	m_bodies[toiIndexA]->m_sweep.a0 = m_positions[toiIndexA].a;
-	m_bodies[toiIndexB]->m_sweep.c0 = m_positions[toiIndexB].c;
-	m_bodies[toiIndexB]->m_sweep.a0 = m_positions[toiIndexB].a;
+	// AngryBirdsRio.exe Island::SolveTOI: every body of the island leaps, not only the two of the TOI contact
+	for (int32 i = 0; i < m_bodyCount; ++i)
+	{
+		m_bodies[i]->m_sweep.c0 = m_positions[i].c;
+		m_bodies[i]->m_sweep.a0 = m_positions[i].a;
+	}
 
 	// No warm starting is needed for TOI events because warm
 	// starting impulses were applied in the discrete solver.

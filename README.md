@@ -2,7 +2,7 @@
 
 An unofficial, from-scratch reimplementation of the Angry Birds PC engine, rebuilt from a Ghidra decompile of the 1.6.2 executable. It is written in C++ (SDL2, OpenGL 1.x, Lua 5.1, Box2D 2.1 and 2.2) and does not re-implement the game logic: it runs the game's **original Lua scripts** and provides the native functions those scripts expect, so levels, menus, physics and scoring behave like the original.
 
-Version 2.2.3. What works, per game:
+Version 2.3. What works, per game:
 
 | Game | Play | Level editor | Notes |
 |---|---|---|---|
@@ -10,6 +10,7 @@ Version 2.2.3. What works, per game:
 | Angry Birds 1.6.2 / 1.6.3.1 (PC) | Playable | Works (tested in 1.6.3.1, 1.6.2 uses the same script) | 1.6.3.1 has no editor in its scripts, the engine brings Rovio's 1.6.2 one |
 | Angry Birds 2.0.0 (PC) | Playable, a few known visual gaps (below) | Works, "Editor" button on the main menu | |
 | Angry Birds Seasons 1.0.0 (PC) | Playable | Works, "Editor" button on the main menu | |
+| Angry Birds Space (PC) | Levels load and play (first theme tested) | Not tried | Planet gravity, aiming aid and the camera work; see "Angry Birds Space (PC)" |
 | Angry Birds Seasons 2.2.0, Year of the Dragon (PC) | Playable | The level name, status line and block palette draw (checked with Year of the Dragon files) | |
 | Angry Birds Rio 1.4.2 (PC) | Playable | Works | Ice blocks (called light blocks inside the game's scripts and glass in later games and versions) are stable (Mauro's level, Smuggler's Plane 12-8 and 12-15 tested against Box2D 2.1) |
 
@@ -25,6 +26,24 @@ Version 2.2.3. What works, per game:
 - Menus, level select, tutorials, pause, restart and level-complete flows in all supported versions, including Seasons 2.2.0's theme menus (parallax foregrounds) and its own in-game cursor.
 - Saves that are shared with the original game (both the encrypted and the plain format). The save folder is `%APPDATA%\<publisher>\<product>` from the game's `config.lua`.
 - The window is DPI-aware like the original exes, resizing it re-lays the game out (the scripts' `resolutionChanged`), and frame times are smoothed to avoid stutter.
+
+## New in 2.3
+
+**Angry Birds Space compatibility update.** Space's physics now follows its own exe instead of Rio's: its Box2D is a mix of 2.2 collision with 2.3 broad phase, island, sleep and solver rules (rotating dynamic tree, position-solved sleeping, 2.3 position-solver constants, a larger time-of-impact island, `setStatic` through `SetType`). The planets' pull, the aiming aid and the per-object gravity functions share one code path that follows the exe's gravity function. See "Engine-added script functions: full reference" for the new script functions.
+
+**Space natives that used to do nothing.** `setRecordVelocity(name, on)` (publishes `xVel`, `yVel` and `angle` into `objects.world[name]` for that object), `applyForceNative(name, fx, fy, px, py)` (the same force as `applyForce`) and `setRevoluteJointSpeed(jointName, speed)` (sets the motor speed of the joints with that name, as the exe does), `setSpriteRotation(name, angle)` (the sprite turns by this much on top of the body's angle), `setPivotOffset(name, x, y)` (moves the point the sprite turns about), `setTextureScale(name, scale)` (stored; the tile draw does not use it yet) and `drawTexturedLine2D(sprite, x1, y1, x2, y2, width [, r, g, b, a])` (the sprite stretched along a line, used for the slingshot's rubber bands), `setNormalTrailSprite(name)` / `setSpecialTrailSprite(name)` (the dot and puff sprites of the trajectory the next shot draws) and `setDecorationObjects(name)` (the copies of a block definition's `decorations` sprite drawn about the object, as on the huge planets) now work.
+
+**More Space natives.** `createThemeAnimation(table)` (a theme sprite whose picture cycles through the `animation` list every `animDelay` seconds; fixes the Red Planet crash), `getLinearVelocity(name)` (`vx, vy`), `getBGColor()` (`r, g, b`, 0 to 255), `getRayCastedObjects({x1=, y1=, x2=, y2=})` (a flat list, six entries per non-sensor object the segment crosses: name, hit x, hit y, normal x, normal y, fraction) and `createCompoundBodyFromTable(t)` (a compound built from a table with `name`, `x`, `y`, `material` and `children`, each child with `x`, `y`, `angle` and a `blockData` of type box, circle or polygon). `addParticlesWithScale` and `addParticlesWithProperties` now apply their extra arguments, and Space particle definitions honour `useAngleFromSpawner`, `minAngle` / `maxAngle`, `emitAreaScaleX/Y` and their own `ignoreLimits`.
+
+**Space planet gravity.** The pull follows the exe's contact list: one entry per touching fixture pair (an object made of several fixtures is pulled once per pair), applied last entry first and only to objects that are awake; a gravity sensor with parameter 19 sets the linear damping of objects flagged with parameter 1 or 34 to 100 when they leave it.
+
+**Space level limits.** `setLevelLimits(minX, minY, maxX, maxY)` keeps all four limits and an object that moves outside them is removed; the old rule (anything below y 20 is gone) is now only used by the other games. It made the Utopia boss (4-30, which spawns its popcorn at y 60) and the Red Planet boss (5-30) delete themselves on the first frame, and removed birds that flew low in some planet levels.
+
+**Space and Rio draw order.** See "Draw order and z": one pass over the z layers, as the exes do.
+
+## New in 2.2.4
+
+**Angry Birds Space.** Levels load and play (see "Angry Birds Space (PC)"). Space uses Box2D 2.2.0 and no world gravity; contacts with sensors go to `enterCollision` / `exitCollision`.
 
 ## New in 2.2.3
 
@@ -157,7 +176,7 @@ What cannot be matched is the last bit of `sin`, `cos` and `sqrt`: the exes call
 
 ### Angry Birds Space (PC)
 
-The engine starts Space's scripts and gets through the splash screen. The level loader, camera, planet gravity, compound body, aiming aid and shader natives are not finished, so levels do not load yet.
+Space's menus and levels load, draw and play: the level is built by the scripts, the planets pull the birds and blocks (gravitation sensors, Box2D 2.2.0 like Rio and no world gravity), the slingshot launches the bird and the aiming aid draws its dots. Only the first theme's levels were tested. Still approximate: the background layers (positions and parallax), the aiming aid (it flies the bird on alone under the sensors and ignores what it would hit), the foreground, and the compound bodies, particle scale and several shader and font natives, which are provided but not tested against a level that uses them.
 
 - Space's scripts are AES encrypted with their own key, which the engine knows; they are read from `scripts_common` as well as `scripts` (`config.lua`'s `commonScriptPath`).
 - The natives Space's `gamelogic.lua` expects at start that the other games do not have (bitwise or, vector helpers, device id, time differences, Flurry and logging calls, timers) are provided by a built-in Lua file, `space_natives.lua`.
@@ -233,7 +252,7 @@ Everything the engine draws in a frame is first collected in one list and sent t
 
 | Drawn by | z it has | Where it sits |
 |---|---|---|
-| a block, bird or other physics object (`drawGameNative`) | its `z_order` (from the level / block definition, or `setObjectZOrder`). In Rio every object has one; in the earlier games it counts only when `setObjectZOrder` was used, otherwise it is 0 | the game draws them in its own groups (see below) |
+| a block, bird or other physics object (`drawGameNative`) | its `z_order` (from the level / block definition, or `setObjectZOrder`). In Rio and Space every object has one; in the earlier games it counts only when `setObjectZOrder` was used, otherwise it is 0 | the game draws them in its own groups (see below) |
 | a sprite, `drawRect` or `drawLine2D` after `setRenderState(..., z)` with `z` not 0 | that `z` | placed by z, see the rule below |
 | everything else: sprites with `z` 0, text, backgrounds, foregrounds, particles, trajectory dots, the hand cursor | none | in the order the script (or the engine) drew it; never moved |
 
@@ -241,7 +260,7 @@ The z of an object is read with `getObjectZOrder(name)` or `objects.world[name].
 
 Because `z` is reset by `setRenderState` like the other render state values, set it right before the sprites that need it and set it back to 0 afterwards.
 
-**The groups of `drawGameNative`.** The game draws the physics objects in this order, whatever their z: static blocks with `z_order` below 5, the other blocks below 5, the trajectory dots and puffs, the birds (and objects that draw with the birds) below 5, and last everything with `z_order` 5 or more. Inside a group Rio sorts by `z_order` (equal z: creation order); the earlier games keep creation order unless `setObjectZOrder` was used for an object of that group. The objects therefore keep their own order, and a sprite with `z` is fitted around them.
+**The order of `drawGameNative`.** Space and Rio draw every physics object in one pass over its z layers, lowest first (the create natives file each object under `(int)z_order`). Space has the layers 0 to 169 (an object outside them is not drawn) and sorts the objects of one layer by name; Rio keeps the creation order inside a layer. The earlier games draw the objects in this order, whatever their z: static blocks with `z_order` below 5, the other blocks below 5, the trajectory dots and puffs, the birds (and objects that draw with the birds) below 5, and everything with 5 or more.
 
 **The rule for a sprite with a z.** The sprite is put right after the last object or z sprite that has a `z` lower than or equal to its own, among those drawn so far. If there is none, it goes right before the first one with a higher `z`. When nothing with a `z` has been drawn yet, it stays where it is. An object or sprite drawn *later* with a lower `z` is put below it the same way, so the order does not depend on whether the script draws before or after `drawGameNative`. Equal `z` keeps the order they were drawn in. Sprites with `z` 0 are not moved by any of this.
 
@@ -259,6 +278,82 @@ setRenderState(0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0)   -- back to "in drawing o
 Because the objects are drawn in groups, an object of a higher `z` that sits in an earlier group (a block of `z_order` 4 is drawn before the birds) stays below a sprite of `z` 3 that was placed after the last object not higher than 3. If you need a sprite above or below one particular object, give both the exact `z_order` you want with `setObjectZOrder` and use a `z` between them.
 
 **Limits.** A clip rectangle change (`setClipRect` and friends) and the end of the frame close the list: a sprite cannot be placed below something that was drawn before the clip changed. The hand cursor is always drawn last, on top. Test with `drawRect(r, g, b, a, x1, y1, x2, y2, true)` (the last argument keeps the render state, so the rect takes the `z` you set).
+
+## Engine-added script functions: full reference
+
+These functions do not exist in any of the original games. A script can use them in every game (unless the text says otherwise); a script that never calls them behaves exactly as before. They are registered in `src/lua/lua_api.cpp`. Every function that takes an object name accepts the names `objects.world` uses, and a name that does not exist never raises an error: the function returns `false` / `nil` (as written below) and does nothing.
+
+### `createSilhouette(newName, sourceSprite, r, g, b, a [, outlineWidth])`
+
+Makes a new sprite called `newName` out of the shape of an existing sprite. Every pixel that `sourceSprite` draws (its alpha is not 0) is painted in one colour and everything the source leaves clear stays clear, so a pig becomes a flat pig-shaped patch and a bird a bird-shaped shadow. The source can be any sprite a loaded sheet knows; the silhouette keeps its size and pivot, and works anywhere a sprite name goes (`setSprite`, `drawSprite`, an object's sprite, a compo part).
+
+- `r, g, b, a`: the colour, each 0 to 1 (1, 1, 1 is white), or 0 to 255 when any value is above 1. The source pixel's own alpha is multiplied by `a`, so soft edges stay soft and `a = 0.5` gives a half see-through shadow. A value left out is 1.
+- `outlineWidth` (default 0): 0 fills the whole shape; a number of pixels above 0 keeps only the border of the shape, that many pixels wide, measured inwards from every edge including the edges of holes. This gives an outline sprite to draw behind or over the original for a glow or a selection frame.
+- Returns the number of pixels the shape has (it does not depend on `outlineWidth`), or `nil` when the source sprite cannot be found. The sprite is built when the call runs, so releasing the source's sheet later leaves the silhouette intact. Calling it again with the same `newName` replaces the earlier sprite.
+
+### `predictCollision(nameA, nameB [, restitution [, aVx, aVy, bVx, bVy]])`
+
+Works out what would happen if two objects met, from where they are and how they move right now. Nothing is simulated and nothing is changed, so a script can ask before a bird is launched or on every frame. It returns a table. If either name is not an object the table is `{ valid = false, collides = false, filtered = false }` and nothing else.
+
+The hit is worked out the way Box2D's contact solver resolves one contact point, from the real shapes: the closest points of the two bodies' fixtures give the contact point and the normal (so a box corner, a polygon edge or a circle is found where it really is), the lever arms from each centre of mass to that point give the spin, a normal impulse gives the bounce and a friction impulse along the tangent (limited by the friction cone, `friction * normal impulse`) gives the slide, and both act on the bodies' linear and angular velocities through their masses and rotational inertias. `restitution` is optional: left out, the larger of the two fixtures' restitutions is used, as Box2D does, and Box2D's velocity threshold applies (a contact slower than 1 unit per second does not bounce). Static bodies do not move and have infinite mass. In Box2D 2.1 worlds (Classic, Seasons) the real shapes are not queried: the contact is taken on the line between the centres (`exactShapes = false`), with no spin or friction effect. It is still a one-contact estimate: a block that lands on several things at once, joints, other objects pushing and the solver's iterations are not part of it, so the numbers are very close for two bodies meeting and only indicative for a pile.
+
+`aVx, aVy` and `bVx, bVy` are optional too: they replace the present linear velocity of A and of B for the estimate ("what if the bird came in at this speed?"). Any of them that is `nil` or left out keeps that body's current velocity, so `predictCollision("bird", "pig", nil, nil, nil, 0, 0)` tests the bird as it is against a pig held still. A static body always stays at rest.
+
+| Field | Meaning |
+| --- | --- |
+| `valid` | both objects exist |
+| `filtered` | the contact filter keeps the pair apart (a sensor, an object with collision off, Space's gravity and sensor rules); they never collide whatever their speeds |
+| `collides` | not filtered and moving towards each other at the contact point, so a contact is coming |
+| `exactShapes` | the contact comes from the real shapes (false: the line between the centres) |
+| `distance`, `gap` | between the centres of mass; between the surfaces (negative when overlapping) |
+| `contactX`, `contactY` | the point where they would touch (halfway between the two surfaces) |
+| `nx`, `ny` | unit normal of the contact, from A to B; the tangent is `(ny, -nx)` |
+| `relVx`, `relVy` | velocity of B's contact point as seen from A's, spin included |
+| `normalSpeed`, `tangentSpeed` | those velocities along the normal (negative: approaching) and along the tangent, before the hit |
+| `closingSpeed` | `-normalSpeed`: how fast the gap closes (negative: moving apart) |
+| `timeToContact` | seconds until the gap closes at the present closing speed (0 if touching, -1 if the gap does not close) |
+| `massA`, `massB` | masses (0 for a static body) |
+| `restitution` | the value used |
+| `friction` | the combined friction coefficient, `sqrt(frictionA * frictionB)` |
+| `impulse`, `tangentImpulse` | size of the normal impulse of the hit; the friction impulse along the tangent (0 when nothing collides) |
+| `aVx`, `aVy`, `bVx`, `bVy` | linear velocities after the hit (the present velocities when nothing collides) |
+| `aAngVel`, `bAngVel` | angular velocities after the hit, radians per second (the present ones when nothing collides) |
+| `energyLost` | kinetic energy, linear and spin, the hit takes out of the pair (what turns into damage, sound and heat) |
+
+**Angles after the collision.** Every `aVx, aVy` / `bVx, bVy` / `aAngVel` / `bAngVel` in the table is a value *after* the hit, so the post-collision angles come straight from them: the direction A leaves in is `math.atan2(t.aVy, t.aVx)` and B's is `math.atan2(t.bVy, t.bVx)`; the angle a body will have turned to `dt` seconds later is about `getAngle(name) + t.aAngVel * dt` (spin is radians per second); and `t.aAngVel` itself is the post-collision rotation rate. The `relVx, relVy`, `normalSpeed` and `tangentSpeed` fields are the values *before* the hit.
+
+**Speed.** `getVelocity(name)` returns `speed, vx, vy` in every game: the first value is the speed (as Rio's own function gives it) and the next two are the velocity components, so `local speed, vx, vy = getVelocity("bird")`. The speed of anything else is `math.sqrt(vx^2 + vy^2)`; after a predicted hit that is `math.sqrt(t.aVx^2 + t.aVy^2)` for A and `math.sqrt(t.bVx^2 + t.bVy^2)` for B. `objects.world[name].xVel` / `.yVel` hold the same components for every object (not only birds) in Classic, Seasons, Rio and the other games, where the retail exes only filled them in for birds. Angry Birds Space follows its own exe: it fills them (and `angle`) for birds and for any object the script flagged with `setRecordVelocity(name, true)`, which the Space scripts do themselves.
+
+**Angles.** The table gives velocities and the normal rather than angles, because every angle follows from them with `atan2`. The direction an object moves in is `math.atan2(vy, vx)` (y points down in this game, so the angle runs clockwise on screen): use `relVx, relVy`, or an object's own velocity from `getVelocity`, before the hit and `aVx, aVy` / `bVx, bVy` after it. The direction of the contact is `math.atan2(ny, nx)`. The angle of incidence is the angle between the approach direction and the normal, `math.acos(closingSpeed / math.sqrt(relVx^2 + relVy^2))`, and how much an object is turned by the hit is `math.atan2(aVy, aVx) - math.atan2(avy, avx)` (wrap the result into -pi..pi). Spin is already an angle rate: `aAngVel` and `bAngVel`.
+
+### Gravity of one object: `setObjectGravity`, `setObjectGravityScale`, `resetObjectGravity`, `getObjectGravity`
+
+An object can have a gravity that is independent of the world's. This is not a force towards another body and does not explode: it is the same constant acceleration the world's gravity is, only with a value (or a direction) chosen for this one object.
+
+- `setObjectGravity(name, gx, gy)` gives the object its own gravity: it accelerates by `(gx, gy)` world units per second squared instead of by the world's. The axes are the world's (the ones `getVelocity`, `setVelocity` and `setPosition` use). `(0, 0)` is weightless; the world's own value changes nothing; the opposite of the world's value turns the world upside down for this object (the ground becomes the sky and it falls the other way while everything else still falls the usual way); `(gx, 0)` is a wall that pulls sideways. Gravitation sensors still act on top of it, as they do on any body. A sleeping object is woken so it starts moving at once. Static bodies are not affected. Returns `true`, or `false` when there is no such object. The setting stays until `resetObjectGravity`.
+- `setObjectGravityScale(name, scale)` gives the object the world's gravity multiplied by `scale` and keeps following the world if that changes. 1 is normal, 0 weightless, 0.2 floaty, 3 heavy, -1 exactly upside down. In a world whose gravity is 0 (Angry Birds Space) it changes nothing; use `setObjectGravity` there.
+- `resetObjectGravity(name)` takes the object back to the world's gravity (undoing both calls above). Its speed stays as it is.
+- `getObjectGravity(name)` returns `gx, gy, mode, scale`: the acceleration the object has from gravity now, where it comes from (`"world"`, `"vector"` or `"scale"`) and the factor of the last scale call (1 otherwise); `nil` when there is no such object.
+
+Technically Box2D 2.2 applies the world's gravity to every body and has no per-body gravity, so the engine applies the difference as a force, `mass * (own - world)`, through the centre of mass each step: with the world's gravity the body then accelerates by exactly its own value and does not start to spin.
+
+### Transparency, draw order and colliders
+
+- `setObjectAlpha(name, alpha)` / `getObjectAlpha(name)`: the transparency of one object when `drawGameNative` draws it, 0 (invisible) to 1 (solid). `getObjectAlpha` returns -1 for an unknown object.
+- `setObjectZOrder(name, z)` / `getObjectZOrder(name)`: the object's draw order in `drawGameNative` (the `z_order` of `createBlock`; higher is in front). `objects.world[name].z_order` always shows the current value. `getObjectZOrder` returns `nil` for an unknown object.
+- `bringObjectToFront(name)` / `sendObjectToBack(name)`: move the object in front of / behind every other object and return its new `z_order`.
+- `getObjectDrawOrder()`: the names of the objects `drawGameNative` draws, from the back to the front.
+- `getRenderZ()` / `setRenderZ(z)`: the z of the render state on its own.
+- `setColliderType(name, type)` / `getColliderType(name)` (-1: no such object) and `setColliderRule(typeA, typeB, collides)` / `getColliderRule(typeA, typeB)`: sort objects into collider types and decide which types collide with which.
+- `setPolygonRadius(r)` / `getPolygonRadius()`: the skin of the boxes and polygons created afterwards (Angry Birds Rio's Box2D 2.2 setting).
+
+See "Extra script commands (new in 1.8)" above for worked examples of the last three groups.
+
+### How the Space physics now follows the retail exe
+
+- The gravitation sensors use one function for the real physics and for the aiming aid, so the two cannot disagree. Like the exe, a sensor's pull ignores the "gravity on" parameter (22), wakes a sleeping body inside the field every step, and is skipped only while the sensor's own body sleeps.
+- The aiming aid (`updateBirdTrajectoryTable`) now follows what the exe does: it flies a copy of the bird on its own with the free-flight integrator (world gravity plus the sensors' force times the inverse mass, the velocity damping clamp `1 - h * damping` between 0 and 1, the maximum translation of 2 per step), without collisions, and stores a point every few steps.
+- Box2D's block-solver condition number is 1000 for Space and 100 for Rio, as in each exe.
 
 ## Native function summary
 
@@ -343,8 +438,8 @@ This writes `dec` next to the exe (or give a folder: `--decrypt C:\somewhere\dec
 
 - 2.0.0: a faint flash of the pause page after the tutorials.
 - Editors: the Seasons editors start with the camera zoomed out on an empty "new level" page; a level that has no birds crashes when playtested (Shift+P), as it would in the original. Ctrl+S writes into the game's `data/levels` folder, so a game installed in `C:\Program Files (x86)` needs the engine started as administrator (or the game copied elsewhere).
-- Rio: LevelPL2_309 is open. Smuggler's Plane 11-10 and the rest of Rio's physics were checked by the author against the retail game and behave the same. The physics was matched against the decompiled code, not retail recordings (see "Physics: how closely it follows the exes").
-- Angry Birds Space: starts and shows its splash screen, but levels do not load yet (see "Changes since 2.1").
+- Rio: Smuggler's Plane 11-10 and the rest of Rio's physics were checked by the author against the retail game and behave the same. The physics was matched against the decompiled code, not retail recordings (see "Physics: how closely it follows the exes").
+- Angry Birds Space: levels of the first theme load and play; the other themes, bosses and compound bodies are untested.
 - 2.2: Mauro's early score points and Golden Beachball 5 were not reproduced in the test harness. Ham 'em High 12-1 creeps slightly after a first load and settles fully after a restart (Box2D contact order, not fixed).
 - A few natives are not implemented (for example the colour table behind `drawBoxNative` and `setupCompoObject`).
 - Windows only so far; the code is plain SDL2 and should port, but only Windows is tested.

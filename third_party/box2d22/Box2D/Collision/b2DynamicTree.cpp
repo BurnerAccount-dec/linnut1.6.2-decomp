@@ -109,7 +109,7 @@ int32 b2DynamicTree::CreateProxy(const b2AABB& aabb, void* userData)
 	m_nodes[proxyId].aabb.lowerBound = aabb.lowerBound - r;
 	m_nodes[proxyId].aabb.upperBound = aabb.upperBound + r;
 	m_nodes[proxyId].userData = userData;
-	m_nodes[proxyId].leafCount = 1;
+	m_nodes[proxyId].leafCount = b2_spaceBuild ? 0 : 1;   // Space's tree stores the node height here (a leaf is 0), Rio's counts leaves
 
 	InsertLeaf(proxyId);
 
@@ -181,6 +181,7 @@ static inline float32 ab_perimeter(float32 lx, float32 ly, float32 ux, float32 u
 
 void b2DynamicTree::InsertLeaf(int32 leaf)
 {
+	if (b2_spaceBuild) { InsertLeafSpace(leaf); return; }
 	++m_insertionCount;
 
 	if (m_root == b2_nullNode)
@@ -285,6 +286,7 @@ void b2DynamicTree::InsertLeaf(int32 leaf)
 
 void b2DynamicTree::RemoveLeaf(int32 leaf)
 {
+	if (b2_spaceBuild) { RemoveLeafSpace(leaf); return; }
 	if (leaf == m_root)
 	{
 		m_root = b2_nullNode;
@@ -335,7 +337,7 @@ void b2DynamicTree::RemoveLeaf(int32 leaf)
 // Re-inserts one leaf per iteration, walking down the tree along the bits of m_path.
 void b2DynamicTree::Rebalance(int32 iterations)
 {
-	if (m_root == b2_nullNode)
+	if (b2_spaceBuild || m_root == b2_nullNode)
 	{
 		return;
 	}
@@ -355,6 +357,324 @@ void b2DynamicTree::Rebalance(int32 iterations)
 		RemoveLeaf(node);
 		InsertLeaf(node);
 	}
+}
+
+// AngryBirdsSpace.exe's tree (the Box2D 2.3 one): InsertLeaf 0x4a3220, RemoveLeaf 0x4a3940, Balance 0x4a2fd0 (AVL-style rotations), MoveProxy 0x4a3bf0.
+// The sibling is picked by the surface-area heuristic, the AABBs are recombined on the way back up, and every node stores its height.
+static inline float32 sp_perimeter(const b2AABB& a)
+{
+	float32 wx = a.upperBound.x - a.lowerBound.x;
+	float32 wy = a.upperBound.y - a.lowerBound.y;
+	return 2.0f * (wx + wy);
+}
+
+static inline b2AABB sp_combine(const b2AABB& a, const b2AABB& b)
+{
+	b2AABB c;
+	c.Combine(a, b);
+	return c;
+}
+
+void b2DynamicTree::InsertLeafSpace(int32 leaf)
+{
+	++m_insertionCount;
+
+	if (m_root == b2_nullNode)
+	{
+		m_root = leaf;
+		m_nodes[m_root].parent = b2_nullNode;
+		return;
+	}
+
+	// Find the best sibling for this node
+	b2AABB leafAABB = m_nodes[leaf].aabb;
+	int32 index = m_root;
+	while (m_nodes[index].IsLeaf() == false)
+	{
+		int32 child1 = m_nodes[index].child1;
+		int32 child2 = m_nodes[index].child2;
+
+		float32 area = sp_perimeter(m_nodes[index].aabb);
+		b2AABB combinedAABB = sp_combine(m_nodes[index].aabb, leafAABB);
+		float32 combinedArea = sp_perimeter(combinedAABB);
+
+		// Cost of creating a new parent for this node and the new leaf
+		float32 cost = 2.0f * combinedArea;
+
+		// Minimum cost of pushing the leaf further down the tree
+		float32 inheritanceCost = 2.0f * (combinedArea - area);
+
+		// Cost of descending into child1
+		float32 cost1;
+		if (m_nodes[child1].IsLeaf())
+		{
+			cost1 = sp_perimeter(sp_combine(leafAABB, m_nodes[child1].aabb)) + inheritanceCost;
+		}
+		else
+		{
+			b2AABB aabb = sp_combine(leafAABB, m_nodes[child1].aabb);
+			float32 oldArea = sp_perimeter(m_nodes[child1].aabb);
+			float32 newArea = sp_perimeter(aabb);
+			cost1 = (newArea - oldArea) + inheritanceCost;
+		}
+
+		// Cost of descending into child2
+		float32 cost2;
+		if (m_nodes[child2].IsLeaf())
+		{
+			cost2 = sp_perimeter(sp_combine(leafAABB, m_nodes[child2].aabb)) + inheritanceCost;
+		}
+		else
+		{
+			b2AABB aabb = sp_combine(leafAABB, m_nodes[child2].aabb);
+			float32 oldArea = sp_perimeter(m_nodes[child2].aabb);
+			float32 newArea = sp_perimeter(aabb);
+			cost2 = (newArea - oldArea) + inheritanceCost;
+		}
+
+		// Descend according to the minimum cost.
+		if (cost < cost1 && cost < cost2)
+		{
+			break;
+		}
+
+		// Descend
+		index = (cost1 < cost2) ? child1 : child2;
+	}
+
+	int32 sibling = index;
+
+	// Create a new parent.
+	int32 oldParent = m_nodes[sibling].parent;
+	int32 newParent = AllocateNode();
+	m_nodes[newParent].parent = oldParent;
+	m_nodes[newParent].userData = NULL;
+	m_nodes[newParent].aabb = sp_combine(leafAABB, m_nodes[sibling].aabb);
+	m_nodes[newParent].leafCount = m_nodes[sibling].leafCount + 1;
+
+	if (oldParent != b2_nullNode)
+	{
+		// The sibling was not the root.
+		if (m_nodes[oldParent].child1 == sibling)
+		{
+			m_nodes[oldParent].child1 = newParent;
+		}
+		else
+		{
+			m_nodes[oldParent].child2 = newParent;
+		}
+
+		m_nodes[newParent].child1 = sibling;
+		m_nodes[newParent].child2 = leaf;
+		m_nodes[sibling].parent = newParent;
+		m_nodes[leaf].parent = newParent;
+	}
+	else
+	{
+		// The sibling was the root.
+		m_nodes[newParent].child1 = sibling;
+		m_nodes[newParent].child2 = leaf;
+		m_nodes[sibling].parent = newParent;
+		m_nodes[leaf].parent = newParent;
+		m_root = newParent;
+	}
+
+	// Walk back up the tree fixing heights and AABBs
+	index = m_nodes[leaf].parent;
+	while (index != b2_nullNode)
+	{
+		index = BalanceSpace(index);
+
+		int32 child1 = m_nodes[index].child1;
+		int32 child2 = m_nodes[index].child2;
+
+		m_nodes[index].leafCount = 1 + b2Max(m_nodes[child1].leafCount, m_nodes[child2].leafCount);
+		m_nodes[index].aabb = sp_combine(m_nodes[child1].aabb, m_nodes[child2].aabb);
+
+		index = m_nodes[index].parent;
+	}
+}
+
+void b2DynamicTree::RemoveLeafSpace(int32 leaf)
+{
+	if (leaf == m_root)
+	{
+		m_root = b2_nullNode;
+		return;
+	}
+
+	int32 parent = m_nodes[leaf].parent;
+	int32 grandParent = m_nodes[parent].parent;
+	int32 sibling = (m_nodes[parent].child1 == leaf) ? m_nodes[parent].child2 : m_nodes[parent].child1;
+
+	if (grandParent != b2_nullNode)
+	{
+		// Destroy parent and connect sibling to grandParent.
+		if (m_nodes[grandParent].child1 == parent)
+		{
+			m_nodes[grandParent].child1 = sibling;
+		}
+		else
+		{
+			m_nodes[grandParent].child2 = sibling;
+		}
+		m_nodes[sibling].parent = grandParent;
+		FreeNode(parent);
+
+		// Adjust ancestor bounds.
+		int32 index = grandParent;
+		while (index != b2_nullNode)
+		{
+			index = BalanceSpace(index);
+
+			int32 child1 = m_nodes[index].child1;
+			int32 child2 = m_nodes[index].child2;
+
+			m_nodes[index].aabb = sp_combine(m_nodes[child1].aabb, m_nodes[child2].aabb);
+			m_nodes[index].leafCount = 1 + b2Max(m_nodes[child1].leafCount, m_nodes[child2].leafCount);
+
+			index = m_nodes[index].parent;
+		}
+	}
+	else
+	{
+		m_root = sibling;
+		m_nodes[sibling].parent = b2_nullNode;
+		FreeNode(parent);
+	}
+}
+
+// Perform a left or right rotation if node A is imbalanced (0x4a2fd0). Returns the new root index.
+int32 b2DynamicTree::BalanceSpace(int32 iA)
+{
+	b2TreeNode* A = m_nodes + iA;
+	if (A->IsLeaf() || A->leafCount < 2)
+	{
+		return iA;
+	}
+
+	int32 iB = A->child1;
+	int32 iC = A->child2;
+	b2TreeNode* B = m_nodes + iB;
+	b2TreeNode* C = m_nodes + iC;
+
+	int32 balance = C->leafCount - B->leafCount;
+
+	// Rotate C up
+	if (balance > 1)
+	{
+		int32 iF = C->child1;
+		int32 iG = C->child2;
+		b2TreeNode* F = m_nodes + iF;
+		b2TreeNode* G = m_nodes + iG;
+
+		// Swap A and C
+		C->child1 = iA;
+		C->parent = A->parent;
+		A->parent = iC;
+
+		// A's old parent should point to C
+		if (C->parent != b2_nullNode)
+		{
+			if (m_nodes[C->parent].child1 == iA)
+			{
+				m_nodes[C->parent].child1 = iC;
+			}
+			else
+			{
+				m_nodes[C->parent].child2 = iC;
+			}
+		}
+		else
+		{
+			m_root = iC;
+		}
+
+		// Rotate
+		if (F->leafCount > G->leafCount)
+		{
+			C->child2 = iF;
+			A->child2 = iG;
+			G->parent = iA;
+			A->aabb = sp_combine(B->aabb, G->aabb);
+			C->aabb = sp_combine(A->aabb, F->aabb);
+
+			A->leafCount = 1 + b2Max(B->leafCount, G->leafCount);
+			C->leafCount = 1 + b2Max(A->leafCount, F->leafCount);
+		}
+		else
+		{
+			C->child2 = iG;
+			A->child2 = iF;
+			F->parent = iA;
+			A->aabb = sp_combine(B->aabb, F->aabb);
+			C->aabb = sp_combine(A->aabb, G->aabb);
+
+			A->leafCount = 1 + b2Max(B->leafCount, F->leafCount);
+			C->leafCount = 1 + b2Max(A->leafCount, G->leafCount);
+		}
+
+		return iC;
+	}
+
+	// Rotate B up
+	if (balance < -1)
+	{
+		int32 iD = B->child1;
+		int32 iE = B->child2;
+		b2TreeNode* D = m_nodes + iD;
+		b2TreeNode* E = m_nodes + iE;
+
+		// Swap A and B
+		B->child1 = iA;
+		B->parent = A->parent;
+		A->parent = iB;
+
+		// A's old parent should point to B
+		if (B->parent != b2_nullNode)
+		{
+			if (m_nodes[B->parent].child1 == iA)
+			{
+				m_nodes[B->parent].child1 = iB;
+			}
+			else
+			{
+				m_nodes[B->parent].child2 = iB;
+			}
+		}
+		else
+		{
+			m_root = iB;
+		}
+
+		// Rotate
+		if (D->leafCount > E->leafCount)
+		{
+			B->child2 = iD;
+			A->child1 = iE;
+			E->parent = iA;
+			A->aabb = sp_combine(C->aabb, E->aabb);
+			B->aabb = sp_combine(A->aabb, D->aabb);
+
+			A->leafCount = 1 + b2Max(C->leafCount, E->leafCount);
+			B->leafCount = 1 + b2Max(A->leafCount, D->leafCount);
+		}
+		else
+		{
+			B->child2 = iE;
+			A->child1 = iD;
+			D->parent = iA;
+			A->aabb = sp_combine(C->aabb, D->aabb);
+			B->aabb = sp_combine(A->aabb, E->aabb);
+
+			A->leafCount = 1 + b2Max(C->leafCount, D->leafCount);
+			B->leafCount = 1 + b2Max(A->leafCount, E->leafCount);
+		}
+
+		return iB;
+	}
+
+	return iA;
 }
 
 int32 b2DynamicTree::ComputeHeight(int32 nodeId) const

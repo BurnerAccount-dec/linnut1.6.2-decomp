@@ -17,6 +17,7 @@
 #include "lua/platform.h"
 #include "lua/script_host.h"
 #include <cstdlib>
+#include <cmath>
 #include <map>
 
 #include "audio/audio_mixer.h"
@@ -149,21 +150,37 @@ public:
     float CreateBox(const BodyDef& d) override { return Physics().CreateBox(d); }
     float CreateCircle(const BodyDef& d) override { return Physics().CreateCircle(d); }
     float CreatePolygon(const BodyDef& d, const std::vector<float>& v) override { return Physics().CreatePolygon(d, v); }
+    float CreateCompound(const BodyDef& d, const std::vector<CompoundShape>& s, float damping) override { return Physics().CreateCompound(d, s, damping); }
     bool CreateJoint(JointDef& d) override { return Physics().CreateJoint(d); }
     void SetJointParameters(const JointParams& p) override { Physics().SetJointParameters(p); }
     void CheckJointLimits(const std::string& n) override { Physics().CheckJointLimits(n); }
     void DestroyJoint(const std::string& n) override { Physics().DestroyJoint(n); }
     std::vector<std::string> RemoveObject(const std::string& n) override { return Physics().RemoveObject(n); }
+    CollisionPrediction PredictCollision(const std::string& a, const std::string& b, float restitution, const float* vel = nullptr) override { return Physics().PredictCollision(a, b, restitution, vel); }
+    bool SetOwnGravityVector(const std::string& n, float gx, float gy) override { return Physics().SetOwnGravityVector(n, gx, gy); }
+    bool SetOwnGravityScale(const std::string& n, float scale) override { return Physics().SetOwnGravityScale(n, scale); }
+    bool ResetOwnGravity(const std::string& n) override { return Physics().ResetOwnGravity(n); }
+    void RayCastObjects(float x1, float y1, float x2, float y2, std::vector<RayCastHit>& out) override {
+        std::vector<RayHit> hits;
+        Physics().RayCastAll(x1, y1, x2, y2, hits);
+        for (const RayHit& h : hits) out.push_back({h.obj->name, h.px, h.py, h.nx, h.ny, h.fraction});
+    }
+    bool GetOwnGravity(const std::string& n, int& mode, float& gx, float& gy, float& scale) override { return Physics().GetOwnGravity(n, mode, gx, gy, scale); }
     void ApplyImpulse(const std::string& n, float ix, float iy, float px, float py) override { Physics().ApplyImpulse(n, ix, iy, px, py); }
     void ApplyForce(const std::string& n, float fx, float fy, float px, float py) override { Physics().ApplyForce(n, fx, fy, px, py); }
     bool SetPosition(const std::string& n, float x, float y) override { return Physics().SetPosition(n, x, y); }
     bool SetRotation(const std::string& n, float a, float& normalized) override { return Physics().SetRotation(n, a, normalized); }
     float GetSpeed(const std::string& n) override { return Physics().GetSpeed(n); }
+    void SetRecordVelocity(const std::string& n, bool on) override { Physics().SetRecordVelocity(n, on); }
+    bool GetVelocity(const std::string& n, float& vx, float& vy) override { return Physics().GetVelocity(n, vx, vy); }
     bool HasMovingObjects(float tol) override { return Physics().HasMovingObjects(tol); }
     void GetLocalPoint(const std::string& n, float wx, float wy, float& lx, float& ly) override { Physics().GetLocalPoint(n, wx, wy, lx, ly); }
     void SetCollisionEnabled(const std::string& n, bool on) override { Physics().SetCollisionEnabled(n, on); }
     void SetColliderType(const std::string& n, int type) override { Physics().SetColliderType(n, type); }
     int ColliderType(const std::string& n) override { return Physics().ColliderType(n); }
+    float GetSpriteAngle(const std::string& n) override { PhysObject* o = Physics().Find(n); return o ? o->spriteAngle : 0.0f; }
+    void SetDecoration(const std::string& n, const std::string& sprite, int amount, float increment, float scale) override { Physics().SetDecoration(n, sprite, amount, increment, scale); }
+    void SetSpriteLook(const std::string& n, int what, float a, float b) override { Physics().SetSpriteLook(n, what, a, b); }
     void SetObjectAlpha(const std::string& n, float a) override { Physics().SetObjectAlpha(n, a); }
     float ObjectAlpha(const std::string& n) override { return Physics().ObjectAlpha(n); }
     void SetObjectZOrder(const std::string& n, float z) override { Physics().SetObjectZOrder(n, z); }
@@ -181,10 +198,12 @@ public:
     std::vector<std::string> IntersectingObjects(float x, float y, float l, float r, float d, float u) override { return Physics().IntersectingObjects(x, y, l, r, d, u); }
     void SetVelocity(const std::string& n, float vx, float vy) override { Physics().SetVelocity(n, vx, vy); }
     void SetAngularVelocity(const std::string& n, float w) override { Physics().SetAngularVelocity(n, w); }
+    bool BodyCommand(const std::string& n, int cmd, float a, float& result) override;   // cmds 20..24: the Space aiming aid
     void SetSleeping(const std::string& n, bool s) override { Physics().SetSleeping(n, s); }
     float GetAngle(const std::string& n) override { return Physics().GetAngle(n); }
     void GetWorldPoint(const std::string& n, float lx, float ly, float& wx, float& wy) override { Physics().GetWorldPoint(n, lx, ly, wx, wy); }
     void SetBGColor(float r, float g, float b) override;
+    void GetBGColor(float& r, float& g, float& b) override { r = std::floor(bgR_ * 255.0f + 0.5f); g = std::floor(bgG_ * 255.0f + 0.5f); b = std::floor(bgB_ * 255.0f + 0.5f); }
     void RequestExit() override { exitRequested_ = true; }
     void SetFullScreen(bool on) override { Platform::SetFullScreen(on); fullScreenReq_ = true; }
     void SetRenderState(int argc, const float* args) override;
@@ -199,6 +218,7 @@ public:
     void GetTint(float& r, float& g, float& b) override { r = state_.tintR; g = state_.tintG; b = state_.tintB; }
     void SetRenderExtras(int what, float x, float y) override { if (what == 0) { state_.skewX = x; state_.skewY = y; } else if (what == 1) { state_.bendX = x; state_.bendY = y; } else if (what == 2) state_.z = x; else if (what == 3) state_.blur = x < 0 ? 0 : x; else state_.pixelate = x < 0 ? 0 : x; }
     void ResDrawSprite(const std::string& sprite, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height) override;
+    void DrawTexturedLine2D(const std::string& sprite, float x1, float y1, float x2, float y2, float width, float r, float g, float b, float a) override;
     void SetWorldGravity(float x, float y) override { Physics().SetGravity(x, y); }
     void SetMaxTranslation(float t) override { Physics().SetMaxTranslation(t); }
     void ClearParticles() override { particles_.clear(); }
@@ -208,6 +228,7 @@ public:
     void UpdateThemeSprites(float dt) override;
     void CreateThemeSpriteRio(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, int layer, float angleVel, bool flipped) override;
     void SetThemeSprite(const std::string& name, const std::string& sprite, int layer) override;
+    void CreateThemeAnimation(const ThemeAnimation& a) override;
     void RotateThemeSprites(float dt) override;
     void ScrollThemeLayers(float dt, bool force) override;
     bool IsSeasonsScripts();
@@ -219,6 +240,7 @@ public:
     void CanvasDominant(std::string& first, std::string& second) override;
     void SetupCompoObject(const std::string& object, const std::vector<CompoItem>& items, float scale) override;
     bool CanvasMakeSprite(const std::string& name, int width, int height, int pivotX, int pivotY, bool save, const std::string& file) override;
+    int CreateSilhouette(const std::string& name, const std::string& source, float r, float g, float b, float a, int outline) override;
     bool CanvasLoadSprite(const std::string& name, const std::string& file, int pivotX, int pivotY) override;
     void DrawRect(float r, float g, float b, float a, float x1, float y1, float x2, float y2, bool inWorld) override;
     void DrawLine2D(float x1, float y1, float x2, float y2, float width, float r, float g, float b, float a) override;
@@ -240,7 +262,11 @@ public:
         trajSet_ = trajSet_ + 3 > 3 ? 0 : trajSet_ + 3;
         for (int i = 0; i < 3; i++) { trajDots_[trajSet_ + i].clear(); trajPuffs_[trajSet_ + i].clear(); }
         for (std::string& name : trajCustom_[trajSet_ / 3]) name.clear();
+        // Space: the sprites the script chose for the bird (setNormalTrailSprite / setSpecialTrailSprite) belong to the trajectory that starts now
+        if (!pendingNormalTrail_.empty()) for (int i = 0; i < 3; i++) trajCustom_[trajSet_ / 3][i] = pendingNormalTrail_;
+        if (!pendingSpecialTrail_.empty()) trajCustom_[trajSet_ / 3][3] = pendingSpecialTrail_;
     }
+    void SetTrailSprite(bool special, const std::string& name) override { (special ? pendingSpecialTrail_ : pendingNormalTrail_) = name; }
     void SetCustomTrajectorySprites(const std::string& a, const std::string& b, const std::string& c, const std::string& d) override {
         trajCustom_[trajSet_ / 3][0] = a; trajCustom_[trajSet_ / 3][1] = b; trajCustom_[trajSet_ / 3][2] = c; trajCustom_[trajSet_ / 3][3] = d;
     }
@@ -254,6 +280,7 @@ public:
     void DrawParticles(bool world = true) override;
     void DrawLevelParticles(int layer) override;
     void AddLevelParticles(const std::string& type, float amount, float x, float y, float w, float h, float angle, bool ignoreLimits) override;
+    void AddParticlesOverride(const std::string& type, float amount, float x, float y, float w, float h, float angle, const ParticleOverride& ov) override;
     void DrawParticlesOf(bool world, int second, int levelLayer = 0);          // second: -1 both lists, 0 the first, 1 the second
 
     void SetObjectParameter(const std::string& n, int id, float v) override { Physics().SetObjectParameter(n, id, v); }
@@ -267,7 +294,7 @@ public:
     void SetTexture(const std::string& n, const std::string& t) override { Physics().SetTextureName(n, t); }
     void SetPhysicsEnabled(bool on) override { Physics().SetRunning(on); }
     bool IsPhysicsEnabled() override { return Physics().Frame().running; }
-    void SetLevelLimits(float minX, float, float maxX, float) override { Physics().SetLevelLimits(minX, maxX); }
+    void SetLevelLimits(float minX, float minY, float maxX, float maxY) override { Physics().SetLevelLimits(minX, maxX); Physics().SetLevelLimitsY(minY, maxY); }
 
 private:
     void OnContact(PhysObject& a, PhysObject& b, ContactHandle& contact);
@@ -312,8 +339,13 @@ private:
     struct BirdFace { float wait = 1.0f + 4.0f * (std::rand() % 1000) / 1000.0f, blink = 0.0f; };
     std::map<std::string, BirdFace> birdFaces_;
 
-    struct BgLayer { std::string sprite; float speed = 1, scale = 1; bool looping = true; float autoScroll = 0, offset = 0; };
+    struct BgLayer { std::string sprite; float speed = 1, scale = 1; bool looping = true; float autoScroll = 0, offset = 0; bool space = false; float offX = 0, offY = 0; };
     struct TrajectoryPoint { float x, y; };
+    void CallCollisionPair(const char* fn, const std::string& a, const std::string& b);
+    void SpaceSensorTouch(PhysObject& pa, PhysObject& pb, bool enter);
+    bool aimEnabled_ = false;                      // enableAimingAid
+    std::string aimSprite_;                        // setAimingAidSprite
+    std::vector<TrajectoryPoint> aimDots_;         // updateBirdTrajectoryTable, in world pixels
     // What particleTable.particles[type] says (read once per type).
     struct ParticleDef {
         float gravityX = 0, gravityY = 0, minVelX = 0, maxVelX = 0, minVelY = 0, maxVelY = 0, minAngleVel = 0, maxAngleVel = 0;
@@ -324,8 +356,14 @@ private:
         float angleMinEmitter = 0, angleMaxEmitter = 0;
         float minScaleBegin = 0, maxScaleBegin = 0, minScaleEnd = 0, maxScaleEnd = 0, lifeTime = 0;
         bool animated = false;
+        // Angry Birds Space (0x493e20): the emitter angle range, the particle's own rotation range (minAngle / maxAngle, degrees), the emit area scale,
+        // `useAngleFromSpawner` (the angle of the emitting object is added to the direction and the rotation), the def's own ignoreLimits and `background`
+        bool space = false, useSpawnerAngle = false, ignoreLimits = false, background = false;
+        float minAngle = 0, maxAngle = 0, areaX = 1, areaY = 1;
         std::vector<std::string> sprites;
     };
+    std::map<std::string, ParticleDef> particleOverrideDefs_;   // addParticlesWithScale / addParticlesWithProperties: the def with the call's values
+    const ParticleDef* forcedDef_ = nullptr;
     struct Particle {
         const ParticleDef* def = nullptr;
         std::string sprite;
@@ -348,7 +386,8 @@ private:
     float zoom_ = 1, zoomPrev_ = 1, zoomMax_ = 1, zoomStart_ = 1, zoomTarget_ = 1, zoomT_ = -1, zoomDur_ = 0.5f;
     bool exitRequested_ = false, fullScreenReq_ = false;
     std::vector<BgLayer> bgLayers_;
-    struct ThemeSprite { std::string name, sprite; float x, y, scaleX, scaleY, angle, speedX; int layer; float angleVel = 0; bool flipped = false; };
+    struct ThemeSprite { std::string name, sprite; float x, y, scaleX, scaleY, angle, speedX; int layer; float angleVel = 0; bool flipped = false;
+                        std::vector<std::string> frames; int frame = 0; float animTimer = 0, animDelay = 0, startDelay = 0; bool loop = false; };   // frames: createThemeAnimation
     std::vector<ThemeSprite> themeSprites_;
     std::map<std::string, std::string> savedLevels_;   // v2.2: levels saved by the editor this session, by path (see FindSavedLevel)
     void DrawThemeSprites(int layer);
@@ -358,6 +397,7 @@ private:
     float groundR_ = 0, groundG_ = 0, groundB_ = 0;
     std::string themeTexture_;
     std::vector<TrajectoryPoint> trajDots_[6], trajPuffs_[6];
+    std::string pendingNormalTrail_, pendingSpecialTrail_;   // Space setNormalTrailSprite (0x4705f0) / setSpecialTrailSprite (0x470660)
     std::string trajCustom_[2][4];      // per set: the three dot sprites and the puff sprite set by setCustomTrajectorySprites (empty = the defaults)
     int trajSet_ = 0;
     const TextureInfo* tileTexture_ = nullptr;          // set while a textured block is drawn

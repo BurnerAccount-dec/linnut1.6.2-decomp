@@ -16,6 +16,7 @@
 //   createJoint         0x40ecd0
 //   checkJointLimits, setJointParameters, removeObject, setPosition ... see the methods below
 #pragma once
+#include "physics/collision_prediction.h"
 #include <functional>
 #include <map>
 #include <memory>
@@ -51,7 +52,23 @@ public:
     virtual float LinearDamping() const = 0;
     virtual float AngularDamping() const = 0;
     virtual void SetAngularDamping(float d) = 0;
+    virtual void SetLinearDamping(float d) = 0;
+    virtual void SetFixedRotation(bool on) = 0;
+    virtual void SetActive(bool on) = 0;
     virtual float ShapeRadius() const = 0;               // the first fixture's skin radius (polygons) or radius (circles)
+    // The collision prediction's view of a body (predictCollision). Defaults describe a body that cannot be asked.
+    virtual float Inertia() const { return 0; }          // rotational inertia about the centre of mass (0: it cannot spin, or static)
+    virtual void CenterOfMass(float& x, float& y) const { x = PosX(); y = PosY(); }   // world position of the centre of mass
+    virtual float Friction() const { return 0.2f; }      // the first non-sensor fixture's friction
+    virtual float Restitution() const { return 0; }      // the first non-sensor fixture's restitution
+    // Closest points of the two bodies' real shapes (non-sensor fixtures, every pair). (ax, ay) lies on this body's core shape, (bx, by) on the other's;
+    // `dist` is the distance between the core shapes and radA / radB the skin radii to add to each; dist 0 means the cores overlap. false: not available.
+    // Would this body's first fixture overlap the other body's first fixture if this body stood at (x, y) with its present angle? (0x49df50, what the
+    // aiming aid asks of every gravitation sensor.) 1 overlapping, 0 apart, -1 the build cannot tell (Box2D 2.1) or a body has no fixture.
+    virtual int OverlapAt(const PhysBody& other, float x, float y) const { (void)other; (void)x; (void)y; return -1; }
+    virtual bool ClosestPoints(const PhysBody& other, float& ax, float& ay, float& bx, float& by, float& dist, float& radA, float& radB) const {
+        (void)other; (void)ax; (void)ay; (void)bx; (void)by; (void)dist; (void)radA; (void)radB; return false;
+    }
 };
 
 // One game object (the exe's 0x90-byte struct).
@@ -78,7 +95,28 @@ struct PhysObject : FrameObject {
     bool canGetUp = false, gettingUp = false;        // Rio id 14 (+0x96) and the exe's "getting up" state (+0x9a)
     float getUpTimer = 0;                            // +0x9c
     int colliderType = 0;                            // setColliderType (Angry Birds 3.0.1 / Seasons): 0 basic, 1 eagle, 2 static, 3 bird, 4 pig, 5 ghost, 6 sticky
+    std::string decoSprite; int decoAmount = 0; float decoIncrement = 0, decoScale = 1;   // Space setDecorationObjects (+0x158): `amount` copies of the sprite about the object, each turned `increment` degrees more
+    float spriteAngle = 0;                           // Space setSpriteRotation (+0x114): added to the body's angle when the sprite is drawn
+    float pivotOffX = 0, pivotOffY = 0;              // Space setPivotOffset (+0x118, +0x11c): moves the sprite's pivot, the point it turns about
+    float textureScale = 1;                          // Space setTextureScale (+0x128): kept for the scripts, the tile draw does not use it yet
     float alpha = 1;                                 // setObjectAlpha (engine addition): drawGameNative draws the object with this transparency, 0 invisible .. 1 solid
+    // Angry Birds Space (setObjectParameter 20..27, setSensorGravityMask, setObjectGravityCategory): a gravitation sensor pulls the dynamic objects inside it
+    std::vector<CompoundShape> parts;                // a compound body: what each part looks like (drawn about the body)
+    bool isSensor = false;                           // setAsSensor: contacts go to enterCollision / exitCollision instead of blockCollision
+    bool revertGravity = false, revertMulti = false;   // setRevertGravity / setRevertGravityWithMultiplier (exe +0x18a, +0x18b)
+    float revertMult = 0, revertMaxSpeed = 0;           // +0x18c (stored negated), +0x190
+    int ownGravityMode = 0;                          // setObjectGravity / setObjectGravityScale: 0 the world's gravity, 1 an own vector, 2 the world's gravity times a factor
+    float ownGravityX = 0, ownGravityY = 0;          // the vector of mode 1 (acceleration, world units per second squared)
+    float ownGravityScale = 1;                       // the factor of mode 2 (-1 turns the gravity round: the sky becomes the ground)
+    float birdGravReduce = -1;                       // Space id 31 (+0x184) timeSinceCollision: grows by 1/30 per physics step for controllable objects; their gravity multiplier is mult - 1.3 * this (never below 1)
+    bool stopOnExit = false;                         // Space id 34 (+0x1a5): leaving a flagged sensor sets the linear damping to 100 (0x470380)
+    int sensorKind = 0;                              // id 21: 2 gravitation, 3 stream (+0x15c)
+    bool gravOn = false;                             // id 22 (+0x19f)
+    int gravMask = -1, gravCat = -1;                 // setSensorGravityMask (+0x160) / setObjectGravityCategory (+0x180); -1: no filtering
+    float gravExt = 0;                               // id 35 (+0x178): extent of a directional field
+    float gravMin = 0, gravMax = 0, gravRadius = -1; // ids 25, 26, 27 (+0x168, +0x16c, +0x170); radius <= -1: a directional field
+    bool spaceFlagA = false, spaceActive19e = false; // Space ids 19 (+0x188) and 20 (+0x19e), read by the contact filter at 0x4624e0
+    bool hidden = false;                             // Space id 33 (+0x1ab) = 0: isVisible false, not drawn
     bool zSet = false;                               // setObjectZOrder was used: the object is drawn by zOrder in every game (Rio always sorts by it)
 };
 
@@ -96,6 +134,8 @@ struct BodyInfo {
     float linearDamping = 0, angularDamping = 0, mass = 0, shapeRadius = 0;
 };
 
+struct RayHit { PhysObject* obj; float px, py, nx, ny, fraction; };
+
 class PhysicsWorld {
 public:
     virtual ~PhysicsWorld() {}
@@ -103,14 +143,20 @@ public:
     // v2.2: the game starts its levels with every block asleep (a level authored at rest stays still until something touches it);
     // a world used on its own (the tests) creates awake bodies
     bool startAsleep = false;
+    // Angry Birds Space has its own setObjectParameter ids (0x47ac60) and its own contact filter (0x4624e0)
+    bool spaceRules = false;
 
     virtual Box2DVersion Version() const = 0;
     // the skin of the boxes and polygons that are created from now on (Box2D 2.2.0 only; 0 for 2.1.1, which has none)
     virtual void SetPolygonRadius(float r) { (void)r; }
+    virtual void SetSolverSettings(float linearSlop, float timeToSleep, float linearSleepTolerance) { (void)linearSlop; (void)timeToSleep; (void)linearSleepTolerance; }
+    /// Space is built from a newer Box2D than Rio: its dynamic tree (rotations) and the circle case of the position solver differ, see b2_spaceBuild and b2_coincidentCircleNormal
+    virtual void SetBox2DFlavour(bool space) { (void)space; }
     virtual float PolygonRadius() const { return 0; }
 
     // ---- creation. Each returns the body mass (the original writes it to objects.world[name].mass).
     virtual float CreateBox(const BodyDef& d) = 0;
+    virtual float CreateCompound(const BodyDef& d, const std::vector<CompoundShape>& shapes, float damping) = 0;
     virtual float CreateCircle(const BodyDef& d) = 0;
     virtual float CreatePolygon(const BodyDef& d, const std::vector<float>& verts) = 0;
 
@@ -130,7 +176,30 @@ public:
     bool SetRotation(const std::string& n, float angle, float& normalizedAngle);
     void SetVelocity(const std::string& n, float vx, float vy);
     void SetAngularVelocity(const std::string& n, float w);
+    // Angry Birds Space natives that go through a body: cmd 1 linear damping, 2 angular damping, 3 fixed rotation, 4 active, 5 multiply the velocity by a,
+    // 6 angular velocity (result), 7 sensor (a != 0: the body no longer collides, it only reports)
+    // the gravitation sensors (0x46f720): called before every step
+    void ApplyGravitySensors(float dt);
+    // gravity of one object, independent of the world's (called from ApplyGravitySensors, before every step)
+    void ApplyOwnGravity();
+    bool SetOwnGravityVector(const std::string& n, float gx, float gy);
+    bool SetOwnGravityScale(const std::string& n, float scale);
+    bool ResetOwnGravity(const std::string& n);
+    bool GetOwnGravity(const std::string& n, int& mode, float& gx, float& gy, float& scale) const;
+    // vel: nullptr, or {aVx, aVy, bVx, bVy} where a NaN entry means "use the body's own velocity"
+    CollisionPrediction PredictCollision(const std::string& a, const std::string& b, float restitution, const float* vel = nullptr) const;
+    // The exe's list at obj+0x34: one entry per touching fixture pair (0x469ed0 is a plain push_back, 0x470380 erases the first match). Returns the
+    // number of entries `other` has left, or -1 when an exit found no entry.
+    int SensorPair(PhysObject* sen, PhysObject* other, bool enter);
+    float BirdGravityFactor(float timer) const;
+    bool GravityPull(const PhysObject& s, const PhysObject& t, float tx, float ty, float tvx, float tvy, float timer, float mass, float& fx, float& fy) const;
+    // the aiming aid (updateBirdTrajectoryTable): the object flown on from its position and velocity under the gravitation sensors and its damping, one point every `every` steps
+    void SimulateTrajectory(const std::string& n, int steps, int every, float h, std::vector<std::pair<float, float>>& out);
+    float gravityForceMultiplier = 4;        // setGravityForceMultiplier (game +0x368)
+    bool BodyCommand(const std::string& n, int cmd, float a, float& result);
     void SetSleeping(const std::string& n, bool sleeping);
+    void SetRecordVelocity(const std::string& n, bool on);                  // Space setRecordVelocity (0x47a5f0): publish xVel / yVel / angle for this object
+    bool GetVelocity(const std::string& n, float& vx, float& vy) const;      // the body's linear velocity; false (0, 0) for an unknown object
     float GetAngle(const std::string& n) const;                              // interpolated angle
     void GetWorldPoint(const std::string& n, float lx, float ly, float& wx, float& wy) const;
     // setObjectParameter (0x40ec00): id 1 -> drawWithBirds = (value == 1); id 2 -> body type static if
@@ -154,6 +223,8 @@ public:
     enum { kColliderTypes = 16 };
     void SetColliderType(const std::string& n, int type);
     int ColliderType(const std::string& n) const;
+    void SetDecoration(const std::string& n, const std::string& sprite, int amount, float increment, float scale);
+    void SetSpriteLook(const std::string& n, int what, float a, float b);   // 0 sprite angle, 1 pivot offset, 2 texture scale (Space natives)
     void SetObjectAlpha(const std::string& n, float a);       // 0..1, clamped
     float ObjectAlpha(const std::string& n) const;            // -1 if there is no such object
     void SetObjectZOrder(const std::string& n, float z);     // draw order: higher is drawn later (in front)
@@ -170,6 +241,7 @@ public:
     const std::string& JointName(int index) const { return joints_[index]->name; }
 
     void SetLevelLimits(float minX, float maxX) { frame_.levelMinX = (int)minX; frame_.levelMaxX = (int)maxX; }
+    void SetLevelLimitsY(float minY, float maxY) { frame_.levelMinY = (int)minY; frame_.levelMaxY = (int)maxY; }   // Space (0x462b10): all four limits are kept, truncated
     void SetRunning(bool on) { frame_.running = on; }
 
     // ---- stepping, for the frame update (FrameHost::StepWorld / ClearForces)
@@ -179,6 +251,8 @@ public:
     // the scripts' setMaxTranslation: the longest distance a body moves in one step (2.0 when a level loads)
     virtual void SetMaxTranslation(float t) { (void)t; }
     virtual void GetGravity(float& x, float& y) const = 0;
+    // Every non-sensor fixture the segment (x1, y1) - (x2, y2) crosses, in the order Box2D reports them (the callback at 0x495760 keeps going)
+    virtual void RayCastAll(float x1, float y1, float x2, float y2, std::vector<RayHit>& out) const { (void)x1; (void)y1; (void)x2; (void)y2; (void)out; }
     virtual BodyInfo Inspect(const std::string& name) const = 0;
     // motor speed and distance-joint frequency / damping of a joint, for the tests; false: no such joint
     virtual bool InspectJoint(const std::string& name, float& motorSpeed, float& frequency, float& dampingRatio) const = 0;
@@ -193,6 +267,7 @@ public:
     // Called from BeginContact for every contact whose two fixtures both have an object (the
     // original returns early otherwise). The Lua side decides the rest with ResolveContact.
     std::function<void(PhysObject& a, PhysObject& b, ContactHandle& c)> onBeginContact;
+    std::function<void(PhysObject& a, PhysObject& b)> onEndContact;
     // objects.world[name].material, read live by the filter. Return "" when absent.
     std::function<std::string(const PhysObject&)> materialOf;
 
@@ -236,6 +311,7 @@ protected:
     std::map<std::string, PhysObject*> byName_;
     std::vector<std::unique_ptr<JointRecord>> joints_;
     std::vector<Link> links_;
+    std::vector<std::pair<PhysObject*, PhysObject*>> sensorPairs_;   // Space: (gravitation sensor, touching object) contacts
     FrameState frame_;
     int nextId_ = 0;
     std::map<int, std::string> idNames_;

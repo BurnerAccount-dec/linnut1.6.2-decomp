@@ -18,6 +18,8 @@ extern const char kSeasonsKey[33];
 // Script key of Angry Birds Space.
 extern const char kSpaceKey[33];
 extern const char kSeasonsSaveKey[33];
+// Save key of Angry Birds Space (settings.lua, highscores.lua, bi_data.lua, ...): built by the exe at 0x496180 next to the script key at 0x4960a0.
+extern const char kSpaceSaveKey[33];
 
 // Returns false when the size is not a multiple of 16 or the padding is wrong.
 bool AesDecryptCbc(const uint8_t key[32], const std::vector<uint8_t>& in, std::vector<uint8_t>& out);

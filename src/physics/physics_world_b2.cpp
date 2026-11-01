@@ -69,6 +69,7 @@ public:
     bool Bounds(float& x0, float& y0, float& x1, float& y1) const override {
         b2AABB box;
         bool first = true;
+        if (!b_->IsActive()) return false;      // an inactive body has no broad-phase proxies, so its fixtures have no AABB
         for (const b2Fixture* f = b_->GetFixtureList(); f; f = f->GetNext()) {
 #ifdef AB_BOX2D_V22
             const b2AABB& a = f->GetAABB(0);
@@ -84,7 +85,57 @@ public:
     float LinearDamping() const override { return b_->GetLinearDamping(); }
     float AngularDamping() const override { return b_->GetAngularDamping(); }
     void SetAngularDamping(float d) override { b_->SetAngularDamping(d); }
+    void SetLinearDamping(float d) override { b_->SetLinearDamping(d); }
+    void SetFixedRotation(bool on) override { b_->SetFixedRotation(on); }
+    void SetActive(bool on) override { b_->SetActive(on); }
     float ShapeRadius() const override { return b_->GetFixtureList() ? b_->GetFixtureList()->GetShape()->m_radius : 0.0f; }
+    float Inertia() const override {
+        if (b_->GetType() != b2_dynamicBody) return 0.0f;
+        b2Vec2 lc = b_->GetLocalCenter();
+        float i = b_->GetInertia() - b_->GetMass() * (lc.x * lc.x + lc.y * lc.y);     // GetInertia is about the body origin
+        return i > 0 ? i : 0.0f;
+    }
+    void CenterOfMass(float& x, float& y) const override { b2Vec2 c = b_->GetWorldCenter(); x = c.x; y = c.y; }
+    const b2Fixture* SolidFixture() const { for (const b2Fixture* f = b_->GetFixtureList(); f; f = f->GetNext()) if (!f->IsSensor()) return f; return nullptr; }
+    float Friction() const override { const b2Fixture* f = SolidFixture(); return f ? f->GetFriction() : 0.2f; }
+    float Restitution() const override { const b2Fixture* f = SolidFixture(); return f ? f->GetRestitution() : 0.0f; }
+#ifdef AB_BOX2D_V22
+    int OverlapAt(const PhysBody& other, float x, float y) const override {
+        const B2Body* o = dynamic_cast<const B2Body*>(&other);
+        const b2Fixture* fa = b_->GetFixtureList();
+        const b2Fixture* fb = o ? o->b_->GetFixtureList() : nullptr;
+        if (!fa || !fb) return -1;
+        b2Transform xf = b_->GetTransform();
+        xf.p.Set(x, y);
+        return b2TestOverlap(fa->GetShape(), 0, fb->GetShape(), 0, xf, o->b_->GetTransform()) ? 1 : 0;
+    }
+    bool ClosestPoints(const PhysBody& other, float& ax, float& ay, float& bx, float& by, float& dist, float& radA, float& radB) const override {
+        const B2Body* o = dynamic_cast<const B2Body*>(&other);
+        if (!o) return false;
+        bool found = false;
+        float best = 0;
+        for (const b2Fixture* fa = b_->GetFixtureList(); fa; fa = fa->GetNext()) {
+            if (fa->IsSensor()) continue;
+            for (const b2Fixture* fb = o->b_->GetFixtureList(); fb; fb = fb->GetNext()) {
+                if (fb->IsSensor()) continue;
+                b2DistanceInput in;
+                in.proxyA.Set(fa->GetShape(), 0); in.proxyB.Set(fb->GetShape(), 0);
+                in.transformA = b_->GetTransform(); in.transformB = o->b_->GetTransform();
+                in.useRadii = false;                                  // the cores; the skin radii are added back by the caller
+                b2SimplexCache cache; cache.count = 0;
+                b2DistanceOutput out;
+                b2Distance(&out, &cache, &in);
+                float surface = out.distance - fa->GetShape()->m_radius - fb->GetShape()->m_radius;
+                if (!found || surface < best) {
+                    found = true; best = surface;
+                    ax = out.pointA.x; ay = out.pointA.y; bx = out.pointB.x; by = out.pointB.y; dist = out.distance;
+                    radA = fa->GetShape()->m_radius; radB = fb->GetShape()->m_radius;
+                }
+            }
+        }
+        return found;
+    }
+#endif
 
 private:
     b2Body* b_;
@@ -151,8 +202,12 @@ public:
 
     Box2DVersion Version() const override { return AB_B2_VERSION; }
 #ifdef AB_BOX2D_V22
+    void SetBox2DFlavour(bool space) override { b2_coincidentCircleNormal = !space; b2_spaceBuild = space; }
+#endif
+#ifdef AB_BOX2D_V22
     void SetPolygonRadius(float r) override { if (r >= 0) b2_polygonRadiusValue = r; }
     float PolygonRadius() const override { return b2_polygonRadiusValue; }
+    void SetSolverSettings(float linearSlop, float timeToSleep, float linearSleepTolerance) override { b2_linearSlopValue = linearSlop; b2_timeToSleepValue = timeToSleep; b2_linearSleepToleranceValue = linearSleepTolerance; }
 #endif
 
     void Step(float dt, int velocityIterations, int positionIterations) override {
@@ -180,6 +235,18 @@ public:
     void ClearForces() override { world_.ClearForces(); }
     void SetGravity(float x, float y) override { world_.SetGravity(b2Vec2(x, y)); }
     void SetMaxTranslation(float t) override { b2_maxTranslation = t; b2_maxTranslationSquared = t * t; }
+    void RayCastAll(float x1, float y1, float x2, float y2, std::vector<RayHit>& out) const override {
+        struct Collect : b2RayCastCallback {
+            std::vector<RayHit>* hits;
+            float32 ReportFixture(b2Fixture* f, const b2Vec2& p, const b2Vec2& n, float32 fraction) override {
+                PhysObject* o = static_cast<PhysObject*>(f->GetUserData());
+                if (!f->IsSensor() && o) hits->push_back({o, p.x, p.y, n.x, n.y, fraction});
+                return 1.0f;
+            }
+        } cb;
+        cb.hits = &out;
+        world_.RayCast(&cb, b2Vec2(x1, y1), b2Vec2(x2, y2));
+    }
     void GetGravity(float& x, float& y) const override { b2Vec2 g = world_.GetGravity(); x = g.x; y = g.y; }
 
     BodyInfo Inspect(const std::string& name) const override {
@@ -219,6 +286,38 @@ public:
         shape.SetAsBox(d.w * 0.5f, d.h * 0.5f);
         MakeFixture(BodyOf(o), o, shape, d);
         AddObject(o, false);
+        return o->pbody->Mass();
+    }
+
+    // Angry Birds Space createCompoundObject: one body, one fixture per part (a box, a polygon, a line as a thin box, or a circle)
+    float CreateCompound(const BodyDef& d, const std::vector<CompoundShape>& shapes, float damping) override {
+        PhysObject* o = MakeObject(d, -1.0f, false);
+        b2Body* body = BodyOf(o);
+        for (const CompoundShape& cs : shapes) {
+            if (cs.kind == 3) {
+                b2CircleShape c;
+                c.m_radius = cs.w;
+                c.m_p.Set(cs.x, cs.y);
+                MakeFixture(body, o, c, d);
+            } else if (cs.kind == 1 && cs.verts.size() >= 6) {
+                float ca = std::cos(cs.angle), sa = std::sin(cs.angle);
+                std::vector<b2Vec2> pts;
+                for (size_t i = 0; i + 1 < cs.verts.size() && pts.size() < 8; i += 2)
+                    pts.push_back(b2Vec2(cs.x + ca * cs.verts[i] - sa * cs.verts[i + 1], cs.y + sa * cs.verts[i] + ca * cs.verts[i + 1]));
+                b2PolygonShape poly;
+                poly.Set(pts.data(), (int)pts.size());
+                MakeFixture(body, o, poly, d);
+            } else {
+                b2PolygonShape box;
+                float hh = cs.kind == 2 ? 0.05f : cs.h * 0.5f;
+                box.SetAsBox(cs.w * 0.5f, hh, b2Vec2(cs.x, cs.y), cs.angle);
+                MakeFixture(body, o, box, d);
+            }
+        }
+        o->parts = shapes;
+        o->pbody->SetLinearDamping(damping);
+        if (d.controllable) o->pbody->SetAngularDamping(2.0f);
+        AddObject(o, d.controllable);
         return o->pbody->Mass();
     }
 
@@ -406,6 +505,11 @@ public:
         if (!a || !b) return;
         ContactRef ref(c);
         if (onBeginContact) onBeginContact(*a, *b, ref);
+    }
+    void EndContact(b2Contact* c) override {
+        PhysObject* a = static_cast<PhysObject*>(c->GetFixtureA()->GetUserData());
+        PhysObject* b = static_cast<PhysObject*>(c->GetFixtureB()->GetUserData());
+        if (a && b && onEndContact) onEndContact(*a, *b);
     }
     bool ShouldCollide(b2Fixture* fa, b2Fixture* fb) override {
         return ShouldCollideObjects(static_cast<PhysObject*>(fa->GetUserData()), static_cast<PhysObject*>(fb->GetUserData()));

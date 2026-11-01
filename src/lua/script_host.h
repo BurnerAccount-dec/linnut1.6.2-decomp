@@ -44,6 +44,7 @@ public:
     bool CreateStartUpAssets() { return Call("createStartUpAssets"); }
     bool Initialize() { return Call("initialize"); }
     bool Update(float dt, float realDt);
+    bool IsSpace() const { return space_; }    // Angry Birds Space: the scripts load their own block files; the exe calls draw() after update()
     bool IsRio() const { return rio_; }        // Angry Birds Rio: data in many files, and the exe calls draw() after update()
     bool Draw() { return Call("draw"); }
     void RunString(const char* code);             // test hook: runs a snippet among the scripts' globals
@@ -61,6 +62,7 @@ public:
 
 private:
     bool rio_ = false;
+    bool space_ = false;
     bool Call(const char* name);
     bool DrawEditorOverlay();
     bool CallWithArgs(const char* name, int nargs);   // args already pushed after the function slot
@@ -70,7 +72,8 @@ private:
     void GetEnvField(const char* name);
     int LoadInEnv(const std::string& path);
     void NewGlobalTable(const char* name);
-    void LoadPersisted(const char* tableName, const char* fileName);
+    void LoadPersisted(const char* tableName, const char* fileName, bool onlyIfExists = false);
+    bool IsSpaceDataFolder() const;
 
     Platform& platform_;
     BootConfig config_;

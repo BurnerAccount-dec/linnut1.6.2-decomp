@@ -90,12 +90,13 @@ b2ContactSolver::b2ContactSolver(b2ContactSolverDef* def)
 		// AngryBirdsRio.exe b2ContactSolver::SolvePositionConstraints (0x4f41a0) / SolveTOIPositionConstraints (0x4f4520):
 		// the position solver uses invMass = mass * invMass and invI = mass * invI (1 for every dynamic body, 0 for static),
 		// not the true inverse mass; the velocity solver keeps the real ones.
-		pc->invMassA = bodyA->m_mass * bodyA->m_invMass;
-		pc->invMassB = bodyB->m_mass * bodyB->m_invMass;
+		// AngryBirdsSpace.exe (0x4ad590) copies the real invMass / invI (body+0x78 / +0x80) into the position constraint.
+		pc->invMassA = b2_spaceBuild ? bodyA->m_invMass : bodyA->m_mass * bodyA->m_invMass;
+		pc->invMassB = b2_spaceBuild ? bodyB->m_invMass : bodyB->m_mass * bodyB->m_invMass;
 		pc->localCenterA = bodyA->m_sweep.localCenter;
 		pc->localCenterB = bodyB->m_sweep.localCenter;
-		pc->invIA = bodyA->m_mass * bodyA->m_invI;
-		pc->invIB = bodyB->m_mass * bodyB->m_invI;
+		pc->invIA = b2_spaceBuild ? bodyA->m_invI : bodyA->m_mass * bodyA->m_invI;
+		pc->invIB = b2_spaceBuild ? bodyB->m_invI : bodyB->m_mass * bodyB->m_invI;
 		pc->localNormal = manifold->localNormal;
 		pc->localPoint = manifold->localPoint;
 		pc->pointCount = pointCount;
@@ -230,7 +231,8 @@ void b2ContactSolver::InitializeVelocityConstraints()
 			float32 k12 = mA + mB + iA * rn1A * rn2A + iB * rn1B * rn2B;
 
 			// Ensure a reasonable condition number.
-			const float32 k_maxConditionNumber = 1000.0f;
+			// AngryBirdsSpace.exe (0x4ae736) 1000 (Box2D 2.3); AngryBirdsRio.exe (0x4f3496) 100
+			const float32 k_maxConditionNumber = b2_spaceBuild ? 1000.0f : 100.0f;
 			if (k11 * k11 < k_maxConditionNumber * (k11 * k22 - k12 * k12))
 			{
 				// K is safe to invert.
@@ -625,9 +627,9 @@ struct b2PositionSolverManifold
 			{
 				b2Vec2 pointA = b2Mul(xfA, pc->localPoint);
 				b2Vec2 pointB = b2Mul(xfB, pc->localPoints[0]);
-				// AngryBirdsRio.exe (0x4f2da0): coinciding centres give the normal (1, 0)
+				// AngryBirdsRio.exe (0x4f2da0): coinciding centres give the normal (1, 0); AngryBirdsSpace.exe (0x4adf20) has no such case (plain Normalize)
 				b2Vec2 d = pointA - pointB;
-				if (b2Dot(d, d) <= b2_epsilon * b2_epsilon)
+				if (b2_coincidentCircleNormal && b2Dot(d, d) <= b2_epsilon * b2_epsilon)
 				{
 					normal.Set(1.0f, 0.0f);
 				}
@@ -750,7 +752,8 @@ bool b2ContactSolver::SolvePositionConstraints()
 	// We can't expect minSpeparation >= -b2_linearSlop because we don't
 	// push the separation above -b2_linearSlop.
 	// exe 0x4f41a0: -0.075 = -1.5 linearSlops
-	return minSeparation >= -1.5f * b2_linearSlop;
+	// AngryBirdsSpace.exe (0x4af430, constant 0x512860 = -0.015) uses -3 linearSlops, as Box2D 2.3 does
+	return minSeparation >= (b2_spaceBuild ? -3.0f : -1.5f) * b2_linearSlop;
 }
 
 // Sequential position solver for position constraints.
@@ -770,12 +773,16 @@ bool b2ContactSolver::SolveTOIPositionConstraints(int32 toiIndexA, int32 toiInde
 
 		// AngryBirdsRio.exe (0x4f4520) is the same code as the regular position solver with the 0.75 factor:
 		// both bodies move, with the mass * invMass values set up above, whether or not they are the TOI pair.
-		B2_NOT_USED(toiIndexA);
-		B2_NOT_USED(toiIndexB);
+		// AngryBirdsSpace.exe (0x4af860) moves only the two TOI bodies (compares the indices with the arguments), as Box2D 2.3 does
 		float32 mA = pc->invMassA;
 		float32 iA = pc->invIA;
 		float32 mB = pc->invMassB;
 		float32 iB = pc->invIB;
+		if (b2_spaceBuild)
+		{
+			if (!(indexA == toiIndexA || indexA == toiIndexB)) { mA = 0.0f; iA = 0.0f; }
+			if (!(indexB == toiIndexA || indexB == toiIndexB)) { mB = 0.0f; iB = 0.0f; }
+		}
 
 		b2Vec2 cA = m_positions[indexA].c;
 		float32 aA = m_positions[indexA].a;
