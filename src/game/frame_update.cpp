@@ -33,7 +33,7 @@ void UpdateFrame(FrameState& s, FrameHost& host, float dt) {
 
     if (s.running) {
         // 1. fixed steps
-        s.accumulator += dt;
+        s.accumulator += dt * s.physicsScale;
         while (s.accumulator > kFixedStep) {
             host.StepWorld(kFixedStep, 10, 10);
             s.accumulator -= kFixedStep;

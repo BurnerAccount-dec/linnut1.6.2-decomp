@@ -173,3 +173,13 @@ bool GlBackend::ReadPixels(std::vector<unsigned char>& out, int& width, int& hei
 }
 
 }  // namespace ab
+
+namespace ab {
+void GlBackend::UpdateTexture(int texture, const Image& image) {
+    if (texture < 0 || texture >= (int)textures_.size()) return;
+    gl_->BindTexture(GL_TEXTURE_2D, textures_[texture]);
+    gl_->PixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    gl_->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.rgba.data());
+    boundTexture_ = -2;
+}
+}  // namespace ab

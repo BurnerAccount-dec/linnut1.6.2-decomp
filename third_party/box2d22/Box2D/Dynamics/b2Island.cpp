@@ -223,6 +223,24 @@ void b2Island::Solve(b2Profile* profile, const b2TimeStep& step, const b2Vec2& g
 		m_velocities[i].w = w;
 	}
 
+	// AngryBirdsRio.exe b2Island::Solve (0x4e9700): before the solver is built the contacts between two
+	// non-static bodies are swapped to the front of the island's list, so the solver visits them first.
+	{
+		int32 front = 0;
+		for (int32 i = 0; i < m_contactCount; ++i)
+		{
+			b2Contact* c = m_contacts[i];
+			if (c->GetFixtureA()->GetBody()->GetType() != b2_staticBody &&
+				c->GetFixtureB()->GetBody()->GetType() != b2_staticBody)
+			{
+				b2Contact* t = m_contacts[front];
+				m_contacts[front] = m_contacts[i];
+				m_contacts[i] = t;
+				++front;
+			}
+		}
+	}
+
 	timer.Reset();
 
 	// Solver data
@@ -370,7 +388,8 @@ void b2Island::Solve(b2Profile* profile, const b2TimeStep& step, const b2Vec2& g
 			}
 		}
 
-		if (minSleepTime >= b2_timeToSleep && positionSolved)
+		// AngryBirdsRio.exe (0x4e9700): the bodies fall asleep once the sleep time is reached; whether the position solver converged is not asked
+		if (minSleepTime >= b2_timeToSleep)
 		{
 			for (int32 i = 0; i < m_bodyCount; ++i)
 			{
@@ -481,15 +500,19 @@ void b2Island::SolveTOI(const b2TimeStep& subStep, int32 toiIndexA, int32 toiInd
 		b2Vec2 translation = h * v;
 		if (b2Dot(translation, translation) > b2_maxTranslationSquared)
 		{
-			float32 ratio = b2_maxTranslation / translation.Length();
-			v *= ratio;
+			// AngryBirdsRio.exe SolveTOI: the translation is normalized (when its length is at least FLT_EPSILON) and the speed set to maxTranslation / dt
+			float32 length = translation.Length();
+			if (length >= b2_epsilon)
+			{
+				translation *= 1.0f / length;
+			}
+			v = (subStep.inv_dt * b2_maxTranslation) * translation;
 		}
 
 		float32 rotation = h * w;
 		if (rotation * rotation > b2_maxRotationSquared)
 		{
-			float32 ratio = b2_maxRotation / b2Abs(rotation);
-			w *= ratio;
+			w = rotation >= 0.0f ? subStep.inv_dt * b2_maxRotation : -subStep.inv_dt * b2_maxRotation;
 		}
 
 		// Integrate

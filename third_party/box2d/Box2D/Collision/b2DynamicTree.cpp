@@ -106,18 +106,8 @@ int32 b2DynamicTree::CreateProxy(const b2AABB& aabb, void* userData)
 	m_nodes[proxyId].aabb.upperBound = aabb.upperBound + r;
 	m_nodes[proxyId].userData = userData;
 
+	// AngryBirds.exe (0x4fbc30): the leaf is inserted and nothing is rebalanced (Box2D 2.1.0 has no b2DynamicTree::Rebalance)
 	InsertLeaf(proxyId);
-
-	// Rebalance if necessary.
-	int32 iterationCount = m_nodeCount >> 4;
-	int32 tryCount = 0;
-	int32 height = ComputeHeight();
-	while (height > 64 && tryCount < 10)
-	{
-		Rebalance(iterationCount);
-		height = ComputeHeight();
-		++tryCount;
-	}
 
 	return proxyId;
 }

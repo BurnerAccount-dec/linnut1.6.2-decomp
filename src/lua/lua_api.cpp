@@ -1,5 +1,6 @@
 #ifdef _WIN32
 #define NOMINMAX
+#include <cstdlib>
 #include <winsock2.h>
 #include <iphlpapi.h>
 #pragma comment(lib, "iphlpapi.lib")
@@ -27,6 +28,10 @@ extern "C" {
 }
 
 namespace ab {
+extern const unsigned char kCompoImageLua[];
+extern const unsigned int kCompoImageLuaSize;
+extern const unsigned char kInvisibleButtonLua[];
+extern const unsigned int kInvisibleButtonLuaSize;
 bool LoadTableFile(lua_State* L, const char* name, const std::string& path, std::string* error, bool append);
 namespace {
 
@@ -137,7 +142,20 @@ int l_loadLuaFileToObject(lua_State* L) {
     bool toObject = lua_istable(L, 2) && lua_isstring(L, 3);
     std::vector<uint8_t> bytes;
     int rc = 1;
-    if (ab::ReadLuaFile(path, bytes)) rc = luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), ("@" + path).c_str());
+    // Angry Birds Island HD (Hatchery) names its files from the data folder ("hatchery/scripts/..."); try that when the path does not exist as written
+    bool found = ab::ReadLuaFile(path, bytes);
+    if (!found) { std::string alt = P(L)->ResolveDataFile(path); if (alt != path) found = ab::ReadLuaFile(alt, bytes); }
+    // the two ui components the Hatchery needs that 2.0.0's PC scripts do not have (CompoImage, InvisibleButton) are built in
+    if (!found) {
+        const struct { const char* file; const unsigned char* data; unsigned size; } builtIn[] = {
+            {"ui_components/CompoImage.lua", kCompoImageLua, kCompoImageLuaSize},
+            {"ui_components/InvisibleButton.lua", kInvisibleButtonLua, kInvisibleButtonLuaSize}};
+        for (const auto& b : builtIn) {
+            size_t n = std::strlen(b.file);
+            if (path.size() >= n && path.compare(path.size() - n, n, b.file) == 0) { bytes.assign(b.data, b.data + b.size); found = true; }
+        }
+    }
+    if (found) rc = luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), ("@" + path).c_str());
     else lua_pushstring(L, ("cannot open " + path).c_str());
     if (rc == 0) {
         if (toObject) {
@@ -148,6 +166,19 @@ int l_loadLuaFileToObject(lua_State* L) {
                 lua_newtable(L);                        // its metatable { __index = object }
                 lua_pushvalue(L, 2);
                 lua_setfield(L, -2, "__index");
+                if (std::strcmp(lua_tostring(L, 3), "Hatchery") == 0) {
+                    // hatchery.lua loads the rest of the Hatchery (its UI files, ui components, events) "into this": for this file `this` is the
+                    // file's own table, so everything it defines (hatchery, hatcheryEventManager, ui ...) is shared by those files and stays
+                    // out of the game's globals
+                    lua_pushvalue(L, -2);
+                    lua_setfield(L, -3, "this");
+                    // and the Hatchery is written for the iPad (its sheets, context menu and panels pick their layout from gamelua.deviceModel):
+                    // its `gamelua` reads everything from the game's, except that the device is an iPad
+                    luaL_loadstring(L, "local env = ...; return setmetatable({deviceModel = \"ipad\"}, {__index = env, __newindex = env})");
+                    lua_pushvalue(L, 2);
+                    lua_call(L, 1, 1);
+                    lua_setfield(L, -3, "gamelua");
+                }
                 lua_setmetatable(L, -2);
                 // an object without a metatable of its own falls back to the globals, so the menu files
                 // (Angry Birds Rio) also find `gamelua`, `res` and the engine functions by bare name
@@ -197,6 +228,226 @@ int l_loadLuaFileToObject(lua_State* L) {
                 }
             }
             lua_pop(L, 3);
+            // debug build: the iPad scripts keep the star coins and stars, and the Hatchery state, in settingsWrapper; 2.0.0's PC copy lacks them
+            const std::string sw = "settingsWrapper.lua";
+            if (!std::getenv("AB_NODEBUGKEYS") && path.size() >= sw.size() && path.compare(path.size() - sw.size(), sw.size(), sw) == 0) {
+                const char* wrapper =
+                    "if settingsWrapper.getAvailableStarCoins == nil then\n"
+                    "    function settingsWrapper:getAvailableStarCoins() return settings.starCoins or 1000 end\n"
+                    "    function settingsWrapper:setAvailableStarCoins(val) settings.starCoins = val end\n"
+                    "    function settingsWrapper:getAvailableStars() return settings.stars or 1000 end\n"
+                    "    function settingsWrapper:setAvailableStars(val) settings.stars = val end\n"
+                    "end\n"
+                    "for _, name in _G.ipairs({\"setHatcheryLocalTime\", \"setHatcheryState\", \"setHatcheryLastSavedServerTime\"}) do\n"
+                    "    if settingsWrapper[name] == nil then\n"
+                    "        local key = \"hatchery\" .. _G.string.sub(name, 12)\n"
+                    "        settingsWrapper[name] = function(self, value) settings[key] = value end\n"
+                    "    end\n"
+                    "end\n";
+                if (luaL_loadstring(L, wrapper) == 0) {
+                    PushEnv(L);
+                    lua_setfenv(L, -2);
+                    if (lua_pcall(L, 0, 0, 0) != 0) { P(L)->Print(std::string("settingsWrapper additions: ") + lua_tostring(L, -1)); lua_pop(L, 1); }
+                } else { P(L)->Print(std::string("settingsWrapper additions: ") + lua_tostring(L, -1)); lua_pop(L, 1); }
+            }
+            // debug build: this copy of hatchery.lua has the WORLD_VIEW link commented out in init, but enter() still goes there
+            const std::string hl = "hatchery/hatchery.lua";
+            if (!std::getenv("AB_NODEBUGKEYS") && path.size() >= hl.size() && path.compare(path.size() - hl.size(), hl.size(), hl) == 0) {
+                const char* link =
+                    "local H = Hatchery\n"
+                    "local init = H.init\n"
+                    "function H.init(...)\n"
+                    "    init(...)\n"
+                    "    if H.hatchery:getLink(\"WORLD_VIEW\") == nil then\n"
+                    "        H.hatchery:addLink(\"WORLD_VIEW\", H.WorldView:new())\n"
+                    "        H.hatchery:getLink(\"WORLD_VIEW\"):setHatchery(H.hatchery)\n"
+                    "    end\n"
+                    "end\n";
+                if (luaL_loadstring(L, link) == 0) {
+                    PushEnv(L);
+                    lua_setfenv(L, -2);
+                    if (lua_pcall(L, 0, 0, 0) != 0) { P(L)->Print(std::string("hatchery link: ") + lua_tostring(L, -1)); lua_pop(L, 1); }
+                } else { P(L)->Print(std::string("hatchery link: ") + lua_tostring(L, -1)); lua_pop(L, 1); }
+            }
+            // debug build: the Hatchery's shop log is drawn for the iPad's 1024 pixel wide screen; on a wider window its buttons are centred on the log
+            const std::string wsp = "hatchery/scripts/UI/WorldSelectionPanel.lua";
+            if (!std::getenv("AB_NODEBUGKEYS") && path.size() >= wsp.size() && path.compare(path.size() - wsp.size(), wsp.size(), wsp) == 0) {
+                const char* shop =
+                    "local relocate, layout = WorldSelectionPanel.relocateItemButtons, WorldSelectionPanel.layout\n"
+                    "function WorldSelectionPanel:relocateItemButtons()\n"
+                    "    relocate(self)\n"
+                    "    local shift = (gamelua.screenWidth - 1024) * 0.5\n"
+                    "    for _, button in _G.ipairs(self.objectButtons) do button.x = button.x - shift end\n"
+                    "end\n"
+                    "function WorldSelectionPanel:layout()\n"
+                    "    layout(self)\n"
+                    "    self:getChild(\"purchaseButton\").x = gamelua.screenWidth * 0.5 - 512 + 0.08 * 1024\n"
+                    "end\n";
+                if (luaL_loadstring(L, shop) == 0) {
+                    lua_pushvalue(L, 2);
+                    lua_setfenv(L, -2);
+                    if (lua_pcall(L, 0, 0, 0) != 0) { P(L)->Print(std::string("shop layout: ") + lua_tostring(L, -1)); lua_pop(L, 1); }
+                } else { P(L)->Print(std::string("shop layout: ") + lua_tostring(L, -1)); lua_pop(L, 1); }
+            }
+            // debug build: the iPad's in-game bird selector hangs its button at the screen's corner with an iPad-only sprite; here it sits after the
+            // pause button (and the restart button next to it) and is only there while the pause button is
+            const std::string bs = "hatchery/scripts/UI/BirdSelector.lua";
+            if (!std::getenv("AB_NODEBUGKEYS") && path.size() >= bs.size() && path.compare(path.size() - bs.size(), bs.size(), bs) == 0) {
+                const char* selector =
+                    "local init, layout, update, draw = BirdSelector.init, BirdSelector.layout, BirdSelector.update, BirdSelector.draw\n"
+                    "function BirdSelector:init()\n"
+                    "    init(self)\n"
+                    "    local button = self:getChild(\"button\")\n"
+                    "    self.hiddenYPos = -250\n"
+                    "    if self.state == \"HIDDEN\" then self.y = self.hiddenYPos end\n"
+                    "    if _G.res.getSpriteBounds(\"\", button.image) == 0 then button:setImage(\"H_GAME_OBJECT_EGG_1\") end\n"
+                    "    button.scaleX = 0.75\n"
+                    "    button.scaleY = 0.75\n"
+                    "end\n"
+                    "function BirdSelector:layout()\n"
+                    "    layout(self)\n"
+                    "    local button = self:getChild(\"button\")\n"
+                    "    local hud = gamelua.menuManager.currentRoot\n"
+                    "    local pause = hud and hud.name == \"gameHud\" and hud:getChild(\"pauseButton\")\n"
+                    "    local restart = pause and hud:getChild(\"restart_button\")\n"
+                    "    local x, y = 113, -53\n"
+                    "    if pause then\n"
+                    "        y = pause.y\n"
+                    "        x = pause.x + 2 * ((restart and restart.x or pause.x + 104) - pause.x)\n"
+                    "    end\n"
+                    "    button.x = x - self.x\n"
+                    "    button.y = y - self.y + 50\n"
+                    "end\n"
+                    "function BirdSelector:draw(x, y)\n"
+                    "    draw(self, x, y)\n"
+                    "end\n"
+                    "local addDot = gamelua.addToTrajectory\n"
+                    "function gamelua.addToTrajectory(i, x, y)   -- the first dot of a Hatchery bird's shot sets that bird's trail, as the iPad's launch code does\n"
+                    "    local bird = i == 1 and gamelua.flyingBird or (gamelua.otherBirds and gamelua.otherBirds[i - 1] and gamelua.objects.world[gamelua.otherBirds[i - 1]])\n"
+                    "    if bird and bird.hatcheryBird and bird.hatcheryBird.getTrajectorySprites then\n"
+                    "        setCustomTrajectorySprites(bird.hatcheryBird:getTrajectorySprites())\n"
+                    "    end\n"
+                    "    addDot(i, x, y)\n"
+                    "end\n"
+                    "local eagle = gamelua.startMightyEagleFromHatchery\n"
+                    "function gamelua.startMightyEagleFromHatchery()\n"
+                    "    if gamelua.eagleBaitLaunched == true or gamelua.eagleUsedInCurrentLevel == true then return end   -- the eagle comes once per level, like retail\n"
+                    "    -- the bench's eagle button works on the PC build (isEagleEnabled is false there) and without the eagle having been bought\n"
+                    "    for name, fill in _G.pairs({\n"
+                    "        MightyEagleBird = {sprite = \"BIRD_MIGHTY_EAGLE_MOTION\", spriteFlying = \"BIRD_MIGHTY_EAGLE_RADIAL\", spriteScore = \"BIRD_MIGHTY_EAGLE_RADIAL\",\n"
+                    "                           type = \"circle\", friction = 0.1, allowRoll = true, density = 100, strength = 60000},\n"
+                    "        BaitSardine = {sprite = \"BAIT_SARDINE\", spriteScore = \"BAIT_SARDINE\", allowRoll = true, density = 1, strength = 1}}) do\n"
+                    "        local block = gamelua.blockTable.blocks[name]   -- the PC data's blocks lack what the iPad's blocks.lua gives the eagle and the sardine\n"
+                    "        for field, value in _G.pairs(fill) do if block[field] == nil then block[field] = value end end\n"
+                    "    end\n"
+                    "    local enabled = gamelua.isEagleEnabled\n"
+                    "    gamelua.isEagleEnabled = function() return true end\n"
+                    "    eagle()\n"
+                    "    gamelua.isEagleEnabled = enabled\n"
+                    "end\n"
+                    "function BirdSelector:update(dt, time)\n"
+                    "    update(self, dt, time)\n"
+                    "    if self.state == \"HIDDEN\" then\n"
+                    "        local hud = gamelua.menuManager.currentRoot\n"
+                    "        local pause = hud and hud.name == \"gameHud\" and hud:getChild(\"pauseButton\")\n"
+                    "        self:getChild(\"button\").visible = pause ~= nil and pause ~= false and pause.visible == true and gamelua.eagleBaitLaunched ~= true\n"
+                    "    end\n"
+                    "    local hud = gamelua.menuManager.currentRoot\n"
+                    "    local restart = hud and hud.name == \"gameHud\" and hud:getChild(\"restart_button\")\n"
+                    "    if restart then   -- the restart button sits between the pause button and this one\n"
+                    "        local pause = hud:getChild(\"pauseButton\")\n"
+                    "        restart.x, restart.y = pause.x + 164.5, pause.y + 62\n"
+                    "    end\n"
+                    "end\n";
+                if (luaL_loadstring(L, selector) == 0) {
+                    lua_pushvalue(L, 2);
+                    lua_setfenv(L, -2);
+                    if (lua_pcall(L, 0, 0, 0) != 0) { P(L)->Print(std::string("bird selector: ") + lua_tostring(L, -1)); lua_pop(L, 1); }
+                } else { P(L)->Print(std::string("bird selector: ") + lua_tostring(L, -1)); lua_pop(L, 1); }
+            }
+            // debug build: the iPad's ChallengePage.lua calls ChallengeFrame:storeViewedChallenges() on entry, but the function is inside a comment there
+            const std::string cp = "challenges/ChallengePage.lua";
+            if (!std::getenv("AB_NODEBUGKEYS") && path.size() >= cp.size() && path.compare(path.size() - cp.size(), cp.size(), cp) == 0) {
+                const char* store = "if ChallengeFrame and ChallengeFrame.storeViewedChallenges == nil then function ChallengeFrame:storeViewedChallenges() end end\n";
+                if (luaL_loadstring(L, store) == 0) {
+                    PushEnv(L);
+                    lua_setfenv(L, -2);
+                    if (lua_pcall(L, 0, 0, 0) != 0) { P(L)->Print(std::string("challenge page: ") + lua_tostring(L, -1)); lua_pop(L, 1); }
+                } else { P(L)->Print(std::string("challenge page: ") + lua_tostring(L, -1)); lua_pop(L, 1); }
+            }
+            // debug build: the Challenges badge and the Hatchery button of the episode selection are drawn with the iPad's (larger) sprites; they are
+            // made smaller and moved apart so they do not overlap each other or the first episode
+            const std::string es = "menus/episode_selection.lua";
+            if (!std::getenv("AB_NODEBUGKEYS") && path.size() >= es.size() && path.compare(path.size() - es.size(), es.size(), es) == 0) {
+                const char* episodes =
+                    "local layout = EpisodeScrollFrame.layout\n"
+                    "function EpisodeScrollFrame:layout()\n"
+                    "    layout(self)\n"
+                    "    local challenge, hatchery = self:getChild(\"challengeButton\"), self:getChild(\"hatcheryButton\")\n"
+                    "    if challenge then challenge.scaleX = 0.75; challenge.scaleY = 0.75; challenge.x = challenge.x + 20 end\n"
+                    "    if hatchery then hatchery.scaleX = 0.65; hatchery.scaleY = 0.65; hatchery.x = hatchery.x + 35 end\n"
+                    "end\n";
+                if (luaL_loadstring(L, episodes) == 0) {
+                    PushEnv(L);
+                    lua_setfenv(L, -2);
+                    if (lua_pcall(L, 0, 0, 0) != 0) { P(L)->Print(std::string("episode selection: ") + lua_tostring(L, -1)); lua_pop(L, 1); }
+                } else { P(L)->Print(std::string("episode selection: ") + lua_tostring(L, -1)); lua_pop(L, 1); }
+            }
+            // debug build: the buttons of the iPad's BuyStarsDialog are empty planks (the amounts were drawn by the App Store layer); the amounts are written on them
+            const std::string bsd = "UI/BuyStarsDialog.lua";
+            if (!std::getenv("AB_NODEBUGKEYS") && path.size() >= bsd.size() && path.compare(path.size() - bsd.size(), bsd.size(), bsd) == 0) {
+                const char* amounts =
+                    "local init, layout = BuyStarsDialog.init, BuyStarsDialog.layout\n"
+                    "function BuyStarsDialog:init()\n"
+                    "    init(self)\n"
+                    "    for _, v in _G.pairs(self.packages) do\n"
+                    "        local amount = ui.Text:new()\n"
+                    "        amount.name = \"amount\" .. v\n"
+                    "        amount.hanchor = \"HCENTER\"\n"
+                    "        amount.vanchor = \"VCENTER\"\n"
+                    "        amount.text = \"\" .. v\n"
+                    "        self:addChild(amount)\n"
+                    "    end\n"
+                    "end\n"
+                    "function BuyStarsDialog:layout()\n"
+                    "    layout(self)\n"
+                    "    for _, v in _G.pairs(self.packages) do\n"
+                    "        local button, amount = self:getChild(\"packageButton\" .. v), self:getChild(\"amount\" .. v)\n"
+                    "        amount.x, amount.y = button.x, button.y\n"
+                    "    end\n"
+                    "end\n";
+                if (luaL_loadstring(L, amounts) == 0) {
+                    lua_pushvalue(L, 2);
+                    lua_setfenv(L, -2);
+                    if (lua_pcall(L, 0, 0, 0) != 0) { P(L)->Print(std::string("buy stars: ") + lua_tostring(L, -1)); lua_pop(L, 1); }
+                } else { P(L)->Print(std::string("buy stars: ") + lua_tostring(L, -1)); lua_pop(L, 1); }
+            }
+            // debug build: options.lua has just switched Hatchery and Challenges off; they come back on when their scripts are in the data
+            // folder (hatchery/hatchery.lua and scripts/challenges/challenges.lua, taken from the iPad version)
+            const std::string opt = "options.lua";
+            if (path.size() >= opt.size() && path.compare(path.size() - opt.size(), opt.size(), opt) == 0) {
+                bool debug = !std::getenv("AB_NODEBUGKEYS");   // the same switch as the debug keys (script_host.cpp)
+                std::vector<uint8_t> probe;
+                std::string dir = path.substr(0, path.size() - opt.size());
+                const char* flags[] = {"g_hatcheryEnabled", "g_challengesEnabled"};
+                std::string files[] = {"hatchery/hatchery.lua", dir + "challenges/challenges.lua"};
+                for (int i = 0; i < 2 && debug; i++) {
+                    bool have = ab::ReadLuaFile(files[i], probe);
+                    if (!have) { std::string alt = P(L)->ResolveDataFile(files[i]); have = alt != files[i] && ab::ReadLuaFile(alt, probe); }
+                    if (!have) continue;
+                    PushEnv(L);
+                    lua_pushboolean(L, 1);
+                    lua_setfield(L, -2, flags[i]);
+                    lua_pop(L, 1);
+                    if (i == 0) {   // the iPad gamelogic switches the in-game bird selector on next to g_hatcheryEnabled
+                        PushEnv(L);
+                        lua_pushboolean(L, 1);
+                        lua_setfield(L, -2, "g_hatcheryEnableBirdSelector");
+                        lua_pop(L, 1);
+                    }
+                    P(L)->Print(std::string("debug build: ") + flags[i] + " on");
+                }
+            }
         }
     }
     if (rc != 0) {
@@ -253,7 +504,7 @@ int l_loadLevel(lua_State* L) {
     std::vector<uint8_t> bytes;
     int loaded = 1;
     std::string loadError = "No such file or directory";
-    ab::ReadLuaFile(path, bytes);
+    if (file.find(".temp") == std::string::npos || !P(L)->FindSavedLevel(file, bytes)) ab::ReadLuaFile(path, bytes);   // the editor's TAB copy comes from memory
     if (!bytes.empty()) {
         loaded = luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), path.c_str());
         if (loaded != 0) { loadError = lua_tostring(L, -1); lua_pop(L, 1); }
@@ -409,6 +660,81 @@ int l_saveLuaFile(lua_State* L) {
     }
     return 0;
 }
+
+// Hatchery: the saved world (tileMapSave.lua) and egg sprite list (savedEggSprites.lua) are files in the user data written by saveLuaFile
+int l_checkForPersistentFile(lua_State* L) {
+    std::string path = P(L)->ResolveUserFile(S(L, 1), true);
+    FILE* f = std::fopen(path.c_str(), "rb");
+    if (f) std::fclose(f);
+    lua_pushboolean(L, f != nullptr);
+    return 1;
+}
+// returns the table the file defines (`name = { ... }`)
+int l_loadPersistentFileWrapper(lua_State* L) {
+    std::string path = P(L)->ResolveUserFile(S(L, 1), true), text;
+    bool encrypted = false;
+    const char* key = ab::kSaveKey;
+    if (!ab::ReadSaveFile(path, text, encrypted, &key) || luaL_loadbuffer(L, text.data(), text.size(), ("@" + path).c_str()) != 0) {
+        if (lua_gettop(L) > 1 && lua_isstring(L, -1)) P(L)->Print("loadPersistentFileWrapper: " + std::string(lua_tostring(L, -1)));
+        lua_settop(L, 0);
+        lua_pushnil(L);
+        return 1;
+    }
+    lua_newtable(L);                                   // the file's own globals
+    lua_pushvalue(L, -1);
+    lua_setfenv(L, -3);
+    int fenv = lua_gettop(L);
+    lua_pushvalue(L, 2);
+    if (lua_pcall(L, 0, 0, 0) != 0) {
+        lua_settop(L, 0);
+        lua_pushnil(L);
+        return 1;
+    }
+    lua_pushnil(L);
+    while (lua_next(L, fenv)) {
+        if (lua_istable(L, -1)) { lua_remove(L, -2); lua_remove(L, fenv); return 1; }
+        lua_pop(L, 1);
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+// Hatchery egg painter canvas
+int l_initializePainter(lua_State* L) { P(L)->CanvasInit((int)N(L, 2), (int)N(L, 3)); return 0; }
+int l_clearCanvas(lua_State* L) { P(L)->CanvasClear(N(L, 1), N(L, 2), N(L, 3), N(L, 4)); return 0; }
+int l_paintToCanvas(lua_State* L) { P(L)->CanvasPaint(S(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5)); return 0; }
+int l_drawCanvasWithMask(lua_State* L) { P(L)->CanvasDraw(S(L, 3)); return 0; }
+int l_getDominantCanvasColors(lua_State* L) {
+    std::string first, second;
+    P(L)->CanvasDominant(first, second);
+    lua_pushstring(L, first.c_str());
+    lua_pushstring(L, second.c_str());
+    return 2;
+}
+int l_createSpriteFromCanvas(lua_State* L) { lua_pushboolean(L, P(L)->CanvasMakeSprite(S(L, 1), (int)N(L, 2), (int)N(L, 3), (int)N(L, 4), (int)N(L, 5), B(L, 6), S(L, 7))); return 1; }
+// setupCompoObject(name, items, scale): items = { {sprite=, x=, y=, scale=, angle=}, ... }
+int l_setupCompoObject(lua_State* L) {
+    std::vector<Platform::CompoItem> items;
+    if (lua_istable(L, 2)) {
+        int n = (int)lua_objlen(L, 2);
+        for (int i = 1; i <= n; i++) {
+            lua_rawgeti(L, 2, i);
+            if (lua_istable(L, -1)) {
+                Platform::CompoItem item;
+                lua_getfield(L, -1, "sprite"); if (lua_isstring(L, -1)) item.sprite = lua_tostring(L, -1); lua_pop(L, 1);
+                lua_getfield(L, -1, "x"); if (lua_isnumber(L, -1)) item.x = (float)lua_tonumber(L, -1); lua_pop(L, 1);
+                lua_getfield(L, -1, "y"); if (lua_isnumber(L, -1)) item.y = (float)lua_tonumber(L, -1); lua_pop(L, 1);
+                lua_getfield(L, -1, "scale"); if (lua_isnumber(L, -1)) item.scale = (float)lua_tonumber(L, -1); lua_pop(L, 1);
+                lua_getfield(L, -1, "angle"); if (lua_isnumber(L, -1)) item.angle = (float)lua_tonumber(L, -1); lua_pop(L, 1);
+                items.push_back(item);
+            }
+            lua_pop(L, 1);
+        }
+    }
+    P(L)->SetupCompoObject(S(L, 1), items, lua_isnumber(L, 3) ? (float)lua_tonumber(L, 3) : 1.0f);
+    return 0;
+}
+int l_loadCanvasSprite(lua_State* L) { lua_pushboolean(L, P(L)->CanvasLoadSprite(S(L, 1), S(L, 2), (int)N(L, 3), (int)N(L, 4))); return 1; }
 
 // ---- physics
 // objects.world / objects.joints (the exe keeps these tables as `Game+0x1a4`'s fields)
@@ -756,6 +1082,9 @@ int l_getColliderType(lua_State* L) { lua_pushnumber(L, P(L)->ColliderType(S(L, 
 // setObjectAlpha(name, alpha) / getObjectAlpha(name): transparency of one object when drawGameNative draws it (0 invisible .. 1 solid; -1: no such object)
 int l_setObjectAlpha(lua_State* L) { P(L)->SetObjectAlpha(S(L, 1), N(L, 2)); return 0; }
 int l_getObjectAlpha(lua_State* L) { lua_pushnumber(L, P(L)->ObjectAlpha(S(L, 1))); return 1; }
+// setObjectZOrder(name, z) / getObjectZOrder(name): the draw order of one object in drawGameNative (the z_order of createBlock; higher = in front)
+int l_setObjectZOrder(lua_State* L) { P(L)->SetObjectZOrder(S(L, 1), N(L, 2)); return 0; }
+int l_getObjectZOrder(lua_State* L) { lua_pushnumber(L, P(L)->ObjectZOrder(S(L, 1))); return 1; }
 int l_setColliderRule(lua_State* L) { P(L)->SetColliderRule((int)N(L, 1), (int)N(L, 2), B(L, 3)); return 0; }
 int l_getColliderRule(lua_State* L) { lua_pushboolean(L, P(L)->ColliderRule((int)N(L, 1), (int)N(L, 2))); return 1; }
 // setPolygonRadius(r) / getPolygonRadius(): the skin of the boxes and polygons that are created afterwards (Angry Birds Rio's Box2D 2.2)
@@ -812,10 +1141,25 @@ int l_setMaxTranslation(lua_State* L) { P(L)->SetMaxTranslation(N(L, 1)); return
 
 // ---- drawing
 int l_setRenderState(lua_State* L) {
-    float a[8] = {0, 0, 1, 1, 0, 0, 0, 1};
+    // tx, ty, sx, sy, angle, pivotX, pivotY, alpha, skewX, skewY, bendX, bendY, z, bendFunction (a tween function: f(t, 0, 1, 1) is the bend's shape)
+    float a[22] = {0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0};
     int argc = lua_gettop(L);
-    for (int i = 0; i < argc && i < 8; i++) a[i] = N(L, i + 1);
-    P(L)->SetRenderState(argc, a);
+    for (int i = 0; i < argc && i < 13; i++) a[i] = N(L, i + 1);
+    int count = argc < 13 ? argc : 13;
+    if (argc >= 14 && lua_isfunction(L, 14)) {
+        for (int i = 0; i < 9; i++) {
+            lua_pushvalue(L, 14);
+            lua_pushnumber(L, i / 8.0); lua_pushnumber(L, 0); lua_pushnumber(L, 1); lua_pushnumber(L, 1);
+            if (lua_pcall(L, 4, 1, 0) == 0) a[13 + i] = (float)lua_tonumber(L, -1);
+            else a[13 + i] = i / 8.0f;
+            lua_pop(L, 1);
+        }
+        count = 22;
+    }
+    P(L)->SetRenderState(count, a);
+    if (argc >= 17) P(L)->SetTint(N(L, 15), N(L, 16), N(L, 17));      // v2.2: setRenderState(..., z, bendFunction, tintR, tintG, tintB)
+    if (argc >= 18) P(L)->SetRenderExtras(3, N(L, 18), 0);     // ... tintR, tintG, tintB, blur, pixelate
+    if (argc >= 19) P(L)->SetRenderExtras(4, N(L, 19), 0);
     return 0;
 }
 int l_drawRect(lua_State* L) {
@@ -927,6 +1271,17 @@ int l_getTimeDifference(lua_State* L) {
     return 1;
 }
 int l_setAlpha(lua_State* L) { P(L)->SetAlpha(N(L, 1)); return 0; }
+// v2.2 dedicated functions for the single values of setRenderState, which then stay as they are
+int l_setTint(lua_State* L) { P(L)->SetTint(N(L, 1), lua_isnone(L, 2) ? N(L, 1) : N(L, 2), lua_isnone(L, 3) ? N(L, 1) : N(L, 3)); return 0; }   // setTint(grey) or setTint(r, g, b): 0..1, above 1 brightens
+int l_getTint(lua_State* L) { float r, g, b; P(L)->GetTint(r, g, b); lua_pushnumber(L, r); lua_pushnumber(L, g); lua_pushnumber(L, b); return 3; }
+int l_resetTint(lua_State* L) { (void)L; P(L)->SetTint(1, 1, 1); return 0; }
+int l_setSkew(lua_State* L) { P(L)->SetRenderExtras(0, N(L, 1), N(L, 2)); return 0; }
+int l_setBend(lua_State* L) { P(L)->SetRenderExtras(1, N(L, 1), N(L, 2)); return 0; }
+int l_setRenderZ(lua_State* L) { P(L)->SetRenderExtras(2, N(L, 1), 0); return 0; }
+int l_setBlur(lua_State* L) { P(L)->SetRenderExtras(3, N(L, 1), 0); return 0; }       // setBlur(pixels): sprites are smeared over this many pixels; 0 = sharp
+int l_setPixelate(lua_State* L) { P(L)->SetRenderExtras(4, N(L, 1), 0); return 0; }   // setPixelate(size): sprites are drawn in blocks of size x size sprite pixels; 0 = off
+int l_resetBlur(lua_State* L) { (void)L; P(L)->SetRenderExtras(3, 0, 0); return 0; }
+int l_resetPixelate(lua_State* L) { (void)L; P(L)->SetRenderExtras(4, 0, 0); return 0; }
 
 // drawUITextNative(text, x, y [, scaleX, scaleY [, angle [, scale]]]) is Text.draw (0x41adf0). A clipped text
 // calls draw on each of its lines; any other text sets the font and the render state and draws its string.
@@ -1001,6 +1356,11 @@ int l_setTexture(lua_State* L) { P(L)->SetTexture(S(L, 1), S(L, 2)); return 0; }
 int l_setTheme(lua_State* L) { P(L)->SetTheme(S(L, 1)); return 0; }
 int l_startNewTrajectory(lua_State* L) { P(L)->StartNewTrajectory(); return 0; }
 int l_addToTrajectory(lua_State* L) { P(L)->AddToTrajectory(N(L, 1), N(L, 2), N(L, 3)); return 0; }
+int l_setCustomTrajectorySprites(lua_State* L) {
+    auto S = [&](int i) { const char* v = lua_tostring(L, i); return std::string(v ? v : ""); };
+    P(L)->SetCustomTrajectorySprites(S(1), S(2), S(3), S(4));
+    return 0;
+}
 int l_addPuffToTrajectory(lua_State* L) { P(L)->AddPuffToTrajectory(N(L, 1), N(L, 2), N(L, 3)); return 0; }
 
 int l_clipText(lua_State* L) {
@@ -1031,6 +1391,9 @@ int l_clipText(lua_State* L) {
 
 // ---- platform services that a new engine answers with constants
 int l_nothing(lua_State*) { return 0; }
+int l_playVideo(lua_State* L) { P(L)->PlayVideo(S(L, 1)); return 0; }
+int l_stopVideo(lua_State* L) { P(L)->StopVideo(); return 0; }
+int l_isVideoPlaying(lua_State* L) { lua_pushboolean(L, P(L)->IsVideoPlaying()); return 1; }
 int l_false(lua_State* L) { lua_pushboolean(L, 0); return 1; }
 // The exe's device id (0x499860): the MAC address of each network adapter as AA-BB-CC-DD-EE-FF, joined by ';'.
 // The registration the game keeps in its save file is tied to this id, so it has to be the same text.
@@ -1164,6 +1527,17 @@ int r_isAudioPlaying(lua_State* L) { lua_pushboolean(L, P(L)->ResIsAudioPlaying(
 // note the order: setTrackVolume(volume, track)
 int r_setTrackVolume(lua_State* L) { P(L)->ResSetTrackVolume(N(L, 1), (int)N(L, 2)); return 0; }
 int r_getTrackVolume(lua_State* L) { lua_pushnumber(L, P(L)->ResGetTrackVolume((int)N(L, 1))); return 1; }
+// v2.2: setAudioSpeed(speed [, track]) / getAudioSpeed([track]), pauseAudio([track]) / resumeAudio([track]) / isAudioPaused([track]),
+// setMasterVolume(v) / getMasterVolume(), setAudioClipVolume(name, v), setAudioClipSpeed(name, speed). Without a track (or -1) they act on everything.
+int r_setAudioSpeed(lua_State* L) { P(L)->ResSetAudioSpeed(N(L, 1), lua_isnumber(L, 2) ? (int)N(L, 2) : -1); return 0; }
+int r_getAudioSpeed(lua_State* L) { lua_pushnumber(L, P(L)->ResGetAudioSpeed(lua_isnumber(L, 1) ? (int)N(L, 1) : -1)); return 1; }
+int r_pauseAudio(lua_State* L) { P(L)->ResPauseAudio(true, lua_isnumber(L, 1) ? (int)N(L, 1) : -1); return 0; }
+int r_resumeAudio(lua_State* L) { P(L)->ResPauseAudio(false, lua_isnumber(L, 1) ? (int)N(L, 1) : -1); return 0; }
+int r_isAudioPaused(lua_State* L) { lua_pushboolean(L, P(L)->ResIsAudioPaused(lua_isnumber(L, 1) ? (int)N(L, 1) : -1)); return 1; }
+int r_setMasterVolume(lua_State* L) { P(L)->ResSetMasterVolume(N(L, 1)); return 0; }
+int r_getMasterVolume(lua_State* L) { lua_pushnumber(L, P(L)->ResGetMasterVolume()); return 1; }
+int r_setAudioClipVolume(lua_State* L) { P(L)->ResSetAudioClipVolume(S(L, 1), N(L, 2)); return 0; }
+int r_setAudioClipSpeed(lua_State* L) { P(L)->ResSetAudioClipSpeed(S(L, 1), N(L, 2)); return 0; }
 int r_openURL(lua_State* L) { P(L)->ResOpenURL(S(L, 1)); return 0; }
 
 // ---- particles.*
@@ -1247,14 +1621,16 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"doesMouseClickSetsTouchCount", l_doesMouseClickSetsTouchCount},
         {"setEditing", l_setEditing}, {"setGameOn", l_setGameOn},
         {"loadLuaFileToObject", l_loadLuaFileToObject}, {"loadLuaFile", l_loadLuaFileToObject},   // 2.0.0: the same without an object
-        {"loadLevel", l_loadLevel}, {"loadLevelEditor", l_loadLevelEditor}, {"saveLevel", l_saveLevel}, {"saveLuaFile", l_saveLuaFile},
+        {"loadLevel", l_loadLevel}, {"loadLevelEditor", l_loadLevelEditor}, {"saveLevel", l_saveLevel}, {"saveLuaFile", l_saveLuaFile}, {"checkForPersistentFile", l_checkForPersistentFile}, {"loadPersistentFileWrapper", l_loadPersistentFileWrapper},
+        {"initializePainter", l_initializePainter}, {"clearCanvas", l_clearCanvas}, {"paintToCanvas", l_paintToCanvas}, {"drawCanvasWithMask", l_drawCanvasWithMask},
+        {"getDominantCanvasColors", l_getDominantCanvasColors}, {"createSpriteFromCanvas", l_createSpriteFromCanvas}, {"loadCanvasSprite", l_loadCanvasSprite}, {"setupCompoObject", l_setupCompoObject},
         {"createDirectory", l_createDirectory}, {"checkDirectory", l_checkDirectory}, {"checkForLuaFile", l_checkForLuaFile},
         {"createBox", l_createBox}, {"createCircle", l_createCircle}, {"createPolygon", l_createPolygon},
         {"clearVertices", l_clearVertices}, {"addVertex", l_addVertex},
         {"getVelocity", l_getVelocity}, {"hasMovingObjects", l_hasMovingObjects},
         {"hasMovingObjectsZeroTolerance", l_hasMovingObjectsZeroTolerance}, {"getLocalPoint", l_getLocalPoint},
         {"setCollisionEnabled", l_setCollisionEnabled},
-        {"setObjectAlpha", l_setObjectAlpha}, {"getObjectAlpha", l_getObjectAlpha}, {"setColliderType", l_setColliderType}, {"getColliderType", l_getColliderType}, {"setColliderRule", l_setColliderRule}, {"getColliderRule", l_getColliderRule},
+        {"setObjectAlpha", l_setObjectAlpha}, {"getObjectAlpha", l_getObjectAlpha}, {"setObjectZOrder", l_setObjectZOrder}, {"getObjectZOrder", l_getObjectZOrder}, {"setColliderType", l_setColliderType}, {"getColliderType", l_getColliderType}, {"setColliderRule", l_setColliderRule}, {"getColliderRule", l_getColliderRule},
         {"setPolygonRadius", l_setPolygonRadius}, {"getPolygonRadius", l_getPolygonRadius}, {"removeJointsFromObject", l_removeJointsFromObject},
         {"getIntersectingObjects", l_getIntersectingObjects},
         {"setParticleSystemLimits", l_nothing}, {"clearParticleCache", l_nothing}, {"enableInGameParticlesNative", l_nothing},
@@ -1277,7 +1653,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"setSprite", l_setSprite}, {"setMaterial", l_setMaterial}, {"setTexture", l_setTexture}, {"setTheme", l_setTheme},
         {"clipText", l_clipText},
         {"startNewTrajectory", l_startNewTrajectory}, {"addToTrajectory", l_addToTrajectory},
-        {"addPuffToTrajectory", l_addPuffToTrajectory},
+        {"addPuffToTrajectory", l_addPuffToTrajectory}, {"setCustomTrajectorySprites", l_setCustomTrajectorySprites},
         // platform services
         {"openRegistrationDialog", l_nothing}, {"registerKey", l_nothing}, {"getDeviceID", l_getDeviceID}, {"verifyDeviceID", l_verifyDeviceID}, {"areDeviceIDsEqual", l_areDeviceIDsEqual},
         {"requestLatestVersionNumber", l_nothing}, {"checkForUpdates", l_nothing}, {"callVersionUpdater", l_nothing},
@@ -1288,7 +1664,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"getLeaderboardScoresForRange", l_nothing}, {"showLeaderboards", l_nothing}, {"showAchievements", l_nothing},
         {"postHighscore", l_nothing}, {"unlockAchievement", l_nothing},
         {"logFlurryEvent", l_nothing}, {"logFlurryEventWithParam", l_nothing}, {"logFlurryEventWithParams", l_nothing},
-        {"playVideo", l_nothing},
+        {"playVideo", l_playVideo}, {"stopVideo", l_stopVideo}, {"isVideoPlaying", l_isVideoPlaying},
         // Angry Birds Seasons additions (not implemented yet)
         {"clearParticlesNative", l_clearParticlesNative}, {"loadLevelFile", l_nothing}, {"getLoadStatus", l_getLoadStatus},
         {"createThemeSprite", l_createThemeSprite},
@@ -1297,7 +1673,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"updateThemeSprite", l_updateThemeSprite},
         {"drawLayer", l_nothing},
         {"drawRectLines", l_drawRectLines}, {"drawBoxNative", l_drawBoxNative}, {"getCurrentTime", l_getCurrentTime},
-        {"getTimeDifference", l_getTimeDifference}, {"setAlpha", l_setAlpha}, {"drawUITextNative", l_drawUITextNative},
+        {"getTimeDifference", l_getTimeDifference}, {"setAlpha", l_setAlpha}, {"setTint", l_setTint}, {"getTint", l_getTint}, {"resetTint", l_resetTint}, {"setSkew", l_setSkew}, {"setBend", l_setBend}, {"setRenderZ", l_setRenderZ}, {"setBlur", l_setBlur}, {"setPixelate", l_setPixelate}, {"resetBlur", l_resetBlur}, {"resetPixelate", l_resetPixelate}, {"drawUITextNative", l_drawUITextNative},
         {"getTImeDifferenceInSeconds", l_getTimeDifferenceInSeconds}, {"checkRegistrationResult", l_false}, {"getClipboardText", l_emptyString},
         {"canOpenProgram", l_false}, {"openProgram", l_nothing}, {"hasLocationCapability", l_false}, {"drawLevelParticlesNative", l_drawLevelParticlesNative},
         {"setWorldGravity", l_setWorldGravity},
@@ -1349,7 +1725,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"createAudioOutput", r_createAudioOutput}, {"startAudioOutput", r_startAudioOutput},
         {"stopAudioOutput", r_stopAudioOutput}, {"createAudio", r_createAudio}, {"playAudio", r_playAudio},
         {"stopAudio", r_stopAudio}, {"stopAllAudio", r_stopAllAudio}, {"isAudioPlaying", r_isAudioPlaying},
-        {"setTrackVolume", r_setTrackVolume}, {"getTrackVolume", r_getTrackVolume}, {"openURL", r_openURL},
+        {"setTrackVolume", r_setTrackVolume}, {"getTrackVolume", r_getTrackVolume}, {"setAudioSpeed", r_setAudioSpeed}, {"getAudioSpeed", r_getAudioSpeed}, {"pauseAudio", r_pauseAudio}, {"resumeAudio", r_resumeAudio}, {"isAudioPaused", r_isAudioPaused}, {"setMasterVolume", r_setMasterVolume}, {"getMasterVolume", r_getMasterVolume}, {"setAudioClipVolume", r_setAudioClipVolume}, {"setAudioClipSpeed", r_setAudioClipSpeed}, {"openURL", r_openURL},
     };
     lua_newtable(L);
     Register(L, p, lua_gettop(L), res, sizeof(res) / sizeof(res[0]));

@@ -47,7 +47,7 @@ struct b2TreeNode
 	int32 child2;
 
 	// leaf = 0, free node = -1
-	int32 height;
+	int32 leafCount;
 };
 
 /// A dynamic AABB tree broad-phase, inspired by Nathanael Presson's btDbvt.
@@ -101,8 +101,8 @@ public:
 	template <typename T>
 	void RayCast(T* callback, const b2RayCastInput& input) const;
 
-	/// Validate this tree. For testing.
-	void Validate() const;
+	/// Re-inserts `iterations` leaves to keep the tree in shape (called after the pair update, as in the exe).
+	void Rebalance(int32 iterations);
 
 	/// Compute the height of the binary tree in O(N) time. Should not be
 	/// called often.
@@ -115,8 +115,6 @@ public:
 	/// Get the ratio of the sum of the node areas to the root area.
 	float32 GetAreaRatio() const;
 
-	/// Build an optimal tree. Very expensive. For testing.
-	void RebuildBottomUp();
 
 private:
 
@@ -126,13 +124,7 @@ private:
 	void InsertLeaf(int32 node);
 	void RemoveLeaf(int32 node);
 
-	int32 Balance(int32 index);
-
-	int32 ComputeHeight() const;
 	int32 ComputeHeight(int32 nodeId) const;
-
-	void ValidateStructure(int32 index) const;
-	void ValidateMetrics(int32 index) const;
 
 	int32 m_root;
 

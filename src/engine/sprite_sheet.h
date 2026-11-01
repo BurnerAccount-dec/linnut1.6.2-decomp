@@ -31,7 +31,7 @@ struct SpriteSheet {
 
 // One composite sprite (a "COMP" entry of a *_composprites.dat file): sprites placed relative to one
 // origin. The size and origin are computed from the parts' sprites (0x43af10).
-struct CompoPart { std::string sprite; int x = 0, y = 0; };
+struct CompoPart { std::string sprite; int x = 0, y = 0; float fx = 0, fy = 0, scale = 1, angle = 0; bool exact = false; };   // exact: made by setupCompoObject, placed at (fx, fy) with its own scale and angle
 struct CompoSprite {
     std::string name;
     std::vector<CompoPart> parts;
@@ -48,14 +48,19 @@ class SpriteLibrary {
 public:
     bool Load(const std::string& key, const std::string& file, std::string* error);
     void Release(const std::string& key);
+    // A sheet made at run time (the Hatchery's painted eggs); the png it cuts from is looked up by the platform
+    void Add(const std::string& key, SpriteSheet sheet) { sheet.order = ++loaded_; cache_.clear(); sheets_[key] = std::move(sheet); }
+    const SpriteSheet* Sheet(const std::string& key) const { auto it = sheets_.find(key); return it == sheets_.end() ? nullptr : &it->second; }
     const Sprite* Find(const std::string& sprite) const;
     // Same, and also the sheet it belongs to.
     const Sprite* Find(const std::string& sprite, const SpriteSheet** sheet) const;
 
     // Composite sprites, looked up by name in the loaded sets.
     bool LoadCompoSet(const std::string& key, const std::string& file, std::string* error);
-    void ReleaseCompoSet(const std::string& key) { compoSets_.erase(key); compoOrder_.erase(key); }
+    void ReleaseCompoSet(const std::string& key) { compoCache_.clear(); compoSets_.erase(key); compoOrder_.erase(key); }
     const CompoSprite* FindCompo(const std::string& name) const;
+    // a composite made while the game runs (setupCompoObject); a name used again replaces the earlier one
+    void AddCompo(const CompoSprite& c);
     // Size and origin of a composite: the union of its parts' rectangles (each part's sprite is placed
     // at (x, y) minus its pivot). width/height are the extent, originX/originY the distance of the
     // composite's (0, 0) from the top left corner.
@@ -66,6 +71,7 @@ private:
     // name -> sprite and sheet, filled by Find, cleared whenever a sheet is loaded or released
     mutable std::unordered_map<std::string, std::pair<const Sprite*, const SpriteSheet*>> cache_;
     std::map<std::string, std::vector<CompoSprite>> compoSets_;
+    mutable std::unordered_map<std::string, const CompoSprite*> compoCache_;   // name -> composite (or none), cleared whenever a set changes
     std::map<std::string, int> compoOrder_;   // load order of each set, the latest wins like the sheets
 };
 

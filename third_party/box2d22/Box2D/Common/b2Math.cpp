@@ -24,15 +24,24 @@ const b2Vec2 b2Vec2_zero(0.0f, 0.0f);
 /// than computing the inverse in one-shot cases.
 b2Vec3 b2Mat33::Solve33(const b2Vec3& b) const
 {
-	float32 det = b2Dot(ex, b2Cross(ey, ez));
+	// Same term order as AngryBirdsRio.exe (0x4e8930), so the float rounding matches.
+	float32 det = (ez.y * ey.x - ey.y * ez.x) * ex.z +
+				  (ey.z * ez.x - ey.x * ez.z) * ex.y +
+				  ex.x * (ey.y * ez.z - ey.z * ez.y);
 	if (det != 0.0f)
 	{
 		det = 1.0f / det;
 	}
 	b2Vec3 x;
-	x.x = det * b2Dot(b, b2Cross(ey, ez));
-	x.y = det * b2Dot(ex, b2Cross(b, ez));
-	x.z = det * b2Dot(ex, b2Cross(ey, b));
+	x.x = (b.z * (ez.y * ey.x - ey.y * ez.x) +
+		   b.x * (ey.y * ez.z - ey.z * ez.y) +
+		   b.y * (ey.z * ez.x - ey.x * ez.z)) * det;
+	x.y = ((ez.y * b.x - b.y * ez.x) * ex.z +
+		   (b.z * ez.x - b.x * ez.z) * ex.y +
+		   (b.y * ez.z - ez.y * b.z) * ex.x) * det;
+	x.z = det * ((b.y * ey.x - ey.y * b.x) * ex.z +
+				 (ey.z * b.x - b.z * ey.x) * ex.y +
+				 (ey.y * b.z - ey.z * b.y) * ex.x);
 	return x;
 }
 

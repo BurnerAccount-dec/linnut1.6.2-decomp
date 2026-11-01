@@ -113,6 +113,7 @@ struct FrameState {
     bool versionReceived = false;     // Game+0x1c
     bool updateNoticePending = false; // Game+0x1d
     bool updateNoticeValue = false;   // Game+0x1e
+    float physicsScale = 1;           // v2.2: physicsSpeedFactor. Only the physics steps see it (the accumulator grows by dt * physicsScale); Lua update(dt) is not scaled
     std::vector<FrameObject*> objects;     // the object hashtable
     std::vector<FrameObject*> birds;       // the array at Game+0x180 checked for pending velocity
     std::vector<JointView*> joints;

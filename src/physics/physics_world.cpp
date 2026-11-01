@@ -309,6 +309,14 @@ float PhysicsWorld::ObjectAlpha(const std::string& n) const {
     PhysObject* o = Find(n);
     return o ? o->alpha : -1.0f;
 }
+void PhysicsWorld::SetObjectZOrder(const std::string& n, float z) {
+    PhysObject* o = Find(n);
+    if (o) { o->zOrder = z; o->zSet = true; }
+}
+float PhysicsWorld::ObjectZOrder(const std::string& n) const {
+    PhysObject* o = Find(n);
+    return o ? o->zOrder : -1e9f;
+}
 void PhysicsWorld::SetColliderRule(int a, int b, bool collide) {
     if (a < 0 || b < 0 || a >= kColliderTypes || b >= kColliderTypes) return;
     colliderRules_.pair[a][b] = colliderRules_.pair[b][a] = collide;

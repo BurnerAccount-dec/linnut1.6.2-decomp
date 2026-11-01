@@ -66,12 +66,15 @@ bool SpriteLibrary::LoadCompoSet(const std::string& key, const std::string& file
     fclose(f);
     std::vector<CompoSprite> set;
     if (!ParseCompoSpriteSet(bytes, set, error)) return false;
+    compoCache_.clear();
     compoSets_[key] = std::move(set);
     compoOrder_[key] = ++loaded_;
     return true;
 }
 
 const CompoSprite* SpriteLibrary::FindCompo(const std::string& name) const {
+    auto hit = compoCache_.find(name);
+    if (hit != compoCache_.end()) return hit->second;
     const CompoSprite* found = nullptr;
     int foundOrder = -1;
     for (const auto& set : compoSets_)
@@ -80,6 +83,7 @@ const CompoSprite* SpriteLibrary::FindCompo(const std::string& name) const {
                 found = &c;
                 foundOrder = compoOrder_.at(set.first);
             }
+    compoCache_[name] = found;
     return found;
 }
 
@@ -166,9 +170,19 @@ const Sprite* SpriteLibrary::Find(const std::string& sprite, const SpriteSheet**
                 found = &s;
                 foundSheet = &sh.second;
             }
-    if (found) cache_[sprite] = {found, foundSheet};
+    cache_[sprite] = {found, foundSheet};      // a name that is in no sheet is remembered too: scripts draw and measure such names every frame
     if (sheet && found) *sheet = foundSheet;
     return found;
 }
 
+}  // namespace ab
+
+namespace ab {
+void SpriteLibrary::AddCompo(const CompoSprite& c) {
+    compoCache_.clear();
+    auto& set = compoSets_["runtime:compo"];
+    for (CompoSprite& old : set) if (old.name == c.name) { old = c; return; }
+    set.push_back(c);
+    if (!compoOrder_.count("runtime:compo")) compoOrder_["runtime:compo"] = ++loaded_;
+}
 }  // namespace ab

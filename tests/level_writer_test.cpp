@@ -70,7 +70,10 @@ int main() {
     std::ifstream in(path);
     std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     CHECK(text.find("[\"strength\"] = 12") != std::string::npos);
-    CHECK(!ab::WriteLevelFile(L, "no_such_folder/level.lua", false, error) && !error.empty());
+    // v2.2: a level can be saved into folders that do not exist yet; they are made
+    CHECK(ab::WriteLevelFile(L, "ab_test_new_dir/sub/level.lua", false, error));
+    { std::ifstream made("ab_test_new_dir/sub/level.lua"); CHECK(made.good()); }
+    std::remove("ab_test_new_dir/sub/level.lua");
 
     std::remove(path.c_str());
     lua_close(L);

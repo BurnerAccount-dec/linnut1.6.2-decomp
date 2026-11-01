@@ -205,21 +205,7 @@ void b2Island::Solve(const b2TimeStep& step, const b2Vec2& gravity, bool allowSl
 		b->m_angularVelocity *= b2Clamp(1.0f - step.dt * b->m_angularDamping, 0.0f, 1.0f);
 	}
 
-	// Partition contacts so that contacts with static bodies are solved last.
-	int32 i1 = -1;
-	for (int32 i2 = 0; i2 < m_contactCount; ++i2)
-	{
-		b2Fixture* fixtureA = m_contacts[i2]->GetFixtureA();
-		b2Fixture* fixtureB = m_contacts[i2]->GetFixtureB();
-		b2Body* bodyA = fixtureA->GetBody();
-		b2Body* bodyB = fixtureB->GetBody();
-		bool nonStatic = bodyA->GetType() != b2_staticBody && bodyB->GetType() != b2_staticBody;
-		if (nonStatic)
-		{
-			++i1;
-			b2Swap(m_contacts[i1], m_contacts[i2]);
-		}
-	}
+	// AngryBirds.exe (0x4dd560) does not reorder the contacts (later Box2D solves contacts with static bodies last).
 
 	// Initialize velocity constraints.
 	b2ContactSolver contactSolver(m_contacts, m_contactCount, m_allocator, step.dtRatio);
@@ -257,15 +243,19 @@ void b2Island::Solve(const b2TimeStep& step, const b2Vec2& gravity, bool allowSl
 		b2Vec2 translation = step.dt * b->m_linearVelocity;
 		if (b2Dot(translation, translation) > b2_maxTranslationSquared)
 		{
-			float32 ratio = b2_maxTranslation / translation.Length();
-			b->m_linearVelocity *= ratio;
+			// AngryBirds.exe: the translation is normalized (when its length is at least FLT_EPSILON) and the speed set to maxTranslation / dt
+			float32 length = translation.Length();
+			if (length >= b2_epsilon)
+			{
+				translation *= 1.0f / length;
+			}
+			b->m_linearVelocity = (step.inv_dt * b2_maxTranslation) * translation;
 		}
 
 		float32 rotation = step.dt * b->m_angularVelocity;
 		if (rotation * rotation > b2_maxRotationSquared)
 		{
-			float32 ratio = b2_maxRotation / b2Abs(rotation);
-			b->m_angularVelocity *= ratio;
+			b->m_angularVelocity = rotation >= 0.0f ? step.inv_dt * b2_maxRotation : -step.inv_dt * b2_maxRotation;
 		}
 
 		// Store positions for continuous collision.
@@ -347,6 +337,91 @@ void b2Island::Solve(const b2TimeStep& step, const b2Vec2& gravity, bool allowSl
 			}
 		}
 	}
+}
+
+// AngryBirds.exe 1.6.2 0x4ddae0 (Box2D 2.1.0 b2Island::SolveTOI): solves the island of a TOI event with the sub step.
+void b2Island::SolveTOI(const b2TimeStep& subStep)
+{
+	b2ContactSolver contactSolver(m_contacts, m_contactCount, m_allocator, 1.0f);   // the exe copies the stored impulses unscaled and does not apply them (no warm start), see 0x4e4410
+
+	// No warm starting is needed for TOI events because warm starting impulses were applied in the discrete solver.
+	for (int32 i = 0; i < m_jointCount; ++i)
+	{
+		m_joints[i]->InitVelocityConstraints(subStep);
+	}
+
+	// Solve velocity constraints (the exe solves the contacts first here).
+	for (int32 i = 0; i < subStep.velocityIterations; ++i)
+	{
+		contactSolver.SolveVelocityConstraints();
+		for (int32 j = 0; j < m_jointCount; ++j)
+		{
+			m_joints[j]->SolveVelocityConstraints(subStep);
+		}
+	}
+
+	// Don't store the TOI contact forces for warm starting because they can be quite large.
+
+	// Integrate positions.
+	for (int32 i = 0; i < m_bodyCount; ++i)
+	{
+		b2Body* b = m_bodies[i];
+
+		if (b->GetType() == b2_staticBody)
+		{
+			continue;
+		}
+
+		// Check for large velocities.
+		b2Vec2 translation = subStep.dt * b->m_linearVelocity;
+		if (b2Dot(translation, translation) > b2_maxTranslationSquared)
+		{
+			// AngryBirds.exe: the translation is normalized (when its length is at least FLT_EPSILON) and the speed set to maxTranslation / dt
+			float32 length = translation.Length();
+			if (length >= b2_epsilon)
+			{
+				translation *= 1.0f / length;
+			}
+			b->m_linearVelocity = (subStep.inv_dt * b2_maxTranslation) * translation;
+		}
+
+		float32 rotation = subStep.dt * b->m_angularVelocity;
+		if (rotation * rotation > b2_maxRotationSquared)
+		{
+			b->m_angularVelocity = rotation >= 0.0f ? subStep.inv_dt * b2_maxRotation : -subStep.inv_dt * b2_maxRotation;
+		}
+
+		// Store positions for continuous collision.
+		b->m_sweep.c0 = b->m_sweep.c;
+		b->m_sweep.a0 = b->m_sweep.a;
+
+		// Integrate
+		b->m_sweep.c += subStep.dt * b->m_linearVelocity;
+		b->m_sweep.a += subStep.dt * b->m_angularVelocity;
+
+		// Compute new transform
+		b->SynchronizeTransform();
+	}
+
+	// Solve position constraints.
+	const float32 k_toiBaumgarte = 0.75f;
+	for (int32 i = 0; i < subStep.positionIterations; ++i)
+	{
+		bool contactsOkay = contactSolver.SolvePositionConstraints(k_toiBaumgarte);
+		bool jointsOkay = true;
+		for (int32 j = 0; j < m_jointCount; ++j)
+		{
+			bool jointOkay = m_joints[j]->SolvePositionConstraints(k_toiBaumgarte);
+			jointsOkay = jointsOkay && jointOkay;
+		}
+
+		if (contactsOkay && jointsOkay)
+		{
+			break;
+		}
+	}
+
+	Report(contactSolver.m_constraints);
 }
 
 void b2Island::Report(const b2ContactConstraint* constraints)

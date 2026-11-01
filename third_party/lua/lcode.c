@@ -657,10 +657,21 @@ static void codearith (FuncState *fs, OpCode op, expdesc *e1, expdesc *e2) {
   if (constfolding(op, e1, e2))
     return;
   else {
-    int o1 = luaK_exp2RK(fs, e1);
+    /* The second operand is put in a register first. A first operand that
+       is a constant beyond the RK range is only loaded afterwards, so its
+       register can no longer be overwritten by the second operand (this
+       is what turned `lx + 800 * t.x` into `lx + t.x * t.x` in functions
+       with more than 256 constants). */
     int o2 = (op != OP_UNM && op != OP_LEN) ? luaK_exp2RK(fs, e2) : 0;
-    freeexp(fs, e2);
-    freeexp(fs, e1);
+    int o1 = luaK_exp2RK(fs, e1);
+    if (o1 > o2) {
+      freeexp(fs, e1);
+      freeexp(fs, e2);
+    }
+    else {
+      freeexp(fs, e2);
+      freeexp(fs, e1);
+    }
     e1->u.s.info = luaK_codeABC(fs, op, 0, o1, o2);
     e1->k = VRELOCABLE;
   }
@@ -669,10 +680,16 @@ static void codearith (FuncState *fs, OpCode op, expdesc *e1, expdesc *e2) {
 
 static void codecomp (FuncState *fs, OpCode op, int cond, expdesc *e1,
                                                           expdesc *e2) {
+  int o2 = luaK_exp2RK(fs, e2);  /* same operand order as codearith */
   int o1 = luaK_exp2RK(fs, e1);
-  int o2 = luaK_exp2RK(fs, e2);
-  freeexp(fs, e2);
-  freeexp(fs, e1);
+  if (o1 > o2) {
+    freeexp(fs, e1);
+    freeexp(fs, e2);
+  }
+  else {
+    freeexp(fs, e2);
+    freeexp(fs, e1);
+  }
   if (cond == 0 && op != OP_EQ) {
     int temp;  /* exchange args to replace by `<' or `<=' */
     temp = o1; o1 = o2; o2 = temp;  /* o1 <==> o2 */

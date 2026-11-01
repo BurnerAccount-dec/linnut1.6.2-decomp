@@ -98,14 +98,24 @@ bool DirectoryExists(const std::string& path) {
 }
 
 void MakeDirectory(const std::string& path) {
+    // v2.2: every missing folder of the path is made (a new level can go into a folder that does not exist yet)
+    for (size_t i = 1; i <= path.size(); i++) {
+        if (i != path.size() && path[i] != '/' && path[i] != '\\') continue;
+        std::string part = path.substr(0, i);
+        if (part.empty() || part.back() == ':' ) continue;
 #ifdef _WIN32
-    _mkdir(path.c_str());
+        _mkdir(part.c_str());
 #else
-    mkdir(path.c_str(), 0755);
+        mkdir(part.c_str(), 0755);
 #endif
+    }
 }
 
-bool WriteLevelFile(lua_State* L, const std::string& path, bool seasons, std::string& error) {
+bool WriteLevelFile(lua_State* L, const std::string& path, bool seasons, std::string& error, std::string* text) {
+    {   // the folder of the new level file may not exist yet
+        size_t cut = path.find_last_of("/\\");
+        if (cut != std::string::npos && cut > 0) MakeDirectory(path.substr(0, cut));
+    }
     int top = lua_gettop(L);
     lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
     lua_getfield(L, -1, "objects");
@@ -174,6 +184,7 @@ bool WriteLevelFile(lua_State* L, const std::string& path, bool seasons, std::st
     }
     out += "}\n";
     lua_settop(L, top);
+    if (text) *text = out;
 
     // written next to the target and moved over it, so a failed write never leaves half a level
     std::string temp = path + ".tmp";

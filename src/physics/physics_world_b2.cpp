@@ -27,6 +27,7 @@ class B2Body : public PhysBody {
 public:
     explicit B2Body(b2Body* b) : b_(b) {}
     b2Body* Get() const { return b_; }
+    void Wake(const char* why = "") { if (b_->GetType() != b2_staticBody && !b_->IsAwake()) { if (std::getenv("AB_WAKEDBG")) std::fprintf(stderr, "WAKE %s\n", why); b_->SetAwake(true); } }   // v2.2: a script that moves a body wakes it (levels now start asleep)
 
     bool IsStatic() const override { return b_->GetType() == b2_staticBody; }
     bool IsAwake() const override { return b_->IsAwake(); }
@@ -44,13 +45,13 @@ public:
     float VelY() const override { return b_->GetLinearVelocity().y; }
     float AngularVelocity() const override { return b_->GetAngularVelocity(); }
     float Mass() const override { return b_->GetMass(); }
-    void SetLinearVelocity(float x, float y) override { b_->SetLinearVelocity(b2Vec2(x, y)); }
+    void SetLinearVelocity(float x, float y) override { Wake("SetLinearVelocity"); b_->SetLinearVelocity(b2Vec2(x, y)); }
     void SetBullet(bool on) override { b_->SetBullet(on); }
 
     float Angle() const override { return b_->GetAngle(); }
-    void SetAngularVelocity(float w) override { b_->SetAngularVelocity(w); }
-    void SetAwake(bool awake) override { b_->SetAwake(awake); }
-    void SetStatic(bool isStatic) override { b_->SetType(isStatic ? b2_staticBody : b2_dynamicBody); }
+    void SetAngularVelocity(float w) override { Wake("SetAngularVelocity"); b_->SetAngularVelocity(w); }
+    void SetAwake(bool awake) override { if (awake && !b_->IsAwake() && std::getenv("AB_WAKEDBG")) std::fprintf(stderr, "WAKE SetAwake\n"); b_->SetAwake(awake); }
+    void SetStatic(bool isStatic) override { if (!isStatic && !b_->IsAwake() && std::getenv("AB_WAKEDBG")) std::fprintf(stderr, "WAKE SetStatic\n"); b_->SetType(isStatic ? b2_staticBody : b2_dynamicBody); }
     void SetTransform(float x, float y, float angle) override { b_->SetTransform(b2Vec2(x, y), angle); }
     void WorldPoint(float lx, float ly, float& wx, float& wy) const override {
         b2Vec2 p = b_->GetWorldPoint(b2Vec2(lx, ly));
@@ -60,8 +61,8 @@ public:
         b2Vec2 p = b_->GetLocalPoint(b2Vec2(wx, wy));
         lx = p.x; ly = p.y;
     }
-    void ApplyImpulse(float ix, float iy, float px, float py) override { b_->ApplyLinearImpulse(b2Vec2(ix, iy), b2Vec2(px, py)); }
-    void ApplyForce(float fx, float fy, float px, float py) override { b_->ApplyForce(b2Vec2(fx, fy), b2Vec2(px, py)); }
+    void ApplyImpulse(float ix, float iy, float px, float py) override { Wake("ApplyImpulse"); b_->ApplyLinearImpulse(b2Vec2(ix, iy), b2Vec2(px, py)); }
+    void ApplyForce(float fx, float fy, float px, float py) override { Wake("ApplyForce"); b_->ApplyForce(b2Vec2(fx, fy), b2Vec2(px, py)); }
     void SetSensor(bool on) override {
         for (b2Fixture* f = b_->GetFixtureList(); f; f = f->GetNext()) f->SetSensor(on);
     }
@@ -131,7 +132,7 @@ class Impl : public PhysicsWorld, public b2ContactListener, public b2ContactFilt
 public:
     Impl() : world_(b2Vec2(kGravityX, kGravityY), true) {
         world_.SetWarmStarting(std::getenv("AB_NOWARM") == nullptr);
-        world_.SetContinuousPhysics(std::getenv("AB_NOCCD") == nullptr);   // AB_NOCCD=1: test without continuous collision
+        world_.SetContinuousPhysics(std::getenv("AB_NOCCD") == nullptr);   // the exe runs with continuous collision on (world flag at +0x19255 is set to 1 and never cleared); AB_NOCCD=1 turns it off for testing
         world_.SetContactListener(this);
         world_.SetContactFilter(this);
         world_.SetDestructionListener(this);
@@ -155,15 +156,14 @@ public:
 #endif
 
     void Step(float dt, int velocityIterations, int positionIterations) override {
-        // Box2D 2.2.0 needs more velocity iterations than 2.1 for the long revolute chains and balloon strings of Rio levels (Smuggler's Plane
-        // 12-15 blows up after 2 s with 10, and the block stacks settle better); the retail exe's exact count is not known.
-#ifdef AB_BOX2D_V22
-        if (velocityIterations < 20) velocityIterations = 20;
-#endif
+        // AngryBirdsRio.exe steps the world with 10 velocity and 10 position iterations (0x4e4480 is called with 1/30, 10, 10 at 0x40e7b3 area);
+        // the scripts' own counts are used as they come.
         static const char* vi = std::getenv("AB_VELITERS"); static const char* pi = std::getenv("AB_POSITERS");   // test overrides
         if (vi) velocityIterations = std::atoi(vi);
         if (pi) positionIterations = std::atoi(pi);
         world_.Step(dt, velocityIterations, positionIterations);
+        for (size_t i = 0; i < joints_.size(); i++)      // v2.2: backAndForth joints turn round at their limits without the scripts having to ask
+            if (joints_[i]->backAndForth) CheckJointLimits(joints_[i]->name);
         // debug aid: AB_CONTACTDBG=<part of an object name> lists the contacts of the matching objects after every step
         static const char* watch = std::getenv("AB_CONTACTDBG");
         static int stepNo = 0;
@@ -179,6 +179,7 @@ public:
     }
     void ClearForces() override { world_.ClearForces(); }
     void SetGravity(float x, float y) override { world_.SetGravity(b2Vec2(x, y)); }
+    void SetMaxTranslation(float t) override { b2_maxTranslation = t; b2_maxTranslationSquared = t * t; }
     void GetGravity(float& x, float& y) const override { b2Vec2 g = world_.GetGravity(); x = g.x; y = g.y; }
 
     BodyInfo Inspect(const std::string& name) const override {
@@ -342,6 +343,8 @@ public:
         r->name = d.name; r->end1 = d.end1; r->end2 = d.end2;
         r->joint = joint;
         r->coordType = d.coordType;
+        r->backAndForth = d.backAndForth && d.motor && d.limit && (d.type == 3 || d.type == 4);
+        if (d.motor) { joint->GetBodyA()->SetAwake(true); joint->GetBodyB()->SetAwake(true); }   // a motor drives its bodies from the start
         r->view.reset(new B2JointView(joint, d.coordType));
         joints_.push_back(std::move(r));
         RebuildJointViews();
@@ -425,7 +428,7 @@ private:
         bd.linearDamping = 0;
         bd.angularDamping = 1.0f;
         bd.allowSleep = true;
-        bd.awake = true;
+        bd.awake = d.density == 0.0f || !startAsleep;
         bd.active = true;
         bd.userData = o;
         o->pbody.reset(new B2Body(world_.CreateBody(&bd)));

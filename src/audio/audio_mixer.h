@@ -56,12 +56,24 @@ public:
 
     // The clip is read from disk the first time it is played (the scripts register several hundred).
     void AddClip(const std::string& name, const std::string& path);
+    void AddPcmClip(const std::string& name, int rate, int channels, const std::vector<int16_t>& samples);   // v2.2: a clip decoded elsewhere
     int Play(const std::string& name, float volume, bool loop, int track);
     void Stop(const std::string& name);
     void StopAll();
     bool IsActive(const std::string& name);
     void SetTrackVolume(float volume, int track);
     float TrackVolume(int track) const { return track >= 0 && track < kAudioTracks ? trackVolume_[track] : 0; }
+
+    // ---- v2.2: playback controls the original did not have. Speed 1 is the retail mix; any other speed resamples (pitch follows speed, like a tape).
+    // track -1 means everything. Paused voices keep their place.
+    void SetSpeed(float speed, int track = -1);
+    float Speed(int track = -1) const;
+    void Pause(bool paused, int track = -1);
+    bool Paused(int track = -1) const;
+    void SetMasterVolume(float v);
+    float MasterVolume() const { return masterVolume_; }
+    void SetClipVolume(const std::string& name, float volume);     // the voices of that clip playing now
+    void SetClipSpeed(const std::string& name, float speed);
 
     // Fills `frames` frames of interleaved 16 bit samples (silence when nothing plays).
     void Mix(int16_t* out, int frames);
@@ -77,6 +89,8 @@ private:
         std::shared_ptr<AudioClip> clip;
         std::string name;
         size_t pos = 0;            // in samples
+        double frac = 0;           // v2.2: the part of a frame already passed when the speed is not 1
+        float speed = 1;           // v2.2: setAudioClipSpeed
         float volume = 1;
         int id = 0, track = 0;
         bool loop = false, stopped = false;
@@ -96,6 +110,10 @@ private:
     bool started_ = false, created_ = false;
     int nextId_ = 0;
     float trackVolume_[kAudioTracks] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
+    float trackSpeed_[kAudioTracks] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
+    bool trackPaused_[kAudioTracks] = {false, false, false, false, false, false, false, false, false};
+    float masterSpeed_ = 1, masterVolume_ = 1;
+    bool paused_ = false;
     int trackLimit_[kAudioTracks] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
     std::map<std::string, Entry> clips_;
     std::vector<Voice> active_, waiting_;

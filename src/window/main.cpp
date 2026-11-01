@@ -104,6 +104,7 @@ static int MapKey(SDL_Keycode k) {
 struct WindowConfig {
     std::string name = "Angry Birds";
     std::string imagePath = "images/pc_build", fontPath = "fonts/pc_build";   // Seasons: "images", "fonts"
+    std::string videoPath = "videos";               // v2.2: config.lua videoPath; the Lua global videoPath is playVideo(videoPath .. "/" .. name)
     std::string dataPath = "data";                  // config.lua datapath: Seasons uses "data_new"
     std::string product = "Angry Birds";          // names the save folder %APPDATA%\\<publisher>\\<product>
     std::string publisher = "Rovio";
@@ -118,6 +119,7 @@ static void ReadConfigLua(const std::string& path, WindowConfig& out) {
         lua_getglobal(L, "imagePath"); if (lua_isstring(L, -1)) out.imagePath = lua_tostring(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "fontPath"); if (lua_isstring(L, -1)) out.fontPath = lua_tostring(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "datapath"); if (lua_isstring(L, -1)) out.dataPath = lua_tostring(L, -1); lua_pop(L, 1);
+        lua_getglobal(L, "videoPath"); if (lua_isstring(L, -1)) out.videoPath = lua_tostring(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "product"); if (lua_isstring(L, -1)) out.product = lua_tostring(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "publisher"); if (lua_isstring(L, -1)) out.publisher = lua_tostring(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "width"); if (lua_isnumber(L, -1)) out.width = (int)lua_tonumber(L, -1); lua_pop(L, 1);
@@ -226,6 +228,9 @@ static int GameMain(int argc, char** argv) {
     std::vector<Click> clicks;
     std::vector<std::pair<int, int>> wheels;     // test: --wheel <frame> <notches>
     std::vector<std::pair<int, std::string>> keys;   // test: --key <frame> <name>, a key press of 3 frames
+    std::vector<std::string> startupCmds;          // v2.2: --cmd "<command>" (repeatable), --startup <file> (one command per line), --prompt (type them before the game starts)
+    bool promptFirst = std::getenv("AB_PROMPT") != nullptr;
+    int startFps = -1, startVsync = -1;
     for (int i = 1; i < argc; i++) {
         if (!std::strcmp(argv[i], "--scripts") && i + 1 < argc) scripts = argv[++i];
         else if (!std::strcmp(argv[i], "--data") && i + 1 < argc) data = argv[++i];
@@ -237,9 +242,29 @@ static int GameMain(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--wheel") && i + 2 < argc) { wheels.push_back({std::atoi(argv[i + 1]), std::atoi(argv[i + 2])}); i += 2; }
         else if (!std::strcmp(argv[i], "--click") && i + 3 < argc) { float x = (float)std::atof(argv[i + 2]), y = (float)std::atof(argv[i + 3]); clicks.push_back({std::atoi(argv[i + 1]), x, y, x, y, 3}); i += 3; }
         else if (!std::strcmp(argv[i], "--drag") && i + 5 < argc) { clicks.push_back({std::atoi(argv[i + 1]), (float)std::atof(argv[i + 2]), (float)std::atof(argv[i + 3]), (float)std::atof(argv[i + 4]), (float)std::atof(argv[i + 5]), 30}); i += 5; }
+        else if (!std::strcmp(argv[i], "--cmd") && i + 1 < argc) startupCmds.push_back(argv[++i]);
+        else if (!std::strcmp(argv[i], "--startup") && i + 1 < argc) {
+            if (std::FILE* sf = std::fopen(argv[++i], "r")) { char b[1024]; while (std::fgets(b, sizeof b, sf)) startupCmds.push_back(b); std::fclose(sf); }
+            else std::printf("--startup: cannot open %s\n", argv[i]);
+        }
+        else if (!std::strcmp(argv[i], "--prompt")) promptFirst = true;
+        else if (!std::strcmp(argv[i], "--fps") && i + 1 < argc) startFps = std::atoi(argv[++i]);
+        else if (!std::strcmp(argv[i], "--vsync")) startVsync = 1;
         else if (!std::strcmp(argv[i], "--audio-out") && i + 1 < argc) audioOut = argv[++i];
         else if (!std::strcmp(argv[i], "--screenshot") && i + 2 < argc) { shot = argv[++i]; shotFrames = std::atoi(argv[++i]); }
         else if (!std::strcmp(argv[i], "--size") && i + 2 < argc) { testW = std::atoi(argv[++i]); testH = std::atoi(argv[++i]); }
+    }
+    if (promptFirst && !shotFrames) {        // v2.2: the commands are typed before the game starts; they run on the first frame, when the scripts are loaded
+        std::printf("Startup prompt: type console commands (help lists them); an empty line or start runs the game.\n");
+        char b[1024];
+        for (;;) {
+            std::printf("> "); std::fflush(stdout);
+            if (!std::fgets(b, sizeof b, stdin)) break;
+            std::string l = b;
+            while (!l.empty() && (l.back() == 10 || l.back() == 13 || l.back() == 32)) l.pop_back();
+            if (l.empty() || l == "start" || l == "go") break;
+            startupCmds.push_back(l);
+        }
     }
     // without arguments the exe works like the original: put it next to the game's data folder
     if (data.empty()) {
@@ -249,6 +274,12 @@ static int GameMain(int argc, char** argv) {
     }
     if (scripts.empty()) scripts = data + "/scripts";
     FILE* probe = std::fopen((scripts + "/gamelogic.lua").c_str(), "rb");
+    std::string commonScripts;
+    if (!probe) {                                    // Angry Birds Space keeps gamelogic.lua in scripts_common
+        commonScripts = data + "/scripts_common";
+        probe = std::fopen((commonScripts + "/gamelogic.lua").c_str(), "rb");
+        if (!probe) commonScripts.clear();
+    }
     if (!probe) {
         std::string msg = "Could not find " + scripts + "/gamelogic.lua.\n\nPut this exe next to the game's data folder (beside the original AngryBirds.exe) and start it from there.";
         std::printf("%s\nOr run: %s --scripts <scripts folder> --data <data folder>\n", msg.c_str(), argv[0]);
@@ -265,9 +296,21 @@ static int GameMain(int argc, char** argv) {
             if (base) SDL_free(base);
         }
         if (decryptOnly) {
-            int text = 0;
-            int n = ab::DecryptTree(data, decFolder, text);
-            std::printf("dec: wrote %d files to %s (%d plain-text Lua source, %d compiled Lua 5.1 bytecode)\n", n, decFolder.c_str(), text, n - text);
+            // the dec folder holds plain-text Lua only: compiled files (1.6.3.1, 2.0.0, Seasons, Rio, the iOS .ipa) are decompiled with
+            // unluac, which needs Java (java.exe on the PATH) and tools\unluac.jar beside the exe
+            char* base2 = SDL_GetBasePath();
+            std::vector<std::string> jars = ab::FindUnluac(base2 ? base2 : "./");
+            if (base2) SDL_free(base2);
+            for (const std::string& j : jars) std::printf("dec: unluac: %s\n", j.c_str());
+            if (jars.empty()) std::printf("dec: unluac.jar not found (put it in a tools folder beside the exe, or set AB_UNLUAC)\n");
+            ab::DecStats stats;
+            int n = ab::DecryptTree(data, decFolder, jars, stats);
+            std::printf("dec: wrote %d plain-text Lua files to %s (%d of them decompiled from bytecode)\n", n, decFolder.c_str(), stats.fromBytecode);
+            if (stats.failed) {
+                std::printf("dec: %d files are compiled and could not be turned into text, so they are NOT in the dec folder (the game keeps using its own copy):\n", stats.failed);
+                for (size_t i = 0; i < stats.failedFiles.size() && i < 20; i++) std::printf("       %s\n", stats.failedFiles[i].c_str());
+                if (jars.empty() || stats.fromBytecode == 0) std::printf("dec: is Java installed? Try: java -version\n");
+            }
             if (n == 0) std::printf("dec: nothing found below %s\n", data.c_str());
             return n > 0 ? 0 : 3;
         }
@@ -290,6 +333,7 @@ static int GameMain(int argc, char** argv) {
 
     BootConfig cfg;
     cfg.scriptPath = scripts;
+    cfg.commonScriptPath = commonScripts;
     cfg.imagePath = wc.imagePath;
     cfg.fontPath = wc.fontPath;
     cfg.showCursor = wc.showCursor;
@@ -323,7 +367,7 @@ static int GameMain(int argc, char** argv) {
     SDL_ShowCursor(wc.showCursor ? SDL_ENABLE : SDL_DISABLE);   // the game draws its own hand cursor
     SDL_GLContext context = SDL_GL_CreateContext(window);
     if (!context) { std::printf("SDL_GL_CreateContext: %s\n", SDL_GetError()); return 1; }
-    SDL_GL_SetSwapInterval(1);
+    SDL_GL_SetSwapInterval(0);                 // v2.2: not synchronised to the display (the console command vsync on turns it on)
 
     GlBackend backend;
     if (!backend.Init()) { std::printf("OpenGL 1.x functions not found\n"); return 1; }
@@ -334,6 +378,22 @@ static int GameMain(int argc, char** argv) {
     cfg.screenWidth = (float)pw;
     cfg.screenHeight = (float)ph;
     GamePlatform platform(data);
+    // playVideo and openURL: the system opens the file or address (the default video player, the browser)
+    platform.openExternal = [](const std::string& target) {
+        std::string url = target;
+        if (url.find("://") == std::string::npos) {                      // a file: make a full file:// address of it
+            char full[4096];
+#ifdef _WIN32
+            if (_fullpath(full, target.c_str(), sizeof full)) url = full;
+#else
+            if (realpath(target.c_str(), full)) url = full;
+#endif
+            std::string enc;
+            for (char c : url) { if (c == '\\') enc += '/'; else if (c == ' ') enc += "%20"; else enc += c; }
+            url = std::string("file:///") + (!enc.empty() && enc[0] == '/' ? enc.substr(1) : enc);
+        }
+        if (SDL_OpenURL(url.c_str()) != 0) std::printf("could not open %s: %s\n", url.c_str(), SDL_GetError());
+    };
     if (!shotFrames || std::getenv("AB_CONSOLE")) StartConsole();   // AB_CONSOLE=1 also in a --screenshot run (tests)
     // --userdata <folder> keeps settings.lua / highscores.lua there; "original" is the folder the game itself
     // uses, %APPDATA%\Rovio\<product>, whose encrypted files are read and written in their own format
@@ -371,10 +431,46 @@ static int GameMain(int argc, char** argv) {
     platform.SetBackend(&backend, pw, ph);
     ScriptHost host(platform, cfg);
     platform.Attach(host);
+    host.RunString(("videoPath = \"" + wc.videoPath + "\"").c_str());       // v2.2: a script (or config.lua) can change it; playVideo(videoPath .. "/" .. name)
     if (!host.LoadScripts()) { std::printf("LOAD FAILED: %s\n", host.LastError().c_str()); return 1; }
     if (!host.CreateStartUpAssets()) { std::printf("createStartUpAssets FAILED: %s\n", host.LastError().c_str()); return 1; }
 
     InputBridge input;
+    // v2.2: playVideo plays inside the engine and returns when the video is over. Here are the frames of that wait: the game stands still,
+    // the video is drawn, a click, Space, Return or Escape skips it, closing the window ends it.
+    if (shotFrames && std::getenv("AB_VIDEO_SHOT")) platform.videoPump = [&]() {     // test: AB_VIDEO_FRAMES frames at 1/30 s, then a picture is saved to AB_VIDEO_SHOT
+        int n = std::getenv("AB_VIDEO_FRAMES") ? std::atoi(std::getenv("AB_VIDEO_FRAMES")) : 30;
+        for (int i = 0; i < n && platform.IsVideoPlaying(); i++) platform.VideoFrame(1.0 / 30.0);
+        std::vector<unsigned char> pixels; int w, h;
+        backend.ReadPixels(pixels, w, h);
+        WritePngFile(std::getenv("AB_VIDEO_SHOT"), w, h, pixels.data());
+        std::printf("wrote video frame %s\n", std::getenv("AB_VIDEO_SHOT"));
+        platform.StopVideo();
+    };
+    if (!shotFrames) platform.videoPump = [&]() {
+        Uint64 t0 = SDL_GetPerformanceCounter();
+        while (platform.IsVideoPlaying()) {
+            SDL_Event ev;
+            while (SDL_PollEvent(&ev)) {
+                if (ev.type == SDL_QUIT) { platform.RequestExit(); platform.StopVideo(); }
+                else if (ev.type == SDL_MOUSEBUTTONDOWN || (ev.type == SDL_KEYDOWN && (ev.key.keysym.sym == SDLK_SPACE || ev.key.keysym.sym == SDLK_RETURN || ev.key.keysym.sym == SDLK_ESCAPE))) platform.StopVideo();
+            }
+            Uint64 t1 = SDL_GetPerformanceCounter();
+            double dt = (double)(t1 - t0) / (double)SDL_GetPerformanceFrequency();
+            t0 = t1;
+            int vw, vh;
+            SDL_GL_GetDrawableSize(window, &vw, &vh);
+            backend.SetWindowSize(vw, vh);
+            platform.VideoFrame(dt > 0.1 ? 0.1 : dt);
+            SDL_GL_SwapWindow(window);
+            SDL_Delay(1);
+        }
+        input.ReleaseAll();
+    };
+    if (startFps >= 0) platform.fpsLimit = startFps;
+    if (startVsync == 1) platform.vsync = true;
+    bool startupDone = false;
+    Uint64 limiterLast = SDL_GetPerformanceCounter();
     bool running = true, inactive = false;
     int titleW = -1, titleH = -1;
     int frame = 0;
@@ -433,7 +529,8 @@ static int GameMain(int argc, char** argv) {
         }
 
         Uint64 now = SDL_GetPerformanceCounter();
-        float dt = shotFrames ? 1.0f / 30.0f : (float)((now - last) / (double)SDL_GetPerformanceFrequency());
+        static const char* testDt = std::getenv("AB_TESTDT");   // test runs: seconds per frame (default 1/30)
+        float dt = shotFrames ? (testDt ? (float)std::atof(testDt) : 1.0f / 30.0f) : (float)((now - last) / (double)SDL_GetPerformanceFrequency());
         last = now;
         if (dt > 0.1f) dt = 0.1f;                    // after a stall, do not jump ahead
         // Frame times from the timer jitter by a millisecond or two even when the display is steady, which shows as
@@ -483,10 +580,13 @@ static int GameMain(int argc, char** argv) {
         backend.SetWindowSize(pw, ph);
         platform.Resize(pw, ph);                        // the screen is the window
         input.Apply(host.State());
+        if (!startupDone) { startupDone = true; for (const std::string& l : startupCmds) platform.ConsoleCommand(l); }
         for (const std::string& l : TakeConsoleLines()) platform.ConsoleCommand(l);
+        { bool v; if (platform.TakeVsyncChange(v)) SDL_GL_SetSwapInterval(v ? 1 : 0); }
         platform.BeginFrame();
         platform.SetSpeedBoost((SDL_GetModState() & KMOD_SHIFT) != 0);     // holding Shift doubles the speed
         platform.RunFrame(dt);
+        SDL_ShowCursor((wc.showCursor || platform.NeedsSystemCursor()) ? SDL_ENABLE : SDL_DISABLE);   // editors whose scripts draw no hand cursor
         platform.EndFrame();
         input.EndFrame();
         if (!audioOut.empty()) {                          // test mode: one frame is 1/30 s of sound
@@ -516,6 +616,14 @@ static int GameMain(int argc, char** argv) {
         }
         Uint64 beforeSwap = SDL_GetPerformanceCounter();
         SDL_GL_SwapWindow(window);
+        if (!shotFrames && platform.fpsLimit > 0) {              // fps N: wait out the rest of the frame (sleep while there is time, then spin)
+            Uint64 freq = SDL_GetPerformanceFrequency(), target = freq / (Uint64)platform.fpsLimit;
+            for (;;) {
+                Uint64 t = SDL_GetPerformanceCounter();
+                if (t - limiterLast >= target) { limiterLast = (t - limiterLast > target * 2) ? t : limiterLast + target; break; }
+                if ((target - (t - limiterLast)) * 1000 / freq > 2) SDL_Delay(1);
+            }
+        } else limiterLast = SDL_GetPerformanceCounter();
         if (!shotFrames && std::getenv("AB_SLOWFRAMES")) {       // set AB_SLOWFRAMES=1 to list frames that took long and where the time went
             double f = (double)SDL_GetPerformanceFrequency(), end = (double)SDL_GetPerformanceCounter();
             double total = (end - frameStart) / f * 1000.0;

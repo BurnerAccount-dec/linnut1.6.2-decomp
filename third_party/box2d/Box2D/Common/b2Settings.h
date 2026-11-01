@@ -93,8 +93,9 @@ typedef float float32;
 
 /// The maximum linear velocity of a body. This limit is very large and is used
 /// to prevent numerical problems. You shouldn't need to adjust this.
-#define b2_maxTranslation			2.0f
-#define b2_maxTranslationSquared	(b2_maxTranslation * b2_maxTranslation)
+// AngryBirds.exe: variables (setMaxTranslation of the scripts writes them, DAT_00530314 / DAT_00548860 in the 1.6.2 exe), 2.0 and 4.0 when a level loads
+extern float32 b2_maxTranslation;
+extern float32 b2_maxTranslationSquared;
 
 /// The maximum angular velocity of a body. This limit is very large and is used
 /// to prevent numerical problems. You shouldn't need to adjust this.

@@ -1,11 +1,14 @@
 #include <algorithm>
+#include <cstring>
 #include <fstream>
 #include <iterator>
 #include "engine/game_platform.h"
+#include "video/video_audio.h"
 #include "engine/level_writer.h"
 
 #include <cmath>
 #include <algorithm>
+#include <cstring>
 #include <cmath>
 #include <cstdio>
 
@@ -26,10 +29,13 @@ public:
         platform_.Physics().Step(dt, velIter, posIter);
         static const char* dumpEvery = std::getenv("AB_BODYDUMP");   // debug: print every body each N steps
         static int step = 0;
+        if (dumpEvery && step == 0) { float gx, gy; platform_.Physics().GetGravity(gx, gy); std::fprintf(stderr, "BG %g %g ver=%d\n", gx, gy, (int)platform_.Physics().Version()); }
+        if (dumpEvery && step == 0) for (const auto& o : platform_.Physics().Objects()) { BodyInfo bi = platform_.Physics().Inspect(o->name); std::fprintf(stderr, "BI %s st=%d aw=%d m=%g ld=%g ad=%g r=%g\n", o->name.c_str(), (int)bi.isStatic, (int)bi.awake, bi.mass, bi.linearDamping, bi.angularDamping, bi.shapeRadius); }
+        if (dumpEvery && step == 0) for (const auto& o : platform_.Physics().Objects()) if (o->pbody && o->pbody->IsStatic()) std::fprintf(stderr, "BS %s %.3f %.3f %.3f\n", o->name.c_str(), o->pbody->PosX(), o->pbody->PosY(), o->pbody->Angle());
         if (dumpEvery && ++step % std::atoi(dumpEvery) == 0) {
             for (const auto& o : platform_.Physics().Objects())
                 if (o->pbody && !o->pbody->IsStatic())
-                    std::fprintf(stderr, "BD %d %s %.3f %.3f %.3f\n", step, o->name.c_str(), o->pbody->PosX(), o->pbody->PosY(), o->pbody->Angle());
+                    std::fprintf(stderr, "BD %d %s %.3f %.3f %.3f%s\n", step, o->name.c_str(), o->pbody->PosX(), o->pbody->PosY(), o->pbody->Angle(), o->pbody->IsAwake() ? " A" : "");
         }
     }
     void ClearForces() override { platform_.Physics().ClearForces(); }
@@ -147,6 +153,7 @@ PhysicsWorld& GamePlatform::Physics() {
     if (const char* f = std::getenv("AB_BOX2D")) ver = std::string(f) == "21" ? Box2DVersion::V21 : Box2DVersion::V22;  // test override
     if (requestedBox2D_) ver = requestedBox2D_ == 21 ? Box2DVersion::V21 : Box2DVersion::V22;
     physics_ = MakePhysicsWorld(ver);
+    physics_->startAsleep = std::getenv("AB_ASLEEPSTART") != nullptr;   // v2.2: the exe creates every body awake (b2BodyDef.awake = 1 at 0x411590 and the other creators); AB_ASLEEPSTART=1 starts blocks asleep for testing
     if (std::getenv("AB_PHYSDBG")) std::fprintf(stderr, "PHYS Box2D %s\n", physics_->Version() == Box2DVersion::V22 ? "2.2.0" : "2.1.1");
     physics_->onBeginContact = [this](PhysObject& a, PhysObject& b, ContactHandle& c) { OnContact(a, b, c); };
     // the contact filter reads objects.world[name].material live
@@ -183,15 +190,21 @@ void GamePlatform::AddSpeed(float step) {
 
 void GamePlatform::RunFrame(float dt) {
     dt *= speed_ * (speedBoost_ ? 2.0f : 1.0f);
-    // later versions (3.2.0 and up) scale the time with the script global physicsSpeedFactor
+    // v2.2: the script globals gameSpeedFactor (the time step of everything: scripts, animations, physics, particles) and
+    // physicsSpeedFactor (only the physics steps; the retail 3.2.0+ exes scaled everything with it) are read every frame.
+    // Both are plain Lua globals, so scripts and the console (set / lua) can read and write them.
+    float physicsScale = 1.0f;
     if (scripts_) {
         lua_State* L = scripts_->State();
         int top = lua_gettop(L);
         lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
-        lua_getfield(L, -1, "physicsSpeedFactor");
+        lua_getfield(L, -1, "gameSpeedFactor");
         if (lua_isnumber(L, -1) && lua_tonumber(L, -1) > 0) dt *= (float)lua_tonumber(L, -1);
+        lua_getfield(L, -2, "physicsSpeedFactor");
+        if (lua_isnumber(L, -1) && lua_tonumber(L, -1) > 0) physicsScale = (float)lua_tonumber(L, -1);
         lua_settop(L, top);
     }
+    Physics().Frame().physicsScale = physicsScale;
     std::string audioError = audio_.TakeError();
     if (!audioError.empty()) Print("audio: " + audioError);
     if (scripts_ && audio_.Created() && !audio_.Started()) {
@@ -283,7 +296,17 @@ void GamePlatform::BeginLevelLoad() {
         physics_.reset();                         // the console asked for the other Box2D: the old level is gone anyway, make the new world
         std::printf("console: physics is now Box2D %s\n", requestedBox2D_ == 21 ? "2.1.1" : "2.2.0");
     }
+    // v2.2: every level starts in a brand new world. After a Clear the old world keeps its broadphase tree and contact order, and a restarted
+    // stack then settled differently from the first load (Ham 'em High 12-1 / 12-8 caved in on some restarts). AB_KEEPWORLD=1: the old behaviour.
+    if (physics_ && std::getenv("AB_KEEPWORLD") == nullptr) {
+        float gx = 0, gy = 0;
+        physics_->GetGravity(gx, gy);
+        physics_->Clear();
+        physics_.reset();
+        Physics().SetGravity(gx, gy);
+    }
     Physics().Clear();
+    Physics().SetMaxTranslation(2.0f);          // 0x40d2c0 writes 2.0 and 4.0 to the two translation limits
     // a new level (or a restart) starts without the old one's particles and bird trails
     particles_.clear();
     themeSprites_.clear();
@@ -342,7 +365,20 @@ void GamePlatform::SaveLevel(const std::string& path) {
     std::string file = path;
     if (file.size() < 4 || file.compare(file.size() - 4, 4, ".lua") != 0) file += ".lua";
     std::string error;
-    if (!scripts_ || !ab::WriteLevelFile(scripts_->State(), ResolveDataFile(file), IsSeasonsScripts(), error)) Print("saveLevel: " + error);
+    bool absolute = file.size() > 1 && (file[1] == ':' || file[0] == '/');     // v2.2: a full path is used as it is
+    std::string text;
+    bool written = scripts_ && ab::WriteLevelFile(scripts_->State(), absolute ? file : ResolveDataFile(file), IsSeasonsScripts(), error, &text);
+    if (!text.empty()) savedLevels_[file] = text;       // v2.2: kept in memory too, so TAB in the editor still finds its temp copy when the game folder is read-only
+    if (!written) Print("saveLevel: " + error);
+}
+
+bool GamePlatform::FindSavedLevel(const std::string& path, std::vector<uint8_t>& bytes) {
+    std::string file = path;
+    if (file.size() < 4 || file.compare(file.size() - 4, 4, ".lua") != 0) file += ".lua";
+    auto it = savedLevels_.find(file);
+    if (it == savedLevels_.end()) return false;
+    bytes.assign(it->second.begin(), it->second.end());
+    return true;
 }
 
 void GamePlatform::CreateDirectory(const std::string& path) {
@@ -415,8 +451,17 @@ void GamePlatform::DrawThemeSprites(int layer) {
 }
 
 std::string GamePlatform::ResolveDataFile(const std::string& path) {
-    if (dataRoot_.empty()) return path;
-    return dataRoot_ + "/" + path;
+    std::string full = dataRoot_.empty() ? path : dataRoot_ + "/" + path;
+    // the Hatchery (Angry Birds Island HD scripts) asks for its images and fonts in the "pc" profile; its iPad data has only "1024x768"
+    size_t pc = full.find("hatchery/");
+    if (pc != std::string::npos) {
+        size_t profile = full.find("/pc/", pc);
+        if (profile != std::string::npos && !std::ifstream(full.c_str())) {
+            std::string alt = full.substr(0, profile) + "/1024x768/" + full.substr(profile + 4);
+            if (std::ifstream(alt.c_str())) return alt;
+        }
+    }
+    return full;
 }
 
 // Angry Birds Rio: every frame the exe calls the script's selectObjectAnimation(name, speed, angle, dt) for each entry of
@@ -497,6 +542,14 @@ void GamePlatform::OnContact(PhysObject& pa, PhysObject& pb, ContactHandle& cont
     lua_pop(L, 1);
 
     ContactResult r = ResolveContact(a, b);
+    static const bool dmgDbg = std::getenv("AB_DMGDBG") != nullptr;   // v2.2: AB_DMGDBG=1 prints every contact that damages or destroys a block
+    if (dmgDbg && (!r.destroyed.empty() || !r.strengthUpdates.empty())) {
+        static int n = 0; n++;
+        std::fprintf(stderr, "DMG #%d %s vs %s (v %.2f,%.2f / %.2f,%.2f):", n, pa.name.c_str(), pb.name.c_str(), pa.pbody->VelX(), pa.pbody->VelY(), pb.pbody->VelX(), pb.pbody->VelY());
+        for (const auto& u : r.strengthUpdates) std::fprintf(stderr, " %s->%.2f", u.name.c_str(), u.strength);
+        for (const auto& d : r.destroyed) std::fprintf(stderr, " DESTROYED %s", d.c_str());
+        std::fprintf(stderr, "\n");
+    }
 
     for (size_t i = 0; i < r.strengthUpdates.size(); i++) {
         PushWorldEntry(L, r.strengthUpdates[i].name);
@@ -573,10 +626,25 @@ bool GamePlatform::CheckForLuaFile(const std::string& path) {
 }
 
 void GamePlatform::BeginFrame() {
+    cursorDrawn_ = false;
     if (backend_) backend_->BeginFrame(screenWidth_, screenHeight_, bgR_, bgG_, bgB_);
 }
 
 void GamePlatform::EndFrame() {
+    FlushZ();
+    if (!cursors_.empty() && backend_) {
+        backend_->SetClip(false, 0, 0, 0, 0);
+        RenderState keep = state_;
+        std::vector<PendingCursor> list;
+        list.swap(cursors_);
+        for (const PendingCursor& c : list) {
+            state_ = c.st;
+            drawingCursor_ = true;
+            ResDrawSprite(c.name, c.x, c.y, c.vAnchor, c.hAnchor, c.sized, c.width, c.height);
+            drawingCursor_ = false;
+        }
+        state_ = keep;
+    }
     // Rio: once the level is no longer drawn (exited to the menu or the loading screen) its particles are gone, and so are the result-screen stars (menu list) that were still alive
     if (gameDrawnLast_ && !gameDrawn_ && scripts_ && scripts_->IsRio()) {
         static const bool partDbg2 = std::getenv("AB_PARTDBG") != nullptr;
@@ -603,9 +671,25 @@ void GamePlatform::SetRenderState(int argc, const float* a) {
     if (argc >= 7) { state_.pivotX = a[5]; state_.pivotY = a[6]; }
     // setRenderState(tx, ty, sx, sy, angle, pivotX, pivotY, alpha): alpha is 0 (invisible) .. 1 (opaque); it stays until it is set again
     if (argc >= 8) state_.alpha = a[7] < 0 ? 0 : (a[7] > 1 ? 1 : a[7]);
+    // v2.2: setRenderState(tx, ty, sx, sy, angle, pivotX, pivotY, alpha, skewX, skewY, bendX, bendY, z [, bendFunction])
+    // bendFunction is a tween function like tweenLinear(t, start, change, duration) of gamelogic.lua; it gives the shape of the bend
+    // (it is asked for t = 0, 1/8 .. 1 with start 0, change 1, duration 1); without it the bend is an arch. Numbers come from tweens as they are.
+    if (argc >= 10) { state_.skewX = a[8]; state_.skewY = a[9]; }
+    if (argc >= 12) { state_.bendX = a[10]; state_.bendY = a[11]; }
+    if (argc >= 13) state_.z = a[12];
+    if (argc >= 22) for (int i = 0; i < 9; i++) state_.bendProfile[i] = a[13 + i];
+}
+
+void GamePlatform::FlushZ() {
+    if (zQueue_.empty()) return;
+    std::vector<QueuedQuad> q;
+    q.swap(zQueue_);
+    std::stable_sort(q.begin(), q.end(), [](const QueuedQuad& a, const QueuedQuad& b) { return a.z < b.z; });
+    for (const QueuedQuad& c : q) if (backend_) backend_->DrawQuad(c.tex, c.xy, c.uv, c.r, c.g, c.b, c.alpha);
 }
 
 void GamePlatform::ResSetClipRect(float x, float y, float w, float h) {
+    FlushZ();
     if (backend_) backend_->SetClip(true, x, y, w, h);
 }
 
@@ -614,7 +698,9 @@ const GamePlatform::TextureInfo* GamePlatform::TextureFor(const SpriteSheet& she
 }
 
 const GamePlatform::TextureInfo* GamePlatform::TextureFile(const std::string& path, bool repeat) {
-    auto it = textures_.find(path);
+    // a file used both as a sprite sheet image and as a tiling texture needs one texture for each wrap mode
+    const std::string key = repeat ? path + "|repeat" : path;
+    auto it = textures_.find(key);
     if (it != textures_.end()) return it->second.handle >= 0 ? &it->second : nullptr;
     TextureInfo info;
     Image image;
@@ -626,7 +712,7 @@ const GamePlatform::TextureInfo* GamePlatform::TextureFile(const std::string& pa
     } else {
         Print("texture: " + error);
     }
-    TextureInfo& stored = textures_[path] = info;
+    TextureInfo& stored = textures_[key] = info;
     return stored.handle >= 0 ? &stored : nullptr;
 }
 
@@ -634,6 +720,7 @@ const GamePlatform::TextureInfo* GamePlatform::TextureFile(const std::string& pa
 void GamePlatform::Transform(float x, float y, float cx, float cy, float& ox, float& oy) const {
     float c = std::cos(state_.angle), s = std::sin(state_.angle);
     float dx = x - cx, dy = y - cy;
+    if (state_.skewX != 0 || state_.skewY != 0) { float sdx = dx + state_.skewX * dy, sdy = dy + state_.skewY * dx; dx = sdx; dy = sdy; }   // v2.2 shear about the pivot
     float rx = c * dx - s * dy, ry = s * dx + c * dy;
     ox = (cx + rx + state_.tx) * state_.sx;
     oy = (cy + ry + state_.ty) * state_.sy;
@@ -644,6 +731,17 @@ void GamePlatform::Transform(float x, float y, float cx, float cy, float& ox, fl
 // (or the size passed), with the sprite's rectangle of the sheet as texture coordinates.
 void GamePlatform::ResDrawSprite(const std::string& name, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height) {
     if (!backend_) return;
+    if (!drawingCursor_ && name.compare(0, 7, "CURSOR_") == 0) {
+        // v2.2: the hand cursor is drawn last and on top: the draw order (z), blur, pixelation and transparency of what was drawn before it do not apply to it
+        // (an editor that fades its panels left the cursor invisible). Only a cursor sprite that exists counts as drawn, otherwise the system cursor stays.
+        if (sprites_.Find(name) || sprites_.FindCompo(name)) cursorDrawn_ = true;
+        // the cursor is drawn at the end of the frame (EndFrame), so a background, a panel or a game drawn after the script's cursor call cannot cover it,
+        // and with the clip rectangle and the z, blur, pixelation, transparency and tint of the sprites before it taken away
+        PendingCursor c{name, x, y, vAnchor, hAnchor, sized, width, height, state_};
+        c.st.z = 0; c.st.blur = 0; c.st.pixelate = 0; c.st.alpha = 1; c.st.tintR = c.st.tintG = c.st.tintB = 1; c.st.skewX = c.st.skewY = 0; c.st.bendX = c.st.bendY = 0;
+        cursors_.push_back(c);
+        return;
+    }
     const SpriteSheet* sheet = nullptr;
     const Sprite* sp = sprites_.Find(name, &sheet);
     if (sp) { DrawSpriteAt(*sheet, *sp, x, y, vAnchor, hAnchor, sized, width, height); return; }
@@ -729,23 +827,69 @@ void GamePlatform::DrawSpriteAt(const SpriteSheet& sheet, const Sprite& spr, flo
     if (state_.flipX) std::swap(u0, u1);
     const float us[4] = {u0, u1, u1, u0}, vs[4] = {v0, v0, v1, v1};
     for (int i = 0; i < 4; i++) { uv[i * 2] = us[i]; uv[i * 2 + 1] = vs[i]; }
-    if (tileTexture_) backend_->DrawMaskedQuad(tileTexture_->handle, tex->handle, xy, tileUV, uv, state_.alpha);
-    else backend_->DrawQuad(tex->handle, xy, uv, 1, 1, 1, state_.alpha);
+    if (tileTexture_) { FlushZ(); backend_->DrawMaskedQuad(tileTexture_->handle, tex->handle, xy, tileUV, uv, state_.alpha); return; }
+    // v2.2: a bent sprite is drawn as a grid of 8 x 8 pieces; each vertex is moved by bendX * profile(row) / bendY * profile(column)
+    const int n = (state_.bendX != 0 || state_.bendY != 0) ? 8 : 1;
+    // v2.2 pixelation: the sprite is cut into blocks of state_.pixelate sprite pixels, each block showing the texture at its middle
+    int nx = n, ny = n;
+    const bool pixelated = state_.pixelate > 1 && w > 0 && h > 0;
+    if (pixelated) { nx = (int)std::ceil(w / state_.pixelate); ny = (int)std::ceil(h / state_.pixelate); if (nx > 64) nx = 64; if (ny > 64) ny = 64; if (nx < 1) nx = 1; if (ny < 1) ny = 1; }
+    auto profile = [&](float t) {
+        float p = t * 8; int i = p >= 8 ? 7 : (int)p; float f = p - i;
+        return state_.bendProfile[i] + (state_.bendProfile[i + 1] - state_.bendProfile[i]) * f;
+    };
+    auto vertex = [&](int gi, int gj, float* oxy, float* ouv, float uvU, float uvV) {
+        float u = (float)gi / nx, v = (float)gj / ny;
+        float lx = w * u, ly = h * v;
+        if (state_.bendX != 0 || state_.bendY != 0) { lx += state_.bendX * profile(v); ly += state_.bendY * profile(u); }
+        Transform(x + lx, y + ly, cx, cy, oxy[0], oxy[1]);
+        ouv[0] = us[0] + (us[1] - us[0]) * uvU;
+        ouv[1] = vs[0] + (vs[3] - vs[0]) * uvV;
+    };
+    // v2.2 blur: the sprite is drawn up to 9 times spread over state_.blur pixels; the t-th copy has 1/t of the alpha, which averages the copies
+    const int taps = state_.blur > 0 ? 9 : 1;
+    for (int tap = 0; tap < taps; tap++) {
+        float offX = 0, offY = 0;
+        if (tap > 0) { float ang = (tap - 1) * 0.785398f; offX = std::cos(ang) * state_.blur; offY = std::sin(ang) * state_.blur; }
+        const float tapAlpha = state_.alpha / (float)(tap + 1);
+        for (int gj = 0; gj < ny; gj++)
+            for (int gi = 0; gi < nx; gi++) {
+                float cxy[8], cuv[8];
+                const int di[4] = {0, 1, 1, 0}, dj[4] = {0, 0, 1, 1};
+                for (int k = 0; k < 4; k++) {
+                    float uvU = pixelated ? (gi + 0.5f) / nx : (float)(gi + di[k]) / nx;
+                    float uvV = pixelated ? (gj + 0.5f) / ny : (float)(gj + dj[k]) / ny;
+                    vertex(gi + di[k], gj + dj[k], cxy + k * 2, cuv + k * 2, uvU, uvV);
+                    cxy[k * 2] += offX; cxy[k * 2 + 1] += offY;
+                }
+                if (state_.z != 0) {
+                    QueuedQuad q; q.z = state_.z; q.seq = (int)zQueue_.size(); q.tex = tex->handle; q.alpha = tapAlpha; q.r = state_.tintR; q.g = state_.tintG; q.b = state_.tintB;
+                    std::memcpy(q.xy, cxy, sizeof cxy); std::memcpy(q.uv, cuv, sizeof cuv);
+                    zQueue_.push_back(q);
+                } else {
+                    FlushZ();
+                    backend_->DrawQuad(tex->handle, cxy, cuv, state_.tintR, state_.tintG, state_.tintB, tapAlpha);
+                }
+            }
+    }
 }
 
 // 0x40abd0: colour 0..1, corners are whole numbers. Without inWorld the render state is first reset.
 void GamePlatform::DrawRect(float r, float g, float b, float a, float x1, float y1, float x2, float y2, bool inWorld) {
+    FlushZ();
     if (!inWorld) state_ = RenderState();
     if (!backend_) return;
     x1 = std::trunc(x1); y1 = std::trunc(y1); x2 = std::trunc(x2); y2 = std::trunc(y2);
     float xy[8], uv[8] = {0, 0, 0, 0, 0, 0, 0, 0};
     const float px[4] = {x1, x2, x2, x1}, py[4] = {y1, y1, y2, y2};
-    for (int i = 0; i < 4; i++) Transform(px[i], py[i], px[i], py[i], xy[i * 2], xy[i * 2 + 1]);
+    for (int i = 0; i < 4; i++) Transform(px[i], py[i], x1 + state_.pivotX, y1 + state_.pivotY, xy[i * 2], xy[i * 2 + 1]);
     backend_->DrawQuad(-1, xy, uv, r, g, b, a);
 }
 
+// v2.2: lines and rectangles turn about (first corner + pivot) like sprites do (the retail exes' debug overlays on the 8 key rely on it); before, the pivot was ignored
 // 0x415310: whole-number coordinates and width, colour 0..255
 void GamePlatform::DrawLine2D(float x1, float y1, float x2, float y2, float width, float r, float g, float b, float a) {
+    FlushZ();
     if (!backend_) return;
     x1 = std::trunc(x1); y1 = std::trunc(y1); x2 = std::trunc(x2); y2 = std::trunc(y2);
     width = std::trunc(width);
@@ -754,13 +898,47 @@ void GamePlatform::DrawLine2D(float x1, float y1, float x2, float y2, float widt
     float nx = -dy / len * width * 0.5f, ny = dx / len * width * 0.5f;
     float px[4] = {x1 + nx, x2 + nx, x2 - nx, x1 - nx}, py[4] = {y1 + ny, y2 + ny, y2 - ny, y1 - ny};
     float xy[8], uv[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-    for (int i = 0; i < 4; i++) Transform(px[i], py[i], px[i], py[i], xy[i * 2], xy[i * 2 + 1]);
+    for (int i = 0; i < 4; i++) Transform(px[i], py[i], x1 + state_.pivotX, y1 + state_.pivotY, xy[i * 2], xy[i * 2 + 1]);
     backend_->DrawQuad(-1, xy, uv, r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f);
 }
 
 void GamePlatform::ResCreateSpriteSheet(const std::string& path) {
     std::string error;
-    if (sprites_.Load(path, ResolveDataFile(path), &error)) return;
+    // debug build: the sheets of Angry Birds Island HD that 2.0.0's scripts ask for (the challenge list, the Hatchery and Challenges buttons of the
+    // episode selection, the splash screen) are taken from the Hatchery's image folder when it has them
+    static const bool debugBuild = std::getenv("AB_NODEBUGKEYS") == nullptr;
+    std::string base = path.substr(path.find_last_of("/\\") == std::string::npos ? 0 : path.find_last_of("/\\") + 1);
+    std::string alt = "hatchery/images/1024x768/" + base;
+    bool hatcheryOn = debugBuild && !ResolveDataFile("hatchery/hatchery.lua").empty() && std::ifstream(ResolveDataFile("hatchery/hatchery.lua")).good();
+    if (hatcheryOn && base == "SPLASHES_SHEET_1.dat") {
+        sprites_.Load(path, ResolveDataFile(path), &error);
+        std::string altError;
+        if (sprites_.Load(alt, ResolveDataFile(alt), &altError)) return;       // the later sheet wins, so the Hatchery's splash is the one drawn
+        if (error.empty()) return;
+    } else if (sprites_.Load(path, ResolveDataFile(path), &error)) {
+        if (hatcheryOn && base == "LEVELSELECTION_SHEET_3.dat") {
+            std::string ignored;
+            for (const char* extra : {"BUTTONS_HATCHERY_1.dat", "LEVELSELECTION_HATCHERY_1.dat", "LEVELSELECTION_SHEET_4.dat", "MENU_HATCHERY_1.dat", "INGAME_BIRDS_2.dat"}) {
+                std::string file = std::string("hatchery/images/1024x768/") + extra;
+                sprites_.Load(file, ResolveDataFile(file), &ignored);
+            }
+            // the episode selection of 2.0.0 asks for H_BTN_HATCHERY, the iPad sheet calls the same button H_BUTTON_HATCHERY
+            const SpriteSheet* sheet = nullptr;
+            if (!sprites_.Find("H_BTN_HATCHERY") && sprites_.Find("H_BUTTON_HATCHERY", &sheet) && sheet) {
+                SpriteSheet alias = *sheet;
+                alias.sprites.clear();
+                for (const Sprite& sp : sheet->sprites) if (sp.name == "H_BUTTON_HATCHERY") { Sprite renamed = sp; renamed.name = "H_BTN_HATCHERY"; alias.sprites.push_back(renamed); }
+                sprites_.Add("alias:H_BTN_HATCHERY", std::move(alias));
+            }
+        }
+        // The exe uploads a sheet's texture when the sheet is created (behind the loading screen). Decoding the png on its first draw
+        // instead made the frames after a menu or level opened stutter, the more so the more sheets a game or mod has.
+        if (backend_) if (const SpriteSheet* made = sprites_.Sheet(path)) TextureFor(*made);
+        return;
+    } else if (hatcheryOn) {
+        std::string altError;
+        if (sprites_.Load(alt, ResolveDataFile(alt), &altError)) return;
+    }
     // Seasons lists its composite sprite files with the sheets
     if (error == "no SPRT chunk" && sprites_.LoadCompoSet(path, ResolveDataFile(path), &error)) return;
     Print("createSpriteSheet " + path + ": " + error);
@@ -858,6 +1036,7 @@ float GamePlatform::ResGetFontMaxDescending() { const BitmapFont* f = CurrentFon
 // either order; the defaults are TOP and LEFT.
 void GamePlatform::ResDrawString(const std::string& group, const std::string& key, float x, float y,
                                  const std::string& a1, const std::string& a2) {
+    FlushZ();
     // a text group name means the text is a key of that group ("MI_PLAY"); an empty group draws the text itself
     const std::string text = group.empty() ? key : ResGetString(group, key);
     const BitmapFont* font = CurrentFont();
@@ -1063,6 +1242,7 @@ void GamePlatform::Wheel(int notches) {
 // drawBackgroundNative: every looping layer is a row of copies of its sprite, shifted by the camera
 // times the layer's parallax speed.
 void GamePlatform::DrawBackground() {
+    FlushZ();
     if (!backend_) return;
     // The non-looping layers (the cranes) are placed one after another: the first at episode4BGCranes.startX / 16
     // sprite widths, each next one half a sprite width further.
@@ -1111,6 +1291,7 @@ void GamePlatform::DrawBackground() {
 // drawForegroundNative: the ground colour below the first foreground sprite, then the foreground
 // sprites repeated at 1.5 times the world scale.
 void GamePlatform::DrawForeground() {
+    FlushZ();
     if (!backend_) return;
     // a foreground layer is a sprite or a composite sprite (the Ham 'o' Ween menu draws its trees and pumpkins as composites)
     auto extent = [&](const std::string& name, float& w, float& pivotX, float& h, float& pivotY) {
@@ -1196,6 +1377,23 @@ void GamePlatform::DrawPhysObject(PhysObject& o) {
             for (const CompoPart& part : compo->parts) {
                 const SpriteSheet* partSheet = nullptr;
                 const Sprite* ps = sprites_.Find(part.sprite, &partSheet);
+                if (ps && part.exact) {
+                    // a part of a Hatchery bird: its place turns with the object, the part itself turns by its own angle and is scaled about its pivot
+                    float c = std::cos(saved.angle), s = std::sin(saved.angle);
+                    float ox = o.flipX ? -part.fx : part.fx;
+                    float px = x + c * ox - s * part.fy, py = y + s * ox + c * part.fy;
+                    RenderState partState = state_;
+                    partState.angle = saved.angle + (o.flipX ? -part.angle : part.angle);
+                    partState.pivotX = (float)ps->pivotX; partState.pivotY = (float)ps->pivotY;
+                    partState.flipX = o.flipX;
+                    partState.sx = saved.sx * part.scale; partState.sy = saved.sy * part.scale;
+                    partState.tx = (px + saved.tx) / part.scale - px; partState.ty = (py + saved.ty) / part.scale - py;
+                    RenderState keep = state_;
+                    state_ = partState;
+                    DrawSpriteAt(*partSheet, *ps, px - (float)ps->pivotX, py - (float)ps->pivotY, 0, 0, false, 0, 0);   // the sprite's pivot lands on (px, py)
+                    state_ = keep;
+                    continue;
+                }
                 if (ps) drawPart(*partSheet, *ps, (float)(part.x - ps->pivotX), (float)(part.y - ps->pivotY));
             }
         }
@@ -1207,6 +1405,7 @@ void GamePlatform::DrawPhysObject(PhysObject& o) {
 // drawGameNative: static blocks, then the other blocks, the trajectory dots, the birds, and
 // finally everything with a z of 5 or more.
 void GamePlatform::DrawGame() {
+    FlushZ();
     gameDrawn_ = true;
     if (!backend_) return;
     state_ = RenderState();
@@ -1217,10 +1416,14 @@ void GamePlatform::DrawGame() {
     // Angry Birds Rio draws each group by z order (equal z keeps the creation order); the earlier games use creation order
     bool rio = scripts_ && scripts_->IsRio();
     auto drawGroup = [&](auto pick) {
-        if (!rio) { for (auto& o : objects) if (pick(*o)) DrawPhysObject(*o); state_.alpha = 1; return; }
+        // Rio sorts by z order; the earlier games keep the creation order unless setObjectZOrder was used (then those objects are sorted among the others, stable)
         std::vector<PhysObject*> group;
         for (auto& o : objects) if (pick(*o)) group.push_back(o.get());
-        std::stable_sort(group.begin(), group.end(), [](PhysObject* a, PhysObject* b) { return a->zOrder < b->zOrder; });
+        bool anySet = false;
+        for (PhysObject* o : group) anySet = anySet || o->zSet;
+        if (rio || anySet)
+            std::stable_sort(group.begin(), group.end(), [rio](PhysObject* a, PhysObject* b) {
+                return (rio || a->zSet ? a->zOrder : 0) < (rio || b->zSet ? b->zOrder : 0); });
         for (PhysObject* o : group) DrawPhysObject(*o);
         state_.alpha = 1;                          // setObjectAlpha belongs to one object, not to what is drawn next
     };
@@ -1229,14 +1432,17 @@ void GamePlatform::DrawGame() {
     // each of the six lists: its dots go through TRAIL_WHITE_1, _2, _3 and start again, then its puffs (BIRD_SPECIAL)
     state_.angle = 0; state_.pivotX = state_.pivotY = 0;
     for (int list = 0; list < 6; list++) {
+        const std::string* custom = trajCustom_[list / 3];
         for (size_t i = 0; i < trajDots_[list].size(); i++) {
             const SpriteSheet* sheet = nullptr;
-            const Sprite* sp = sprites_.Find("TRAIL_WHITE_" + std::to_string(i % 3 + 1), &sheet);
+            const Sprite* sp = custom[i % 3].empty() ? nullptr : sprites_.Find(custom[i % 3], &sheet);
+            if (!sp) sp = sprites_.Find("TRAIL_WHITE_" + std::to_string(i % 3 + 1), &sheet);
             if (sp) DrawSpriteAt(*sheet, *sp, trajDots_[list][i].x, trajDots_[list][i].y, 4, 3, false, 0, 0);
         }
         for (const TrajectoryPoint& p : trajPuffs_[list]) {
             const SpriteSheet* sheet = nullptr;
-            const Sprite* sp = sprites_.Find("BIRD_SPECIAL", &sheet);
+            const Sprite* sp = custom[3].empty() ? nullptr : sprites_.Find(custom[3], &sheet);
+            if (!sp) sp = sprites_.Find("BIRD_SPECIAL", &sheet);
             if (sp) DrawSpriteAt(*sheet, *sp, p.x, p.y, 4, 3, false, 0, 0);
         }
     }
@@ -1619,6 +1825,11 @@ void GamePlatform::ConsoleCommand(const std::string& raw) {
             "  help                    this list\n"
             "  box2d [21|22]           show / choose the physics library; it changes when the next level loads (restart the level)\n"
             "  polyradius [r]          show / set the collision skin of boxes and polygons made from now on (Box2D 2.2)\n"
+            "  fps [n]                 limit the frame rate (0 = unlimited, the default); vsync [on|off] synchronises to the display\n"
+            "  gamespeed [x]           gameSpeedFactor: the time step of everything (default 1)\n"
+            "  physicsspeed [x]        physicsSpeedFactor: the time step of the physics only (default 1)\n"
+            "  set <name> <value>      set any Lua global (set gameSpeedFactor 0.5); get <name> shows it\n"
+            "  audiospeed [x [track]]  audio playback speed (pitch follows); audiopause / audioresume [track]; mastervolume [v]\n"
             "  lua <code>              run Lua code, for example: lua print(levelName)\n");
     } else if (cmd == "box2d") {
         if (arg == "21" || arg == "22") {
@@ -1628,6 +1839,32 @@ void GamePlatform::ConsoleCommand(const std::string& raw) {
             std::printf("console: physics is Box2D %s%s\n", physics_ ? (physics_->Version() == Box2DVersion::V22 ? "2.2.0" : "2.1.1") : "not started",
                         requestedBox2D_ ? (requestedBox2D_ == 21 ? " (2.1.1 requested)" : " (2.2.0 requested)") : "");
         }
+    } else if (cmd == "fps") {
+        if (!arg.empty()) fpsLimit = std::max(0, std::atoi(arg.c_str()));
+        if (fpsLimit) std::printf("console: frame rate limited to %d fps\n", fpsLimit); else std::printf("console: frame rate not limited\n");
+    } else if (cmd == "vsync") {
+        if (arg == "on" || arg == "1") { vsync = true; vsyncChanged = true; }
+        else if (arg == "off" || arg == "0") { vsync = false; vsyncChanged = true; }
+        std::printf("console: vsync %s\n", vsync ? "on" : "off");
+    } else if (cmd == "gamespeed" || cmd == "physicsspeed" || cmd == "set" || cmd == "get") {
+        // gamespeed / physicsspeed are the Lua globals gameSpeedFactor / physicsSpeedFactor; set / get reach any numeric Lua global
+        std::string name = cmd == "gamespeed" ? "gameSpeedFactor" : cmd == "physicsspeed" ? "physicsSpeedFactor" : "";
+        std::string value = arg;
+        if (name.empty()) {
+            size_t sp = arg.find(' ');
+            name = arg.substr(0, sp);
+            value = sp == std::string::npos ? "" : arg.substr(sp + 1);
+        }
+        if (scripts_ && !name.empty()) {
+            if (!value.empty()) scripts_->RunString((name + " = " + value).c_str());
+            scripts_->RunString(("_G.print('console: " + name + " = ' .. _G.tostring(" + name + "))").c_str());
+        } else std::printf("console: usage: %s%s\n", cmd.c_str(), cmd == "set" ? " <name> <value>" : cmd == "get" ? " <name>" : " [factor]");
+    } else if (cmd == "audiospeed" || cmd == "audiopause" || cmd == "audioresume" || cmd == "mastervolume") {
+        // audiospeed [x [track]] (pitch follows the speed), audiopause [track], audioresume [track], mastervolume [v]
+        float a = 0, b = -1; int n = std::sscanf(arg.c_str(), "%f %f", &a, &b);
+        if (cmd == "audiospeed") { if (n >= 1) audio_.SetSpeed(a, n >= 2 ? (int)b : -1); std::printf("console: audio speed %g\n", audio_.Speed(n >= 2 ? (int)b : -1)); }
+        else if (cmd == "mastervolume") { if (n >= 1) audio_.SetMasterVolume(a); std::printf("console: master volume %g\n", audio_.MasterVolume()); }
+        else { int t = n >= 1 ? (int)a : -1; audio_.Pause(cmd == "audiopause", t); std::printf("console: audio %s\n", cmd == "audiopause" ? "paused" : "resumed"); }
     } else if (cmd == "polyradius") {
         if (!arg.empty()) Physics().SetPolygonRadius((float)std::atof(arg.c_str()));
         if (Physics().Version() == Box2DVersion::V22) std::printf("console: polygon radius %g (applies to shapes made afterwards)\n", Physics().PolygonRadius());
@@ -1637,4 +1874,309 @@ void GamePlatform::ConsoleCommand(const std::string& raw) {
     }
     std::fflush(stdout);
 }
+}  // namespace ab
+
+namespace ab {
+// playVideo("videos/seasons_teaser_v01.m4v"): the Angry Birds Free / Lite / Seasons Free scripts play their teaser videos from the iOS
+// "videos" folder. v2.2 plays them inside the engine: the file is looked for in the game's data folder (data/videos/<name>), next to it and
+// in the exe's folder. The videos are not part of the PC game; they are in the iOS .ipa (a zip file: Payload/<app>/data_iphone/videos).
+void GamePlatform::PlayVideo(const std::string& path) {
+    auto exists = [](const std::string& p) { if (std::FILE* f = std::fopen(p.c_str(), "rb")) { std::fclose(f); return true; } return false; };
+    std::string name = path.substr(path.find_last_of("/\\") == std::string::npos ? 0 : path.find_last_of("/\\") + 1);
+    std::string stem = name.substr(0, name.find_last_of('.') == std::string::npos ? name.size() : name.find_last_of('.'));
+    std::vector<std::string> bases = {"", dataRoot_ + "/", dataRoot_ + "/videos/", dataRoot_ + "/../", dataRoot_ + "/../videos/", "./", "./videos/"};
+    std::vector<std::string> names = {path, name};
+    for (const char* ext : {".m4v", ".mp4", ".mov"}) names.push_back(stem + ext);
+    for (const std::string& b : bases)
+        for (const std::string& n : names) {
+            std::string full = b + n;
+            if (!exists(full)) continue;
+            StopVideo();
+            std::unique_ptr<VideoPlayer> player(new VideoPlayer);
+            std::string error;
+            if (!player->Open(full, &error)) { std::printf("playVideo: %s: %s\n", full.c_str(), error.c_str()); std::fflush(stdout); return; }
+            video_ = std::move(player);
+            std::printf("playVideo %s (%dx%d, %.1f s)\n", full.c_str(), video_->Width(), video_->Height(), video_->Duration());
+            std::fflush(stdout);
+            std::vector<int16_t> pcm;
+            int rate = 0, channels = 0;
+            if (audio_.Created() && DecodeVideoAudio(full, pcm, rate, channels, &error)) {
+                audio_.AddPcmClip("__video", rate, channels, pcm);
+                audio_.Start();
+                audio_.Play("__video", 1.0f, false, kAudioTracks - 1);
+            } else if (!error.empty()) { std::printf("playVideo: %s\n", error.c_str()); std::fflush(stdout); }
+            if (videoPump) videoPump();            // the call returns when the video is over (a click or a key ends it)
+            return;
+        }
+    std::printf("playVideo: %s not found (put it in %s/videos; the iOS videos are inside the .ipa, a zip file)\n", path.c_str(), dataRoot_.c_str());
+}
+
+void GamePlatform::StopVideo() {
+    if (!video_) return;
+    audio_.Stop("__video");
+    video_.reset();
+}
+
+void GamePlatform::VideoFrame(double dt) {
+    if (!video_) return;
+    bool changed = video_->Advance(dt);
+    if (backend_) {
+        backend_->BeginFrame(screenWidth_, screenHeight_, 0, 0, 0);
+        const std::vector<uint8_t>& px = video_->Rgba();
+        int vw = video_->Width(), vh = video_->Height();
+        if (!px.empty() && vw > 0 && vh > 0) {
+            if (videoTexture_ < 0 || vw != videoTextureW_ || vh != videoTextureH_ || changed) {
+                Image im;
+                im.width = vw; im.height = vh; im.rgba = px;
+                if (videoTexture_ < 0 || vw != videoTextureW_ || vh != videoTextureH_) { videoTexture_ = backend_->CreateTexture(im); videoTextureW_ = vw; videoTextureH_ = vh; }
+                else backend_->UpdateTexture(videoTexture_, im);
+            }
+            float scale = std::min(screenWidth_ / (float)vw, screenHeight_ / (float)vh);
+            float w = vw * scale, h = vh * scale, x0 = (screenWidth_ - w) * 0.5f, y0 = (screenHeight_ - h) * 0.5f;
+            const float xy[8] = {x0, y0, x0 + w, y0, x0 + w, y0 + h, x0, y0 + h}, uv[8] = {0, 0, 1, 0, 1, 1, 0, 1};
+            backend_->DrawQuad(videoTexture_, xy, uv, 1, 1, 1, 1);
+        }
+        backend_->EndFrame();
+    }
+    if (video_->Finished()) StopVideo();
+}
+
+// ---- Hatchery egg painter (the iPad version's native canvas) ---------------------------------------------------
+// The scripts paint with brush sprites (H_PAINT_BRUSH_<COLOR>) at positions that are fractions of the canvas, and show the canvas through the
+// alpha of an egg-shaped sprite: the mask is centred on the canvas, one mask pixel being `scale` canvas pixels (the scale it is drawn at).
+const Image* GamePlatform::SheetImage(const SpriteSheet& sheet) {
+    std::string path = sheet.directory + "/" + sheet.image;
+    auto it = brushImages_.find(path);
+    if (it != brushImages_.end()) return it->second.width > 0 ? &it->second : nullptr;
+    Image& img = brushImages_[path];
+    std::string error;
+    if (!LoadPngFile(path, img, &error)) { Print("texture: " + error); img = Image(); return nullptr; }
+    return &img;
+}
+
+void GamePlatform::CanvasInit(int w, int h) {
+    if (w < 1 || h < 1 || w > 2048 || h > 2048) return;
+    if (canvas_.w == w && canvas_.h == h) return;
+    canvas_.w = w; canvas_.h = h;
+    canvas_.rgba.assign((size_t)w * h * 4, 255);
+    canvas_.owner.assign((size_t)w * h, 0);
+    canvas_.visible.assign((size_t)w * h, 0);
+    canvas_.revision++;
+}
+
+void GamePlatform::CanvasClear(float r, float g, float b, float a) {
+    auto channel = [](float v) { return (uint8_t)std::floor(std::min(255.0f, std::max(0.0f, v * 255.0f)) + 0.5f); };
+    for (size_t i = 0; i + 3 < canvas_.rgba.size(); i += 4) {
+        canvas_.rgba[i] = channel(r); canvas_.rgba[i + 1] = channel(g); canvas_.rgba[i + 2] = channel(b); canvas_.rgba[i + 3] = channel(a);
+    }
+    std::fill(canvas_.owner.begin(), canvas_.owner.end(), 0);
+    canvas_.revision++;
+}
+
+void GamePlatform::CanvasPaint(const std::string& brush, float x, float y, float w, float h) {
+    if (canvas_.w < 1) return;
+    const SpriteSheet* sheet = nullptr;
+    const Sprite* sp = sprites_.Find(brush, &sheet);
+    if (!sp || sp->w < 1 || sp->h < 1) return;
+    const Image* img = SheetImage(*sheet);
+    if (!img) return;
+    std::string color = brush.compare(0, 14, "H_PAINT_BRUSH_") == 0 ? brush.substr(14) : brush;
+    size_t id = 0;
+    for (; id < canvas_.brushes.size(); id++) if (canvas_.brushes[id] == color) break;
+    if (id == canvas_.brushes.size()) canvas_.brushes.push_back(color);
+    // w and h are screen pixels of the canvas area (the scripts scale the sprite by screen size / canvas size)
+    float destW = w * canvas_.w / (float)screenWidth_, destH = h * canvas_.h / (float)screenHeight_;
+    if (destW < 1 || destH < 1) return;
+    float cx = x * canvas_.w, cy = (1.0f - y) * canvas_.h;
+    float sxScale = destW / sp->w, syScale = destH / sp->h;
+    float left = cx - sp->pivotX * sxScale, top = cy - sp->pivotY * syScale;
+    int x0 = std::max(0, (int)std::floor(left)), x1 = std::min(canvas_.w, (int)std::ceil(left + destW));
+    int y0 = std::max(0, (int)std::floor(top)), y1 = std::min(canvas_.h, (int)std::ceil(top + destH));
+    for (int py = y0; py < y1; py++)
+        for (int px = x0; px < x1; px++) {
+            float u = (px + 0.5f - left) / sxScale - 0.5f, v = (py + 0.5f - top) / syScale - 0.5f;
+            int ix = (int)std::floor(u), iy = (int)std::floor(v);
+            float fx = u - ix, fy = v - iy;
+            float col[4] = {0, 0, 0, 0};
+            for (int k = 0; k < 4; k++) {
+                int tx = std::min(sp->w - 1, std::max(0, ix + (k & 1))), ty = std::min(sp->h - 1, std::max(0, iy + (k >> 1)));
+                float wgt = ((k & 1) ? fx : 1 - fx) * ((k >> 1) ? fy : 1 - fy);
+                const uint8_t* p = &img->rgba[((size_t)(sp->y + ty) * img->width + sp->x + tx) * 4];
+                float pa = p[3] / 255.0f * wgt;
+                col[0] += p[0] * pa; col[1] += p[1] * pa; col[2] += p[2] * pa; col[3] += pa;       // straight colours: weigh them by their alpha (the edges of the brushes are dark where they are clear)
+            }
+            if (col[3] <= 0.001f) continue;
+            float a = std::min(1.0f, col[3]);
+            uint8_t* d = &canvas_.rgba[((size_t)py * canvas_.w + px) * 4];
+            for (int c = 0; c < 3; c++) d[c] = (uint8_t)std::min(255.0f, col[c] + d[c] * (1.0f - a) + 0.5f);
+            d[3] = (uint8_t)std::min(255.0f, a * 255.0f + d[3] * (1.0f - a) + 0.5f);
+            if (a > 0.4f) canvas_.owner[(size_t)py * canvas_.w + px] = (uint8_t)(id + 1);
+        }
+    canvas_.revision++;
+}
+
+// The canvas seen through the alpha of a mask sprite. outW x outH is the picture's size, `scale` the canvas pixels per mask pixel.
+bool GamePlatform::ComposeCanvas(const std::string& mask, int outW, int outH, float scaleX, float scaleY, Image& out, bool markVisible) {
+    const SpriteSheet* sheet = nullptr;
+    const Sprite* sp = sprites_.Find(mask, &sheet);
+    if (!sp || canvas_.w < 1 || outW < 1 || outH < 1) return false;
+    const Image* img = SheetImage(*sheet);
+    if (!img) return false;
+    auto maskAlpha = [&](float mx, float my) {
+        int ix = std::min(sp->w - 1, std::max(0, (int)std::floor(mx))), iy = std::min(sp->h - 1, std::max(0, (int)std::floor(my)));
+        return img->rgba[((size_t)(sp->y + iy) * img->width + sp->x + ix) * 4 + 3];
+    };
+    float offX = (canvas_.w - sp->w * scaleX) * 0.5f, offY = (canvas_.h - sp->h * scaleY) * 0.5f;
+    out.width = outW; out.height = outH;
+    out.rgba.assign((size_t)outW * outH * 4, 0);
+    for (int v = 0; v < outH; v++)
+        for (int u = 0; u < outW; u++) {
+            float mx = (u + 0.5f) / outW * sp->w, my = (v + 0.5f) / outH * sp->h;
+            uint8_t ma = maskAlpha(mx, my);
+            if (ma == 0) continue;
+            int cx = std::min(canvas_.w - 1, std::max(0, (int)std::floor(mx * scaleX + offX)));
+            int cy = std::min(canvas_.h - 1, std::max(0, (int)std::floor(my * scaleY + offY)));
+            const uint8_t* c = &canvas_.rgba[((size_t)cy * canvas_.w + cx) * 4];
+            uint8_t* o = &out.rgba[((size_t)v * outW + u) * 4];
+            o[0] = c[0]; o[1] = c[1]; o[2] = c[2]; o[3] = (uint8_t)(ma * c[3] / 255);
+        }
+    if (markVisible) {
+        for (int cy = 0; cy < canvas_.h; cy++)
+            for (int cx = 0; cx < canvas_.w; cx++) {
+                float mx = (cx + 0.5f - offX) / scaleX, my = (cy + 0.5f - offY) / scaleY;
+                canvas_.visible[(size_t)cy * canvas_.w + cx] = (mx >= 0 && my >= 0 && mx < sp->w && my < sp->h && maskAlpha(mx, my) > 128) ? 1 : 0;
+            }
+    }
+    return true;
+}
+
+void GamePlatform::CanvasDraw(const std::string& mask) {
+    if (!backend_ || canvas_.w < 1) return;
+    const SpriteSheet* sheet = nullptr;
+    const Sprite* sp = sprites_.Find(mask, &sheet);
+    if (!sp || state_.sx <= 0 || state_.sy <= 0) return;
+    int outW = std::min(1536, std::max(1, (int)std::ceil(sp->w * state_.sx))), outH = std::min(1536, std::max(1, (int)std::ceil(sp->h * state_.sy)));
+    bool changed = canvas_.composedRev != canvas_.revision || canvas_.mask != mask || canvas_.scaleX != state_.sx || canvas_.scaleY != state_.sy ||
+                   canvas_.texW != outW || canvas_.texH != outH;
+    if (changed) {
+        canvas_.mask = mask; canvas_.scaleX = state_.sx; canvas_.scaleY = state_.sy;
+        Image picture;
+        if (!ComposeCanvas(mask, outW, outH, state_.sx, state_.sy, picture, true)) return;
+        if (canvas_.texture >= 0 && canvas_.texW == outW && canvas_.texH == outH) backend_->UpdateTexture(canvas_.texture, picture);
+        else canvas_.texture = backend_->CreateTexture(picture);
+        canvas_.texW = outW; canvas_.texH = outH;
+        canvas_.composedRev = canvas_.revision;
+    }
+    if (canvas_.texture < 0) return;
+    FlushZ();
+    float x = -(float)sp->pivotX, y = -(float)sp->pivotY, w = (float)sp->w, h = (float)sp->h;
+    float cx = x + state_.pivotX, cy = y + state_.pivotY;
+    const float px[4] = {x, x + w, x + w, x}, py[4] = {y, y, y + h, y + h};
+    const float uv[8] = {0, 0, 1, 0, 1, 1, 0, 1};
+    float xy[8];
+    for (int i = 0; i < 4; i++) Transform(px[i], py[i], cx, cy, xy[i * 2], xy[i * 2 + 1]);
+    backend_->DrawQuad(canvas_.texture, xy, uv, 1, 1, 1, state_.alpha);
+}
+
+// the two brush colours that cover most of the egg (empty when there is hardly any paint, or only one colour)
+void GamePlatform::CanvasDominant(std::string& first, std::string& second) {
+    if (canvas_.analysed != canvas_.revision) {
+        canvas_.analysed = canvas_.revision;
+        std::vector<long> count(canvas_.brushes.size() + 1, 0);
+        long total = 0;
+        bool haveMask = canvas_.composedRev >= 0;
+        for (size_t i = 0; i < canvas_.owner.size(); i++) {
+            if (haveMask && !canvas_.visible[i]) continue;
+            total++;
+            count[canvas_.owner[i]]++;
+        }
+        int a = -1, b = -1;
+        for (size_t i = 1; i < count.size(); i++) {
+            if (a < 0 || count[i] > count[a]) { b = a; a = (int)i; }
+            else if (b < 0 || count[i] > count[b]) b = (int)i;
+        }
+        canvas_.first.clear(); canvas_.second.clear();
+        if (total > 0) {
+            if (a >= 1 && count[a] >= total * 0.02) canvas_.first = canvas_.brushes[a - 1];
+            if (b >= 1 && count[b] >= total * 0.05 && !canvas_.first.empty()) canvas_.second = canvas_.brushes[b - 1];
+        }
+    }
+    first = canvas_.first; second = canvas_.second;
+}
+
+// A sprite from an image made at run time: its own one-sprite sheet whose picture is a texture of the backend
+static void AddRuntimeSprite(SpriteLibrary& lib, const std::string& name, int w, int h, int pivotX, int pivotY) {
+    SpriteSheet sheet;
+    sheet.image = name;
+    sheet.directory = "canvas:";
+    Sprite sp;
+    sp.name = name; sp.x = 0; sp.y = 0; sp.w = w; sp.h = h; sp.pivotX = pivotX; sp.pivotY = pivotY;
+    sheet.sprites.push_back(sp);
+    lib.Add("canvas:" + name, std::move(sheet));
+}
+
+// setupCompoObject: the object is drawn from the given sprites, each placed at (x, y) from the object's position with its own scale and angle, the whole thing at `scale`
+void GamePlatform::SetupCompoObject(const std::string& object, const std::vector<CompoItem>& items, float scale) {
+    CompoSprite compo;
+    compo.name = "compo:" + object;
+    for (const CompoItem& item : items) {
+        CompoPart part;
+        part.sprite = item.sprite;
+        part.fx = item.x * scale; part.fy = item.y * scale;
+        part.scale = item.scale * scale; part.angle = item.angle;
+        part.exact = true;
+        compo.parts.push_back(part);
+    }
+    sprites_.AddCompo(compo);
+    Physics().SetSpriteName(object, compo.name);
+}
+
+bool GamePlatform::CanvasMakeSprite(const std::string& name, int width, int height, int pivotX, int pivotY, bool save, const std::string& file) {
+    if (!backend_ || canvas_.mask.empty()) return false;
+    const Sprite* sp = sprites_.Find(canvas_.mask);
+    if (!sp) return false;
+    Image full;
+    if (!ComposeCanvas(canvas_.mask, sp->w, sp->h, canvas_.scaleX, canvas_.scaleY, full, false)) return false;
+    // the picture is width x height: the egg fills the height and is centred, so it is as tall as the plain egg sprite once it is scaled down
+    width = std::max(1, width); height = std::max(1, height);
+    Image picture;
+    picture.width = width; picture.height = height;
+    picture.rgba.assign((size_t)width * height * 4, 0);
+    float k = (float)height / full.height;
+    float left = (width - full.width * k) * 0.5f;
+    for (int v = 0; v < height; v++)
+        for (int u = 0; u < width; u++) {
+            float fx = (u + 0.5f - left) / k - 0.5f, fy = (v + 0.5f) / k - 0.5f;
+            if (fx < -0.5f || fy < -0.5f || fx > full.width - 0.5f || fy > full.height - 0.5f) continue;
+            int x0 = (int)std::floor(fx), y0 = (int)std::floor(fy);
+            float tx = fx - x0, ty = fy - y0;
+            float acc[4] = {0, 0, 0, 0};
+            for (int j = 0; j < 2; j++)
+                for (int i = 0; i < 2; i++) {
+                    int xx = std::min(full.width - 1, std::max(0, x0 + i)), yy = std::min(full.height - 1, std::max(0, y0 + j));
+                    const uint8_t* c = &full.rgba[((size_t)yy * full.width + xx) * 4];
+                    float wgt = (i ? tx : 1 - tx) * (j ? ty : 1 - ty), a = c[3] / 255.0f * wgt;
+                    acc[0] += c[0] * a; acc[1] += c[1] * a; acc[2] += c[2] * a; acc[3] += a;
+                }
+            uint8_t* o = &picture.rgba[((size_t)v * width + u) * 4];
+            if (acc[3] > 0.0f) { o[0] = (uint8_t)(acc[0] / acc[3] + 0.5f); o[1] = (uint8_t)(acc[1] / acc[3] + 0.5f); o[2] = (uint8_t)(acc[2] / acc[3] + 0.5f); o[3] = (uint8_t)(std::min(1.0f, acc[3]) * 255.0f + 0.5f); }
+        }
+    if (save) WritePngFile(ResolveUserFile(file, true).c_str(), picture.width, picture.height, picture.rgba.data());
+    TextureInfo info; info.handle = backend_->CreateTexture(picture); info.width = picture.width; info.height = picture.height;
+    textures_["canvas:/" + name] = info;
+    AddRuntimeSprite(sprites_, name, picture.width, picture.height, pivotX, pivotY);
+    return true;
+}
+
+bool GamePlatform::CanvasLoadSprite(const std::string& name, const std::string& file, int pivotX, int pivotY) {
+    if (!backend_) return false;
+    Image picture;
+    std::string error;
+    if (!LoadPngFile(ResolveUserFile(file, true), picture, &error)) { Print("loadCanvasSprite: " + error); return false; }
+    TextureInfo info; info.handle = backend_->CreateTexture(picture); info.width = picture.width; info.height = picture.height;
+    textures_["canvas:/" + name] = info;
+    AddRuntimeSprite(sprites_, name, picture.width, picture.height, pivotX, pivotY);
+    return true;
+}
+
 }  // namespace ab

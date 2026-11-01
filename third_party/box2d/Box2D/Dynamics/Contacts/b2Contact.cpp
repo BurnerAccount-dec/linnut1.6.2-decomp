@@ -96,8 +96,13 @@ void b2Contact::Destroy(b2Contact* contact, b2BlockAllocator* allocator)
 
 	if (contact->m_manifold.pointCount > 0)
 	{
-		contact->GetFixtureA()->GetBody()->SetAwake(true);
-		contact->GetFixtureB()->GetBody()->SetAwake(true);
+		// AngryBirds.exe (0x4dffa0): the bodies are woken and their sleep timers reset even if they were already awake.
+		b2Body* wakeA = contact->GetFixtureA()->GetBody();
+		b2Body* wakeB = contact->GetFixtureB()->GetBody();
+		wakeA->m_sleepTime = 0.0f;
+		wakeA->m_flags |= b2Body::e_awakeFlag;
+		wakeB->m_flags |= b2Body::e_awakeFlag;
+		wakeB->m_sleepTime = 0.0f;
 	}
 
 	b2Shape::Type typeA = contact->GetFixtureA()->GetType();
@@ -161,14 +166,22 @@ void b2Contact::Update(b2ContactListener* listener)
 	{
 		const b2Shape* shapeA = m_fixtureA->GetShape();
 		const b2Shape* shapeB = m_fixtureB->GetShape();
-		touching = b2TestOverlap(shapeA, shapeB, xfA, xfB);
+		touching = b2TestOverlap(m_fixtureA->GetAABB(), m_fixtureB->GetAABB()) && b2TestOverlap(shapeA, shapeB, xfA, xfB);
 
 		// Sensors don't generate manifolds.
 		m_manifold.pointCount = 0;
 	}
 	else
 	{
-		Evaluate(&m_manifold, xfA, xfB);
+		// AngryBirds.exe (0x4e0000): the shapes are only evaluated when the fixtures' AABBs overlap (0x4d78b0).
+		if (b2TestOverlap(m_fixtureA->GetAABB(), m_fixtureB->GetAABB()))
+		{
+			Evaluate(&m_manifold, xfA, xfB);
+		}
+		else
+		{
+			m_manifold.pointCount = 0;
+		}
 		touching = m_manifold.pointCount > 0;
 
 		// Match old contact ids to new contact ids and copy the
@@ -195,8 +208,10 @@ void b2Contact::Update(b2ContactListener* listener)
 
 		if (touching != wasTouching)
 		{
-			bodyA->SetAwake(true);
-			bodyB->SetAwake(true);
+			bodyA->m_sleepTime = 0.0f;
+			bodyA->m_flags |= b2Body::e_awakeFlag;
+			bodyB->m_sleepTime = 0.0f;
+			bodyB->m_flags |= b2Body::e_awakeFlag;
 		}
 	}
 

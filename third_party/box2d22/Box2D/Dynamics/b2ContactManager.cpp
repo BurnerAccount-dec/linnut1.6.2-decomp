@@ -115,8 +115,10 @@ void b2ContactManager::Collide()
 		b2Body* bodyA = fixtureA->GetBody();
 		b2Body* bodyB = fixtureB->GetBody();
 		 
-		bool activeA = bodyA->IsAwake() && bodyA->m_type != b2_staticBody;
-		bool activeB = bodyB->IsAwake() && bodyB->m_type != b2_staticBody;
+		// AngryBirdsRio.exe (0x4ea100): a contact is skipped only when neither body is awake; the awake flag of
+		// a static body is never cleared, so a sleeping body keeps updating its contacts with the ground.
+		bool activeA = bodyA->IsAwake();
+		bool activeB = bodyB->IsAwake();
 
 		// At least one body must be awake and it must be dynamic or kinematic.
 		if (activeA == false && activeB == false)
@@ -285,9 +287,8 @@ void b2ContactManager::AddPair(void* proxyUserDataA, void* proxyUserDataB)
 	}
 	bodyB->m_contactList = &c->m_nodeB;
 
-	// Wake up the bodies
-	bodyA->SetAwake(true);
-	bodyB->SetAwake(true);
+	// AngryBirdsRio.exe (0x4ea250) does not wake the bodies when it creates a contact; they wake when the
+	// contact starts or stops touching (b2Contact::Update).
 
 	++m_contactCount;
 }

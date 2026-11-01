@@ -368,6 +368,7 @@ private:
 	friend class b2Island;
 	friend class b2ContactManager;
 	friend class b2ContactSolver;
+	friend class b2Contact;
 	friend class b2TOISolver;
 	
 	friend class b2DistanceJoint;
@@ -404,6 +405,9 @@ private:
 
 	void Advance(float32 t);
 
+	// AngryBirds.exe 1.6.2 0x4d77f0 (b2Sweep::Advance of Box2D 2.1.0): moves the start of the sweep forward to time t of the step.
+	void AdvanceToi(float32 t);
+
 	b2BodyType m_type;
 
 	uint16 m_flags;
@@ -438,6 +442,10 @@ private:
 	float32 m_angularDamping;
 
 	float32 m_sleepTime;
+	float32 m_inertiaScale;	// AngryBirds.exe (0x4d8ed0) scales the centered inertia by the body definition's inertiaScale
+
+	// AngryBirds.exe 1.6.2 (0x4d77f0): the time the sweep has been advanced to during the global TOI pass of b2World::SolveTOI.
+	float32 m_toiT0;
 
 	void* m_userData;
 };
@@ -787,6 +795,18 @@ inline void b2Body::Advance(float32 t)
 	m_sweep.c = m_sweep.c0;
 	m_sweep.a = m_sweep.a0;
 	SynchronizeTransform();
+}
+
+inline void b2Body::AdvanceToi(float32 t)
+{
+	float32 t0 = m_toiT0;
+	if (t0 < t && 1.0f - t0 > b2_epsilon)
+	{
+		float32 beta = (t - t0) / (1.0f - t0);
+		m_sweep.c0 = (1.0f - beta) * m_sweep.c0 + beta * m_sweep.c;
+		m_sweep.a0 = (1.0f - beta) * m_sweep.a0 + beta * m_sweep.a;
+		m_toiT0 = t;
+	}
 }
 
 inline b2World* b2Body::GetWorld()

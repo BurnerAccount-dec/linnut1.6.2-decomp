@@ -37,6 +37,7 @@ struct b2ContactConstraintPoint
 	float32 normalMass;
 	float32 tangentMass;
 	float32 velocityBias;
+	float32 equalizedMass;	// AngryBirds.exe 0x4e4410: the position solver's effective mass, computed once from the radii at the start of the solve
 };
 
 struct b2ContactConstraint

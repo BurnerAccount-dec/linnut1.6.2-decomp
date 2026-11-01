@@ -92,9 +92,10 @@ void b2CircleShape::ComputeAABB(b2AABB* aabb, const b2Transform& transform, int3
 
 void b2CircleShape::ComputeMass(b2MassData* massData, float32 density) const
 {
-	massData->mass = density * b2_pi * m_radius * m_radius;
+	// AngryBirdsRio.exe (0x4e6950): same terms, same order of the sums
+	massData->mass = density * 3.1415927f * m_radius * m_radius;
 	massData->center = m_p;
 
 	// inertia about the local origin
-	massData->I = massData->mass * (0.5f * m_radius * m_radius + b2Dot(m_p, m_p));
+	massData->I = (m_radius * 0.5f * m_radius + m_p.y * m_p.y + m_p.x * m_p.x) * massData->mass;
 }

@@ -181,7 +181,7 @@ private:
 	friend class b2Controller;
 
 	void Solve(const b2TimeStep& step);
-	void SolveTOI();
+	void SolveTOI(const b2TimeStep& step);
 	void SolveTOI(b2Body* body);
 
 	void DrawJoint(b2Joint* joint);

@@ -60,6 +60,9 @@ public:
 
 	void Solve(const b2TimeStep& step, const b2Vec2& gravity, bool allowSleep);
 
+	// The exe's TOI island (0x4ddae0): no warm starting, contacts before joints, no sleeping.
+	void SolveTOI(const b2TimeStep& subStep);
+
 	void Add(b2Body* body)
 	{
 		b2Assert(m_bodyCount < m_bodyCapacity);

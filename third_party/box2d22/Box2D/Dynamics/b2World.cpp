@@ -558,7 +558,7 @@ void b2World::Solve(const b2TimeStep& step)
 // Find TOI contacts and solve them.
 void b2World::SolveTOI(const b2TimeStep& step)
 {
-	b2Island island(2 * b2_maxTOIContacts, b2_maxTOIContacts, 0, &m_stackAllocator, m_contactManager.m_contactListener);
+	b2Island island(2 * b2_maxTOIContacts, 4 * b2_maxTOIContacts, 0, &m_stackAllocator, m_contactManager.m_contactListener);
 
 	if (m_stepComplete)
 	{
@@ -752,12 +752,8 @@ void b2World::SolveTOI(const b2TimeStep& step)
 			{
 				for (b2ContactEdge* ce = body->m_contactList; ce; ce = ce->next)
 				{
-					if (island.m_bodyCount == island.m_bodyCapacity)
-					{
-						break;
-					}
-
-					if (island.m_contactCount == island.m_contactCapacity)
+					// AngryBirdsRio.exe SolveTOI: the walk over a body's contacts stops at 32 bodies (b2_maxTOIContacts); the contact list has room for more
+					if (island.m_bodyCount >= b2_maxTOIContacts)
 					{
 						break;
 					}

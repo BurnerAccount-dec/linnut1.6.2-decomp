@@ -127,13 +127,12 @@ void b2Body::SetType(b2BodyType type)
 
 	ResetMassData();
 
+	// AngryBirdsRio.exe (0x4e4c60) does not move the proxies or touch them when the type changes: a body that
+	// becomes static only loses its velocity, and the attached contacts are flagged for filtering.
 	if (m_type == b2_staticBody)
 	{
 		m_linearVelocity.SetZero();
 		m_angularVelocity = 0.0f;
-		m_sweep.a0 = m_sweep.a;
-		m_sweep.c0 = m_sweep.c;
-		SynchronizeFixtures();
 	}
 
 	SetAwake(true);
@@ -142,9 +141,9 @@ void b2Body::SetType(b2BodyType type)
 	m_torque = 0.0f;
 
 	// Since the body type changed, we need to flag contacts for filtering.
-	for (b2Fixture* f = m_fixtureList; f; f = f->m_next)
+	for (b2ContactEdge* ce = m_contactList; ce; ce = ce->next)
 	{
-		f->Refilter();
+		ce->contact->FlagForFiltering();
 	}
 }
 
@@ -277,8 +276,7 @@ void b2Body::ResetMassData()
 	{
 		m_sweep.c0 = m_xf.p;
 		m_sweep.c = m_xf.p;
-		m_sweep.a0 = m_sweep.a;
-		return;
+		return;		// the exe (0x4e4a30) leaves a0 alone
 	}
 
 	b2Assert(m_type == b2_dynamicBody);

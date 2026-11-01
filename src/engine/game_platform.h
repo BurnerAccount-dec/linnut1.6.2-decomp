@@ -9,6 +9,7 @@
 //   each frame:  platform.RunFrame(dt);      // = the exe's Game::update (0x408980)
 #pragma once
 #include <memory>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,7 @@
 #include "engine/font.h"
 #include "engine/sprite_sheet.h"
 #include "physics/physics_world.h"
+#include "video/video_player.h"
 
 namespace ab {
 
@@ -64,7 +66,27 @@ public:
     void ResStopAllAudio() override { audio_.StopAll(); }
     bool ResIsAudioPlaying(const std::string& name) override { return audio_.IsActive(name); }
     void ResSetTrackVolume(float volume, int track) override { audio_.SetTrackVolume(volume, track); }
+    // playVideo / openURL: the window hands them to the system (the default video player, the browser); unset = only a message
+    std::function<void(const std::string&)> openExternal;
+    // v2.2: the video plays inside the engine (video/video_player.h). playVideo returns when it is over: videoPump (made by the window) runs
+    // the frames until then. A click or a key skips it. Sound comes from the Windows AAC decoder.
+    void PlayVideo(const std::string& path) override;
+    void StopVideo() override;
+    bool IsVideoPlaying() override { return video_ != nullptr; }
+    void VideoFrame(double dt);          // advances and draws one frame of the video (the caller swaps the buffers)
+    std::function<void()> videoPump;
+    std::unique_ptr<VideoPlayer> video_;
+    int videoTexture_ = -1, videoTextureW_ = 0, videoTextureH_ = 0;
+    void ResOpenURL(const std::string& url) override { if (openExternal) openExternal(url); else std::printf("openURL %s\n", url.c_str()); }
     float ResGetTrackVolume(int track) override { return audio_.TrackVolume(track); }
+    void ResSetAudioSpeed(float speed, int track) override { audio_.SetSpeed(speed, track); }
+    float ResGetAudioSpeed(int track) override { return audio_.Speed(track); }
+    void ResPauseAudio(bool paused, int track) override { audio_.Pause(paused, track); }
+    bool ResIsAudioPaused(int track) override { return audio_.Paused(track); }
+    void ResSetMasterVolume(float v) override { audio_.SetMasterVolume(v); }
+    float ResGetMasterVolume() override { return audio_.MasterVolume(); }
+    void ResSetAudioClipVolume(const std::string& n, float v) override { audio_.SetClipVolume(n, v); }
+    void ResSetAudioClipSpeed(const std::string& n, float s) override { audio_.SetClipSpeed(n, s); }
 
     // fonts and text
     void ResCreateBitmapFont(const std::string& path) override;
@@ -82,12 +104,18 @@ public:
     float ResGetFontMaxDescending() override;
     std::vector<std::string> ClipText(const std::string& group, const std::string& text, float maxWidth, float& widest) override;
     void BeginFrame();
+    bool NeedsSystemCursor() const { return editing_ && !cursorDrawn_; }   // v2.2: an editor whose scripts drew no cursor this frame (2.0.0) is given the system cursor
     void EndFrame();
     const SpriteLibrary& Sprites() const { return sprites_; }
     PhysicsWorld& Physics();      // made on first use: the version of Box2D depends on the game
     // The console of the command prompt window: one typed line (a command such as "box2d 21", or Lua code). Called on the main thread.
     void ConsoleCommand(const std::string& line);
     int requestedBox2D_ = 0;      // 21 or 22 from the console; applied when the next level loads (0 = the game's own)
+    // v2.2: frame pacing, set from the console (fps N, vsync on|off) or the command line (--fps, --vsync); main.cpp applies it
+    int fpsLimit = 0;             // 0 = not limited
+    bool vsync = false;           // off by default: the retail exes were not synchronised to the display either
+    bool vsyncChanged = true;
+    bool TakeVsyncChange(bool& on) { on = vsync; bool c = vsyncChanged; vsyncChanged = false; return c; }
     int birdCollisions = 0, blockCollisions = 0;     // callbacks made so far (for tests)
     const std::vector<std::string>& Log() const { return log_; }
 
@@ -98,6 +126,7 @@ public:
     // The level editor: setEditing(true) while a level is edited, saveLevel(file) writes it over the level file, the folders are made on demand.
     void SetEditing(bool on) override { editing_ = on; }
     void SaveLevel(const std::string& path) override;
+    bool FindSavedLevel(const std::string& path, std::vector<uint8_t>& bytes) override;
     void CreateDirectory(const std::string& path) override;
     bool CheckDirectory(const std::string& path) override;
     // Where settings.lua and highscores.lua live (default: the working folder).
@@ -137,6 +166,8 @@ public:
     int ColliderType(const std::string& n) override { return Physics().ColliderType(n); }
     void SetObjectAlpha(const std::string& n, float a) override { Physics().SetObjectAlpha(n, a); }
     float ObjectAlpha(const std::string& n) override { return Physics().ObjectAlpha(n); }
+    void SetObjectZOrder(const std::string& n, float z) override { Physics().SetObjectZOrder(n, z); }
+    float ObjectZOrder(const std::string& n) override { return Physics().ObjectZOrder(n); }
     void SetColliderRule(int a, int b, bool collide) override { Physics().SetColliderRule(a, b, collide); }
     bool ColliderRule(int a, int b) override { return Physics().ColliderRule(a, b); }
     void SetPolygonRadius(float r) override { Physics().SetPolygonRadius(r); }
@@ -155,11 +186,16 @@ public:
     bool levelParticlesByScript_ = false;
     bool pauseGuard_ = false;
     bool editing_ = false;
+    bool cursorDrawn_ = false;
     bool gameDrawn_ = false, gameDrawnLast_ = false;   // Rio: drawGameNative ran this / the last frame (the particles of a level end with it)
     bool menuParticlesByScript_ = false;      // 2.0.0 draws the level's particles itself, in two layers (drawLevelParticlesNative)
     void SetAlpha(float a) override { state_.alpha = a < 0 ? 0 : (a > 1 ? 1 : a); }
+    void SetTint(float r, float g, float b) override { state_.tintR = r < 0 ? 0 : r; state_.tintG = g < 0 ? 0 : g; state_.tintB = b < 0 ? 0 : b; }
+    void GetTint(float& r, float& g, float& b) override { r = state_.tintR; g = state_.tintG; b = state_.tintB; }
+    void SetRenderExtras(int what, float x, float y) override { if (what == 0) { state_.skewX = x; state_.skewY = y; } else if (what == 1) { state_.bendX = x; state_.bendY = y; } else if (what == 2) state_.z = x; else if (what == 3) state_.blur = x < 0 ? 0 : x; else state_.pixelate = x < 0 ? 0 : x; }
     void ResDrawSprite(const std::string& sprite, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height) override;
     void SetWorldGravity(float x, float y) override { Physics().SetGravity(x, y); }
+    void SetMaxTranslation(float t) override { Physics().SetMaxTranslation(t); }
     void ClearParticles() override { particles_.clear(); }
     void CreateThemeSprite(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, float speedX, int layer) override;
     void ModifyThemeSprite(const std::string& name, float x, float y, float scaleX, float scaleY, float angle, int layer) override;
@@ -171,6 +207,14 @@ public:
     void ScrollThemeLayers(float dt, bool force) override;
     bool IsSeasonsScripts();
     void ResSetClipRect(float x, float y, float w, float h) override;
+    void CanvasInit(int w, int h) override;
+    void CanvasClear(float r, float g, float b, float a) override;
+    void CanvasPaint(const std::string& brush, float x, float y, float w, float h) override;
+    void CanvasDraw(const std::string& mask) override;
+    void CanvasDominant(std::string& first, std::string& second) override;
+    void SetupCompoObject(const std::string& object, const std::vector<CompoItem>& items, float scale) override;
+    bool CanvasMakeSprite(const std::string& name, int width, int height, int pivotX, int pivotY, bool save, const std::string& file) override;
+    bool CanvasLoadSprite(const std::string& name, const std::string& file, int pivotX, int pivotY) override;
     void DrawRect(float r, float g, float b, float a, float x1, float y1, float x2, float y2, bool inWorld) override;
     void DrawLine2D(float x1, float y1, float x2, float y2, float width, float r, float g, float b, float a) override;
 
@@ -190,6 +234,10 @@ public:
     void StartNewTrajectory() override {
         trajSet_ = trajSet_ + 3 > 3 ? 0 : trajSet_ + 3;
         for (int i = 0; i < 3; i++) { trajDots_[trajSet_ + i].clear(); trajPuffs_[trajSet_ + i].clear(); }
+        for (std::string& name : trajCustom_[trajSet_ / 3]) name.clear();
+    }
+    void SetCustomTrajectorySprites(const std::string& a, const std::string& b, const std::string& c, const std::string& d) override {
+        trajCustom_[trajSet_ / 3][0] = a; trajCustom_[trajSet_ / 3][1] = b; trajCustom_[trajSet_ / 3][2] = c; trajCustom_[trajSet_ / 3][3] = d;
     }
     void AddToTrajectory(float i, float x, float y) override { int n = (int)i + trajSet_; if (n >= 1 && n <= 6) trajDots_[n - 1].push_back({x, y}); }
     void AddPuffToTrajectory(float i, float x, float y) override { int n = (int)i + trajSet_; if (n >= 1 && n <= 6) trajPuffs_[n - 1].push_back({x, y}); }
@@ -205,7 +253,12 @@ public:
 
     void SetObjectParameter(const std::string& n, int id, float v) override { Physics().SetObjectParameter(n, id, v); }
     void SetMaterial(const std::string& n, const std::string& m) override { Physics().SetMaterial(n, m); }
-    void SetSprite(const std::string& n, const std::string& s) override { Physics().SetSpriteName(n, s); }
+    // a Hatchery bird (setupCompoObject) keeps its own sprites when the script gives it its flying, special or dead one
+    void SetSprite(const std::string& n, const std::string& s) override {
+        PhysObject* o = Physics().Find(n);
+        if (o && o->sprite.compare(0, 6, "compo:") == 0 && s.compare(0, 6, "compo:") != 0) return;
+        Physics().SetSpriteName(n, s);
+    }
     void SetTexture(const std::string& n, const std::string& t) override { Physics().SetTextureName(n, t); }
     void SetPhysicsEnabled(bool on) override { Physics().SetRunning(on); }
     bool IsPhysicsEnabled() override { return Physics().Frame().running; }
@@ -219,7 +272,18 @@ private:
         float tx = 0, ty = 0, sx = 1, sy = 1, angle = 0, pivotX = 0, pivotY = 0;
         bool flipX = false;              // Rio: the sprite is drawn mirrored
         float alpha = 1;                 // 2.0.0: setRenderState's 8th value and setAlpha (render state +0x40)
+        // v2.2 additions to setRenderState (arguments 9 to 14): shear and bend of what is drawn, and a draw order for sprites
+        float skewX = 0, skewY = 0;      // x += skewX * (y - pivot y); y += skewY * (x - pivot x), before the rotation
+        float bendX = 0, bendY = 0;      // sprites: the sideways shift (pixels) of the middle of the sprite; bendX moves rows, bendY moves columns
+        float bendProfile[9] = {0, 0.383f, 0.707f, 0.924f, 1, 0.924f, 0.707f, 0.383f, 0};   // the shape along the sprite, 9 samples (default: an arch)
+        float tintR = 1, tintG = 1, tintB = 1;   // v2.2: sprites are multiplied by this colour (setRenderState arguments 15 to 17, setTint)
+        float blur = 0;       // v2.2: sprites are drawn 9 times spread over this many pixels (setRenderState argument 18, setBlur)
+        float pixelate = 0;   // v2.2: sprites are drawn in blocks of this many sprite pixels (setRenderState argument 19, setPixelate)
+        float z = 0;                     // sprites with z != 0 wait and are drawn sorted by z when the next other drawing starts
     };
+    struct QueuedQuad { float z; int seq; int tex; float xy[8], uv[8], alpha, r, g, b; };
+    std::vector<QueuedQuad> zQueue_;
+    void FlushZ();                       // draws the waiting sprites, lowest z first (equal z: in the order they were drawn)
     struct TextureInfo { int handle = -1, width = 0, height = 0; };
     const TextureInfo* TextureFor(const SpriteSheet& sheet);
     const TextureInfo* TextureFile(const std::string& path, bool repeat);
@@ -273,6 +337,7 @@ private:
     std::vector<BgLayer> bgLayers_;
     struct ThemeSprite { std::string name, sprite; float x, y, scaleX, scaleY, angle, speedX; int layer; float angleVel = 0; bool flipped = false; };
     std::vector<ThemeSprite> themeSprites_;
+    std::map<std::string, std::string> savedLevels_;   // v2.2: levels saved by the editor this session, by path (see FindSavedLevel)
     void DrawThemeSprites(int layer);
     float themeShift_ = 0;
     std::vector<std::string> fgLayers_;
@@ -280,6 +345,7 @@ private:
     float groundR_ = 0, groundG_ = 0, groundB_ = 0;
     std::string themeTexture_;
     std::vector<TrajectoryPoint> trajDots_[6], trajPuffs_[6];
+    std::string trajCustom_[2][4];      // per set: the three dot sprites and the puff sprite set by setCustomTrajectorySprites (empty = the defaults)
     int trajSet_ = 0;
     const TextureInfo* tileTexture_ = nullptr;          // set while a textured block is drawn
 
@@ -290,11 +356,28 @@ private:
     bool hasReq_ = false;
     float bgR_ = 1, bgG_ = 1, bgB_ = 1;           // 0..1; white until the scripts set it (the first splash is on white)
     RenderState state_;
+    struct PendingCursor { std::string name; float x, y; int vAnchor, hAnchor; bool sized; float width, height; RenderState st; };
+    bool drawingCursor_ = false;
+    std::vector<PendingCursor> cursors_;   // v2.2: the hand cursors of this frame, drawn at the very end so nothing covers them
     std::map<std::string, TextureInfo> textures_;
     ScriptHost* scripts_ = nullptr;
     std::string dataRoot_;
     std::unique_ptr<PhysicsWorld> physics_;
     SpriteLibrary sprites_;
+    // the Hatchery's egg painter canvas: colour, which brush colour painted each pixel, the pixels the egg mask shows
+    struct PaintCanvas {
+        int w = 0, h = 0;
+        std::vector<uint8_t> rgba, owner, visible;
+        std::vector<std::string> brushes;      // owner value i + 1 is brushes[i] (the colour name from H_PAINT_BRUSH_<COLOR>)
+        std::string mask;                      // the mask sprite of the last draw
+        float scaleX = 1, scaleY = 1;          // its scale then: canvas pixels per mask pixel
+        int texture = -1, texW = 0, texH = 0;
+        int revision = 0, analysed = -1, composedRev = -1;
+        std::string first, second;
+    } canvas_;
+    std::map<std::string, Image> brushImages_;   // the pixels of the sheets brushes are cut from
+    const Image* SheetImage(const SpriteSheet& sheet);
+    bool ComposeCanvas(const std::string& mask, int outW, int outH, float scaleX, float scaleY, Image& out, bool markVisible);
     AudioMixer audio_;
     std::map<std::string, BitmapFont> fonts_;          // by file name without folder and extension
     std::map<std::string, TextGroup> textGroups_;

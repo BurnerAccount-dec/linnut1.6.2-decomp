@@ -15,6 +15,10 @@ namespace ab {
 
 extern const unsigned char kEditorClassicLua[];
 extern const unsigned int kEditorClassicLuaSize;
+extern const unsigned char kHatcheryNativesLua[];
+extern const unsigned int kHatcheryNativesLuaSize;
+extern const unsigned char kSpaceNativesLua[];
+extern const unsigned int kSpaceNativesLuaSize;
 
 namespace {
 // Angry Birds 1.6.3.1 ships its level editor with updateEditor emptied out (the menus, saving and every helper are still there);
@@ -84,7 +88,24 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
     lua_setfield(L_, -2, "particles");
     lua_pop(L_, 1);
 
+    // Angry Birds Island HD (Hatchery) tile manager natives (hatchery_natives.lua); only functions, nothing runs until a script calls them
+    lua_getfield(L_, LUA_REGISTRYINDEX, "ab.env");
+    if (luaL_loadbuffer(L_, (const char*)kHatcheryNativesLua, kHatcheryNativesLuaSize, "hatchery_natives.lua") == 0) {
+        lua_pushvalue(L_, -2);
+        if (lua_pcall(L_, 1, 0, 0) != 0) { std::fprintf(stderr, "hatchery natives: %s\n", lua_tostring(L_, -1)); lua_pop(L_, 1); }
+    } else { std::fprintf(stderr, "hatchery natives: %s\n", lua_tostring(L_, -1)); lua_pop(L_, 1); }
+    lua_pop(L_, 1);
+
     SetString("scriptPath", config_.scriptPath);
+    if (!config_.commonScriptPath.empty()) {          // Angry Birds Space
+        SetString("commonScriptPath", config_.commonScriptPath);
+        lua_getfield(L_, LUA_REGISTRYINDEX, "ab.env");
+        if (luaL_loadbuffer(L_, (const char*)kSpaceNativesLua, kSpaceNativesLuaSize, "space_natives.lua") == 0) {
+            lua_pushvalue(L_, -2);
+            if (lua_pcall(L_, 1, 0, 0) != 0) { std::fprintf(stderr, "space natives: %s\n", lua_tostring(L_, -1)); lua_pop(L_, 1); }
+        } else { std::fprintf(stderr, "space natives: %s\n", lua_tostring(L_, -1)); lua_pop(L_, 1); }
+        lua_pop(L_, 1);
+    }
     SetString("imagePath", config_.imagePath);
     SetString("fontPath", config_.fontPath);
     SetString("audioPath", config_.audioPath);
@@ -225,6 +246,7 @@ bool ScriptHost::RunFile(const std::string& path) {
 }
 
 bool ScriptHost::LoadScripts() {
+    if (!config_.commonScriptPath.empty()) return RunFile(config_.commonScriptPath + "/gamelogic.lua");   // Space: its gamelogic.lua loads the rest
     const char* files[] = {"/loadlist.lua", "/gamelogic.lua"};
     for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
         if (!RunFile(config_.scriptPath + files[i])) return false;
@@ -304,6 +326,16 @@ bool ScriptHost::LoadScripts() {
             "end\n");
     }
     EnsureClassicEditor(L_);
+    // A level played from the editor (Shift+P) leaves through returnToEditor when the pause key is pressed, but the pause button of the
+    // game opened the pause menu, whose exit button then went to a menu page that does not exist while editing (updateMenuPage: field 'page' is nil).
+    // The pause button now does what the pause key does.
+    RunString(
+        "local original = goToMenu\n"
+        "if _G.type(original) == \"function\" and _G.type(returnToEditor) == \"function\" then\n"
+        "    function goToMenu()\n"
+        "        if startedFromEditor then returnToEditor() else original() end\n"
+        "    end\n"
+        "end\n");
     // The scripts' debug tools (fps 0/F, background 9, hit boxes / sleeping objects 8, level clear C, shift+arrows to change level, ...)
     // are all behind `not releaseBuild` or cheatsEnabled. releaseBuild itself must stay true: false unlocks every level and episode
     // (resetSettings, the level select). So the cheats are switched on, and the two per-frame functions that read the debug keys run
