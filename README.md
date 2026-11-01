@@ -2,7 +2,7 @@
 
 An unofficial, from-scratch reimplementation of the Angry Birds PC engine, rebuilt from a Ghidra decompile of the 1.6.2 executable. It is written in C++ (SDL2, OpenGL 1.x, Lua 5.1, Box2D 2.1 and 2.2) and does not re-implement the game logic: it runs the game's **original Lua scripts** and provides the native functions those scripts expect, so levels, menus, physics and scoring behave like the original.
 
-Version 2.2.1. What works, per game:
+Version 2.2.2. What works, per game:
 
 | Game | Play | Level editor | Notes |
 |---|---|---|---|
@@ -26,9 +26,11 @@ Version 2.2.1. What works, per game:
 - Saves that are shared with the original game (both the encrypted and the plain format). The save folder is `%APPDATA%\<publisher>\<product>` from the game's `config.lua`.
 - The window is DPI-aware like the original exes, resizing it re-lays the game out (the scripts' `resolutionChanged`), and frame times are smoothed to avoid stutter.
 
-## New in 2.2.1
+## New in 2.2.2
 
 **Draw order and z.** The `z` of `setRenderState` and the `z_order` of blocks are now one scale: a sprite drawn after `drawGameNative` with a lower `z` than some blocks is drawn below those blocks, and the other way round. Without any `z` set, every game draws exactly as before (compared pixel for pixel on Rio levels and the Classic menu). See "Draw order and z" below.
+
+## New in 2.2.1
 
 **Choose the Box2D version in `config.lua`.** Add `box2d = 21` (Box2D 2.1, the Classic and Seasons physics) or `box2d = 22` (Box2D 2.2, the Rio physics) to the game's `config.lua`; `"2.1.1"` and `"2.2.0"` work too. Without the line the engine uses the game's own, as before. The console command `box2d` overrides it while the game runs, and the config overrides the `AB_BOX2D` variable. The version is picked when a level loads.
 
