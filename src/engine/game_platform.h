@@ -279,11 +279,19 @@ private:
         float tintR = 1, tintG = 1, tintB = 1;   // v2.2: sprites are multiplied by this colour (setRenderState arguments 15 to 17, setTint)
         float blur = 0;       // v2.2: sprites are drawn 9 times spread over this many pixels (setRenderState argument 18, setBlur)
         float pixelate = 0;   // v2.2: sprites are drawn in blocks of this many sprite pixels (setRenderState argument 19, setPixelate)
-        float z = 0;                     // sprites with z != 0 wait and are drawn sorted by z when the next other drawing starts
+        float z = 0;                     // setRenderState argument 13: the sprite is placed among the game's objects by z (see EmitQuad); 0 = drawn in call order
     };
-    struct QueuedQuad { float z; int seq; int tex; float xy[8], uv[8], alpha, r, g, b; };
+    // v2.2.1: everything drawn in a frame waits in one list and is sent to the backend by FlushZ (clip changes and the end of the frame).
+    // kind 0 = drawn in call order; 1 = a game object (drawGameNative), key = its z_order; 2 = a sprite drawn with a render state z, key = z.
+    // Kind 1 and 2 are put in z order against each other (equal z: the order they were drawn); kind 1 keeps its own order, kind 0 never moves.
+    struct QueuedQuad { int kind; float key; int tex, mask; float xy[8], uv[8], tuv[8], alpha, r, g, b; };
     std::vector<QueuedQuad> zQueue_;
-    void FlushZ();                       // draws the waiting sprites, lowest z first (equal z: in the order they were drawn)
+    int keyedCount_ = 0, spriteCount_ = 0;   // kind 1 + 2, and kind 2, in zQueue_
+    bool drawingNative_ = false;             // DrawGame is drawing an object
+    float nativeKey_ = 0;                    // its z_order
+    QueuedQuad MakeQuad(int tex, float alpha, float r, float g, float b);
+    void EmitQuad(QueuedQuad& q);
+    void FlushZ();                       // draws the waiting quads in list order
     struct TextureInfo { int handle = -1, width = 0, height = 0; };
     const TextureInfo* TextureFor(const SpriteSheet& sheet);
     const TextureInfo* TextureFile(const std::string& path, bool repeat);

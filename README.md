@@ -28,6 +28,8 @@ Version 2.2.1. What works, per game:
 
 ## New in 2.2.1
 
+**Draw order and z.** The `z` of `setRenderState` and the `z_order` of blocks are now one scale: a sprite drawn after `drawGameNative` with a lower `z` than some blocks is drawn below those blocks, and the other way round. Without any `z` set, every game draws exactly as before (compared pixel for pixel on Rio levels and the Classic menu). See "Draw order and z" below.
+
 **Choose the Box2D version in `config.lua`.** Add `box2d = 21` (Box2D 2.1, the Classic and Seasons physics) or `box2d = 22` (Box2D 2.2, the Rio physics) to the game's `config.lua`; `"2.1.1"` and `"2.2.0"` work too. Without the line the engine uses the game's own, as before. The console command `box2d` overrides it while the game runs, and the config overrides the `AB_BOX2D` variable. The version is picked when a level loads.
 
 ## New in 2.2
@@ -40,10 +42,10 @@ Version 2.2.1. What works, per game:
 |---|---|
 | `skewX`, `skewY` | shear about the pivot (units: shift per unit of height / width), applied before the rotation |
 | `bendX`, `bendY` | how far the middle of the sprite is pushed sideways / up, in pixels; drawn as an 8x8 grid |
-| `z` | draw order: sprites with a non-zero `z` are held back and drawn sorted by `z` (low first, stable) at the next flush (any rect, line, clip change, string, game draw or the end of the frame) |
+| `z` | draw order of the sprite (and of `drawRect` / `drawLine2D`) against the game's blocks and other sprites that use `z`; 0 means "in the order the script drew it". The same scale as a block's `z_order`. See "Draw order and z" |
 | `bendFunction` | optional Lua function `f(t, 0, 1, 1)` with the same arguments as the gamelogic tweens (`tweenLinear(currentTime, startValue, changeOfValue, duration)`); it is sampled 9 times and its curve shapes the bend. Without it the bend is an arch (sine) |
 
-`setObjectZOrder(name, z)` / `getObjectZOrder(name)` set the draw order of one block (Rio's own `zOrder` still works; in other games a group with a z-ordered object is sorted by it). The debug overlays drawn by `drawRect` and `drawLine` (the 8 key) now rotate with the body.
+`setObjectZOrder(name, z)` / `getObjectZOrder(name)` set the draw order of one block (Rio's own `zOrder` still works; in other games a group with a z-ordered object is sorted by it). Both kinds of z are on one scale, see "Draw order and z". The debug overlays drawn by `drawRect` and `drawLine` (the 8 key) now rotate with the body.
 
 **Speed.** `physicsSpeedFactor` (Lua global) now changes only the physics step rate; the scripts' `update(dt)` is untouched. `gameSpeedFactor` multiplies the time step of everything (physics, scripts, animation). Both are read every frame, so `gameSpeedFactor = 0.5` in a script or `set gameSpeedFactor 0.5` in the console works. Defaults 1.
 
@@ -204,6 +206,39 @@ Example, in a script that has the table above:
 ### Polygon skin
 
 `setPolygonRadius(r)` / `getPolygonRadius()`: the collision skin of boxes and polygons created afterwards (Rio, Box2D 2.2 only; default 0.1, the skin only decides when blocks count as touching, it does not push stacked blocks apart).
+
+### Draw order and z
+
+Everything the engine draws in a frame is first collected in one list and sent to the screen at the end of the frame, or when the clip rectangle changes. Nothing is drawn "now", so a script can place a sprite below something it already drew.
+
+**What has a z.**
+
+| Drawn by | z it has | Where it sits |
+|---|---|---|
+| a block, bird or other physics object (`drawGameNative`) | its `z_order` (from the level / block definition, or `setObjectZOrder`). In Rio every object has one; in the earlier games it counts only when `setObjectZOrder` was used, otherwise it is 0 | the game draws them in its own groups (see below) |
+| a sprite, `drawRect` or `drawLine2D` after `setRenderState(..., z)` with `z` not 0 | that `z` | placed by z, see the rule below |
+| everything else: sprites with `z` 0, text, backgrounds, foregrounds, particles, trajectory dots, the hand cursor | none | in the order the script (or the engine) drew it; never moved |
+
+Because `z` is reset by `setRenderState` like the other render state values, set it right before the sprites that need it and set it back to 0 afterwards.
+
+**The groups of `drawGameNative`.** The game draws the physics objects in this order, whatever their z: static blocks with `z_order` below 5, the other blocks below 5, the trajectory dots and puffs, the birds (and objects that draw with the birds) below 5, and last everything with `z_order` 5 or more. Inside a group Rio sorts by `z_order` (equal z: creation order); the earlier games keep creation order unless `setObjectZOrder` was used for an object of that group. The objects therefore keep their own order, and a sprite with `z` is fitted around them.
+
+**The rule for a sprite with a z.** The sprite is put right after the last object or z sprite that has a `z` lower than or equal to its own, among those drawn so far. If there is none, it goes right before the first one with a higher `z`. When nothing with a `z` has been drawn yet, it stays where it is. An object or sprite drawn *later* with a lower `z` is put below it the same way, so the order does not depend on whether the script draws before or after `drawGameNative`. Equal `z` keeps the order they were drawn in. Sprites with `z` 0 are not moved by any of this.
+
+Examples (Rio, a block of `z_order` 5 and a bird of 0 on screen):
+
+```lua
+drawGameNative()
+setRenderState(0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 3)   -- z 3
+res.drawSprite("SOME_SPRITE", x, y)    -- above the bird (0) and every block below 3, below the block of z 5
+setRenderState(0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, -1)  -- z -1
+res.drawSprite("SOME_SPRITE", x, y)    -- below all objects, above the background drawn before drawGameNative
+setRenderState(0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0)   -- back to "in drawing order"
+```
+
+Because the objects are drawn in groups, an object of a higher `z` that sits in an earlier group (a block of `z_order` 4 is drawn before the birds) stays below a sprite of `z` 3 that was placed after the last object not higher than 3. If you need a sprite above or below one particular object, give both the exact `z_order` you want with `setObjectZOrder` and use a `z` between them.
+
+**Limits.** A clip rectangle change (`setClipRect` and friends) and the end of the frame close the list: a sprite cannot be placed below something that was drawn before the clip changed. The hand cursor is always drawn last, on top. Test with `drawRect(r, g, b, a, x1, y1, x2, y2, true)` (the last argument keeps the render state, so the rect takes the `z` you set).
 
 ## Native function summary
 
