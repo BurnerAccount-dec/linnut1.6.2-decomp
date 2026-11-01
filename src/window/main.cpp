@@ -110,6 +110,7 @@ struct WindowConfig {
     std::string publisher = "Rovio";
     int width = 1280, height = 720;
     bool fullscreen = false, showCursor = true;
+    int box2d = 0;                                  // v2.2.1: config.lua box2d = 21 or 22 forces the physics library (0 = the game's own)
 };
 
 static void ReadConfigLua(const std::string& path, WindowConfig& out) {
@@ -126,6 +127,14 @@ static void ReadConfigLua(const std::string& path, WindowConfig& out) {
         lua_getglobal(L, "height"); if (lua_isnumber(L, -1)) out.height = (int)lua_tonumber(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "fullscreen"); if (lua_isboolean(L, -1)) out.fullscreen = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
         lua_getglobal(L, "showCursor"); if (lua_isboolean(L, -1)) out.showCursor = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
+        lua_getglobal(L, "box2d");                  // 21, 22, "2.1.1", "2.2.0" ...
+        if (lua_isstring(L, -1)) {
+            std::string v = lua_tostring(L, -1);
+            if (v == "21" || v.compare(0, 3, "2.1") == 0) out.box2d = 21;
+            else if (v == "22" || v.compare(0, 3, "2.2") == 0) out.box2d = 22;
+            else std::printf("config: box2d = %s is not 21 or 22, ignored\n", v.c_str());
+        }
+        lua_pop(L, 1);
         std::printf("config: %s (window %dx%d, fullscreen %d, showCursor %d)\n", path.c_str(), out.width, out.height, out.fullscreen, out.showCursor);
     }
     lua_close(L);
@@ -329,7 +338,7 @@ static int GameMain(int argc, char** argv) {
         if (f) { std::fclose(f); configPath = beside; } else configPath = "config.lua";
     }
     ReadConfigLua(configPath, wc);
-    if (shotFrames) { WindowConfig keep = wc; wc = WindowConfig(); if (testW > 0) { wc.width = testW; wc.height = testH; } wc.imagePath = keep.imagePath; wc.fontPath = keep.fontPath; wc.showCursor = keep.showCursor; }   // test runs use the default window
+    if (shotFrames) { WindowConfig keep = wc; wc = WindowConfig(); if (testW > 0) { wc.width = testW; wc.height = testH; } wc.imagePath = keep.imagePath; wc.fontPath = keep.fontPath; wc.showCursor = keep.showCursor; wc.box2d = keep.box2d; }   // test runs use the default window
 
     BootConfig cfg;
     cfg.scriptPath = scripts;
@@ -347,6 +356,7 @@ static int GameMain(int argc, char** argv) {
         bool ok = setCtx && setCtx((HANDLE)-4);            // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
         if (!ok) ok = SetProcessDPIAware() != 0;
         std::printf("dpi awareness: %s\n", ok ? "on" : "not set (already fixed by the system or the exe's compatibility settings)");
+        std::printf("engine build: %s %s\n", __DATE__, __TIME__);
         SDL_SetHint("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2");
         SDL_SetHint("SDL_WINDOWS_DPI_SCALING", "0");
     }
@@ -431,6 +441,10 @@ static int GameMain(int argc, char** argv) {
     platform.SetBackend(&backend, pw, ph);
     ScriptHost host(platform, cfg);
     platform.Attach(host);
+    if (wc.box2d) {
+        platform.requestedBox2D_ = wc.box2d;
+        std::printf("config: Box2D %s forced by config.lua\n", wc.box2d == 21 ? "2.1.1" : "2.2.0");
+    }
     host.RunString(("videoPath = \"" + wc.videoPath + "\"").c_str());       // v2.2: a script (or config.lua) can change it; playVideo(videoPath .. "/" .. name)
     if (!host.LoadScripts()) { std::printf("LOAD FAILED: %s\n", host.LastError().c_str()); return 1; }
     if (!host.CreateStartUpAssets()) { std::printf("createStartUpAssets FAILED: %s\n", host.LastError().c_str()); return 1; }

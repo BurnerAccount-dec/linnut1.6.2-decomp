@@ -2,7 +2,7 @@
 
 An unofficial, from-scratch reimplementation of the Angry Birds PC engine, rebuilt from a Ghidra decompile of the 1.6.2 executable. It is written in C++ (SDL2, OpenGL 1.x, Lua 5.1, Box2D 2.1 and 2.2) and does not re-implement the game logic: it runs the game's **original Lua scripts** and provides the native functions those scripts expect, so levels, menus, physics and scoring behave like the original.
 
-Version 2.2. What works, per game:
+Version 2.2.1. What works, per game:
 
 | Game | Play | Level editor | Notes |
 |---|---|---|---|
@@ -25,6 +25,10 @@ Version 2.2. What works, per game:
 - Menus, level select, tutorials, pause, restart and level-complete flows in all supported versions, including Seasons 2.2.0's theme menus (parallax foregrounds) and its own in-game cursor.
 - Saves that are shared with the original game (both the encrypted and the plain format). The save folder is `%APPDATA%\<publisher>\<product>` from the game's `config.lua`.
 - The window is DPI-aware like the original exes, resizing it re-lays the game out (the scripts' `resolutionChanged`), and frame times are smoothed to avoid stutter.
+
+## New in 2.2.1
+
+**Choose the Box2D version in `config.lua`.** Add `box2d = 21` (Box2D 2.1, the Classic and Seasons physics) or `box2d = 22` (Box2D 2.2, the Rio physics) to the game's `config.lua`; `"2.1.1"` and `"2.2.0"` work too. Without the line the engine uses the game's own, as before. The console command `box2d` overrides it while the game runs, and the config overrides the `AB_BOX2D` variable. The version is picked when a level loads.
 
 ## New in 2.2
 
@@ -112,7 +116,17 @@ Rio's exe contains a Box2D 2.2.0 trunk build with its own time of impact solver,
 - `Island::SolveTOI` works on the earliest-impact contact, advances each body's sweep, and the "leap of faith" that commits the new positions applies to **every** body of the island, not only the two bodies of the contact.
 - The group of bodies of a time of impact island stops growing at 32 bodies (`b2_maxTOIContacts`), the contact list has room for 4 times that.
 - Contact partition, the sleep condition (it no longer depends on whether the position solver finished), the position solver's mass normalisation, its -1.5 x linear slop threshold and the TOI position solver (which moves both bodies) match the exe. Constants: linear slop 0.05, TOI target 0.15, tolerance 0.0125, 20 position iterations, Baumgarte 0.75.
-- Rio instruction matching (v2.4): the position solver subtracts both radii in full (`b2_solverSkinFraction` = 1), the circle manifold returns the normal (1, 0) for coinciding centres, revolute and prismatic joints use the exe's 2.1-style Init / SolveVelocity / SolvePosition (including the large-detachment step), `b2Mat33::Solve33` uses the exe's term order, `b2Body::SetType` / `ResetMassData`, `AddPair` (no waking) and `Collide` (awake test) follow the exe, and the world is stepped with 10/10 iterations. Smuggler's Plane 1-10 still holds and 12-15 stays stable.
+- Rio instruction matching (v2.2): the position solver subtracts both radii in full (`b2_solverSkinFraction` = 1), the circle manifold returns the normal (1, 0) for coinciding centres, revolute and prismatic joints use the exe's 2.1-style Init / SolveVelocity / SolvePosition (including the large-detachment step), `b2Mat33::Solve33` uses the exe's term order, `b2Body::SetType` / `ResetMassData`, `AddPair` (no waking) and `Collide` (awake test) follow the exe, and the world is stepped with 10/10 iterations. Smuggler's Plane 1-10 still holds and 12-15 stays stable.
+
+### Physics: how closely it follows the exes
+
+The Box2D code of each game was compared, function by function, with the Ghidra decompile of that game's exe:
+
+- **Angry Birds Rio 1.4.2** (`AngryBirdsRio.exe`, Box2D 2.2.0 trunk with 2.1-style joints): every Box2D function the engine uses was compared and made to follow the exe, including the order of the floating point terms. That covers the world step and solve, the time of impact pass, the contact manager (AddPair, Collide), the contact and position solvers and the polygon / circle manifolds, the island solve, the revolute, prismatic, weld and distance joints, bodies (SetType, mass data), the shapes' mass, centroid and ray casts, the GJK distance routine, and the dynamic tree and broadphase (the exe has the older 2.2.0 tree with a rebalance pass after each pair update, which decides the order contacts are created in).
+- **Angry Birds 1.6.2** (Box2D 2.1.0): the world, the time of impact pass, the island and contact solvers, the joints and the collision functions follow the exe.
+- **Angry Birds 2.0.0**: its decompile was compared with the 1.6.2 one. Of the Box2D functions, all but a few dozen are identical after the names are stripped, and the rest differ only in addresses, so 2.0.0 runs the same physics as 1.6.2.
+
+What cannot be matched is the last bit of `sin`, `cos` and `sqrt`: the exes call the x87 versions, the engine uses the host's math library. Apart from that the physics in these games is the exes' physics. This was done by reading the decompiled code, not by comparing with recordings of the retail games, so a mistake in a function the engine does not run (or in a case no level reaches) would not have shown up.
 
 ### Drawing and speed
 
@@ -273,9 +287,9 @@ This writes `dec` next to the exe (or give a folder: `--decrypt C:\somewhere\dec
 
 - 2.0.0: a faint flash of the pause page after the tutorials.
 - Editors: the Seasons editors start with the camera zoomed out on an empty "new level" page; a level that has no birds crashes when playtested (Shift+P), as it would in the original. Ctrl+S writes into the game's `data/levels` folder, so a game installed in `C:\Program Files (x86)` needs the engine started as administrator (or the game copied elsewhere).
-- Rio: other levels than Mauro's, Smuggler's Plane 12-8 and 12-15 were not compared with the retail exe; LevelPL2_309 and Smuggler's Plane 11-10 are open.
+- Rio: LevelPL2_309 is open. Smuggler's Plane 11-10 and the rest of Rio's physics were checked by the author against the retail game and behave the same. The physics was matched against the decompiled code, not retail recordings (see "Physics: how closely it follows the exes").
 - Angry Birds Space: starts and shows its splash screen, but levels do not load yet (see "Changes since 2.1").
-- 2.2: Smuggler's Plane 11-10, Mauro's early score points and Golden Beachball 5 were not reproduced in the test harness. Ham 'em High 12-1 creeps slightly after a first load and settles fully after a restart (Box2D contact order, not fixed). The Media Foundation picture path of `playVideo` (the case of a video with sound but no picture, i.e. a Main or High profile file) was written without a Windows compiler; the built-in baseline decoder was tested with a real iOS video.
+- 2.2: Mauro's early score points and Golden Beachball 5 were not reproduced in the test harness. Ham 'em High 12-1 creeps slightly after a first load and settles fully after a restart (Box2D contact order, not fixed).
 - A few natives are not implemented (for example the colour table behind `drawBoxNative` and `setupCompoObject`).
 - Windows only so far; the code is plain SDL2 and should port, but only Windows is tested.
 
