@@ -79,6 +79,7 @@ struct PhysObject : FrameObject {
     float getUpTimer = 0;                            // +0x9c
     int colliderType = 0;                            // setColliderType (Angry Birds 3.0.1 / Seasons): 0 basic, 1 eagle, 2 static, 3 bird, 4 pig, 5 ghost, 6 sticky
     float alpha = 1;                                 // setObjectAlpha (engine addition): drawGameNative draws the object with this transparency, 0 invisible .. 1 solid
+    bool zSet = false;                               // setObjectZOrder was used: the object is drawn by zOrder in every game (Rio always sorts by it)
 };
 
 // The contact that is being reported, as far as the game code touches it.
@@ -98,6 +99,10 @@ struct BodyInfo {
 class PhysicsWorld {
 public:
     virtual ~PhysicsWorld() {}
+
+    // v2.2: the game starts its levels with every block asleep (a level authored at rest stays still until something touches it);
+    // a world used on its own (the tests) creates awake bodies
+    bool startAsleep = false;
 
     virtual Box2DVersion Version() const = 0;
     // the skin of the boxes and polygons that are created from now on (Box2D 2.2.0 only; 0 for 2.1.1, which has none)
@@ -151,6 +156,8 @@ public:
     int ColliderType(const std::string& n) const;
     void SetObjectAlpha(const std::string& n, float a);       // 0..1, clamped
     float ObjectAlpha(const std::string& n) const;            // -1 if there is no such object
+    void SetObjectZOrder(const std::string& n, float z);     // draw order: higher is drawn later (in front)
+    float ObjectZOrder(const std::string& n) const;          // -1e9 if there is no such object
     void SetColliderRule(int a, int b, bool collide);
     bool ColliderRule(int a, int b) const;
     void RemoveJointsFromObject(const std::string& n);
@@ -168,6 +175,8 @@ public:
     virtual void Step(float dt, int velocityIterations, int positionIterations) = 0;
     virtual void ClearForces() = 0;
     virtual void SetGravity(float x, float y) = 0;
+    // the scripts' setMaxTranslation: the longest distance a body moves in one step (2.0 when a level loads)
+    virtual void SetMaxTranslation(float t) { (void)t; }
     virtual void GetGravity(float& x, float& y) const = 0;
     virtual BodyInfo Inspect(const std::string& name) const = 0;
     // motor speed and distance-joint frequency / damping of a joint, for the tests; false: no such joint
@@ -196,6 +205,7 @@ protected:
         std::string name, end1, end2;
         void* joint = nullptr;            // the Box2D joint, only the version's code looks inside
         int coordType = 0;
+        bool backAndForth = false;        // v2.2: a motor with limits that reverses by itself at each limit (the exe only has checkJointLimits for Lua to call)
         std::unique_ptr<JointView> view;
     };
     // type-5 joints: no Box2D joint, just "when end1 is removed, end2 is destroyed after destroyTimer"

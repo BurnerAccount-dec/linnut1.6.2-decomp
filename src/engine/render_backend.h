@@ -16,6 +16,8 @@ public:
     // Returns a texture handle (>= 0).
     // repeat: the texture wraps (for tiled fills) instead of clamping at its edges.
     virtual int CreateTexture(const Image& image, bool repeat = false) = 0;
+    // v2.2: replaces the pixels of a texture made with CreateTexture (a video frame); the size must stay the same
+    virtual void UpdateTexture(int texture, const Image& image) { (void)texture; (void)image; }
     // Starts a frame in a space of width x height screen units; clears to the colour (0..1).
     virtual void BeginFrame(int width, int height, float r, float g, float b) = 0;
     // A quad with corners in the order top-left, top-right, bottom-right, bottom-left (xy: 4 x,y pairs).
@@ -30,6 +32,7 @@ public:
 
 // Draws on the CPU into an RGBA buffer. Slow, but needs nothing, and gives the same picture every time.
 class SoftwareBackend : public RenderBackend {
+    void UpdateTexture(int texture, const Image& image) override { if (texture >= 0 && texture < (int)textures_.size()) textures_[texture] = image; }
 public:
     int CreateTexture(const Image& image, bool repeat = false) override;
     void BeginFrame(int width, int height, float r, float g, float b) override;

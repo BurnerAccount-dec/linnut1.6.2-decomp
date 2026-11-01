@@ -87,12 +87,15 @@ b2ContactSolver::b2ContactSolver(b2ContactSolverDef* def)
 		b2ContactPositionConstraint* pc = m_positionConstraints + i;
 		pc->indexA = bodyA->m_islandIndex;
 		pc->indexB = bodyB->m_islandIndex;
-		pc->invMassA = bodyA->m_invMass;
-		pc->invMassB = bodyB->m_invMass;
+		// AngryBirdsRio.exe b2ContactSolver::SolvePositionConstraints (0x4f41a0) / SolveTOIPositionConstraints (0x4f4520):
+		// the position solver uses invMass = mass * invMass and invI = mass * invI (1 for every dynamic body, 0 for static),
+		// not the true inverse mass; the velocity solver keeps the real ones.
+		pc->invMassA = bodyA->m_mass * bodyA->m_invMass;
+		pc->invMassB = bodyB->m_mass * bodyB->m_invMass;
 		pc->localCenterA = bodyA->m_sweep.localCenter;
 		pc->localCenterB = bodyB->m_sweep.localCenter;
-		pc->invIA = bodyA->m_invI;
-		pc->invIB = bodyB->m_invI;
+		pc->invIA = bodyA->m_mass * bodyA->m_invI;
+		pc->invIB = bodyB->m_mass * bodyB->m_invI;
 		pc->localNormal = manifold->localNormal;
 		pc->localPoint = manifold->localPoint;
 		pc->pointCount = pointCount;
@@ -622,10 +625,19 @@ struct b2PositionSolverManifold
 			{
 				b2Vec2 pointA = b2Mul(xfA, pc->localPoint);
 				b2Vec2 pointB = b2Mul(xfB, pc->localPoints[0]);
-				normal = pointB - pointA;
-				normal.Normalize();
+				// AngryBirdsRio.exe (0x4f2da0): coinciding centres give the normal (1, 0)
+				b2Vec2 d = pointA - pointB;
+				if (b2Dot(d, d) <= b2_epsilon * b2_epsilon)
+				{
+					normal.Set(1.0f, 0.0f);
+				}
+				else
+				{
+					normal = pointB - pointA;
+					normal.Normalize();
+				}
 				point = 0.5f * (pointA + pointB);
-				separation = b2Dot(pointB - pointA, normal) - (pc->radiusA + pc->radiusB) * b2_solverSkinFraction;
+				separation = (b2Dot(pointB - pointA, normal) - pc->radiusA * b2_solverSkinFraction) - pc->radiusB * b2_solverSkinFraction;
 			}
 			break;
 
@@ -635,7 +647,7 @@ struct b2PositionSolverManifold
 				b2Vec2 planePoint = b2Mul(xfA, pc->localPoint);
 
 				b2Vec2 clipPoint = b2Mul(xfB, pc->localPoints[index]);
-				separation = b2Dot(clipPoint - planePoint, normal) - (pc->radiusA + pc->radiusB) * b2_solverSkinFraction;
+				separation = (b2Dot(clipPoint - planePoint, normal) - pc->radiusA * b2_solverSkinFraction) - pc->radiusB * b2_solverSkinFraction;
 				point = clipPoint;
 			}
 			break;
@@ -646,7 +658,7 @@ struct b2PositionSolverManifold
 				b2Vec2 planePoint = b2Mul(xfB, pc->localPoint);
 
 				b2Vec2 clipPoint = b2Mul(xfA, pc->localPoints[index]);
-				separation = b2Dot(clipPoint - planePoint, normal) - (pc->radiusA + pc->radiusB) * b2_solverSkinFraction;
+				separation = (b2Dot(clipPoint - planePoint, normal) - pc->radiusA * b2_solverSkinFraction) - pc->radiusB * b2_solverSkinFraction;
 				point = clipPoint;
 
 				// Ensure normal points from A to B
@@ -737,7 +749,8 @@ bool b2ContactSolver::SolvePositionConstraints()
 
 	// We can't expect minSpeparation >= -b2_linearSlop because we don't
 	// push the separation above -b2_linearSlop.
-	return minSeparation >= -3.0f * b2_linearSlop;
+	// exe 0x4f41a0: -0.075 = -1.5 linearSlops
+	return minSeparation >= -1.5f * b2_linearSlop;
 }
 
 // Sequential position solver for position constraints.
@@ -755,21 +768,14 @@ bool b2ContactSolver::SolveTOIPositionConstraints(int32 toiIndexA, int32 toiInde
 		b2Vec2 localCenterB = pc->localCenterB;
 		int32 pointCount = pc->pointCount;
 
-		float32 mA = 0.0f;
-		float32 iA = 0.0f;
-		if (indexA == toiIndexA || indexA == toiIndexB)
-		{
-			mA = pc->invMassA;
-			iA = pc->invIA;
-		}
-
+		// AngryBirdsRio.exe (0x4f4520) is the same code as the regular position solver with the 0.75 factor:
+		// both bodies move, with the mass * invMass values set up above, whether or not they are the TOI pair.
+		B2_NOT_USED(toiIndexA);
+		B2_NOT_USED(toiIndexB);
+		float32 mA = pc->invMassA;
+		float32 iA = pc->invIA;
 		float32 mB = pc->invMassB;
 		float32 iB = pc->invIB;
-		if (indexB == toiIndexA || indexB == toiIndexB)
-		{
-			mB = pc->invMassB;
-			iB = pc->invIB;
-		}
 
 		b2Vec2 cA = m_positions[indexA].c;
 		float32 aA = m_positions[indexA].a;

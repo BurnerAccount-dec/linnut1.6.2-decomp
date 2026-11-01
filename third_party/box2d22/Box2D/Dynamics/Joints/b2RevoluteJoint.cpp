@@ -61,6 +61,11 @@ b2RevoluteJoint::b2RevoluteJoint(const b2RevoluteJointDef* def)
 	m_limitState = e_inactiveLimit;
 }
 
+// AngryBirdsRio.exe solves its joints the Box2D 2.1 way (revolute: 0x4e1150 init, 0x4e17b0 velocity,
+// 0x4e1cf0 position): on the bodies' sweep and velocity, with the old impulse accumulation and the
+// "large detachment" particle step, instead of the 2.2.0 solver. The island hands the joints its position
+// and velocity arrays, which at these points hold exactly what the exe reads from the bodies, so the 2.1
+// code below works on local copies of that state and writes it back.
 void b2RevoluteJoint::InitVelocityConstraints(const b2SolverData& data)
 {
 	m_indexA = m_bodyA->m_islandIndex;
@@ -72,59 +77,46 @@ void b2RevoluteJoint::InitVelocityConstraints(const b2SolverData& data)
 	m_invIA = m_bodyA->m_invI;
 	m_invIB = m_bodyB->m_invI;
 
-	b2Vec2 cA = data.positions[m_indexA].c;
-	float32 aA = data.positions[m_indexA].a;
-	b2Vec2 vA = data.velocities[m_indexA].v;
-	float32 wA = data.velocities[m_indexA].w;
+	float32 a1 = data.positions[m_indexA].a;
+	float32 a2 = data.positions[m_indexB].a;
+	b2Vec2 v1 = data.velocities[m_indexA].v;
+	float32 w1 = data.velocities[m_indexA].w;
+	b2Vec2 v2 = data.velocities[m_indexB].v;
+	float32 w2 = data.velocities[m_indexB].w;
 
-	b2Vec2 cB = data.positions[m_indexB].c;
-	float32 aB = data.positions[m_indexB].a;
-	b2Vec2 vB = data.velocities[m_indexB].v;
-	float32 wB = data.velocities[m_indexB].w;
+	b2Rot q1(a1), q2(a2);
 
-	b2Rot qA(aA), qB(aB);
+	// Compute the effective mass matrix.
+	b2Vec2 r1 = b2Mul(q1, m_localAnchorA - m_localCenterA);
+	b2Vec2 r2 = b2Mul(q2, m_localAnchorB - m_localCenterB);
 
-	m_rA = b2Mul(qA, m_localAnchorA - m_localCenterA);
-	m_rB = b2Mul(qB, m_localAnchorB - m_localCenterB);
+	float32 m1 = m_invMassA, m2 = m_invMassB;
+	float32 i1 = m_invIA, i2 = m_invIB;
 
-	// J = [-I -r1_skew I r2_skew]
-	//     [ 0       -1 0       1]
-	// r_skew = [-ry; rx]
-
-	// Matlab
-	// K = [ mA+r1y^2*iA+mB+r2y^2*iB,  -r1y*iA*r1x-r2y*iB*r2x,          -r1y*iA-r2y*iB]
-	//     [  -r1y*iA*r1x-r2y*iB*r2x, mA+r1x^2*iA+mB+r2x^2*iB,           r1x*iA+r2x*iB]
-	//     [          -r1y*iA-r2y*iB,           r1x*iA+r2x*iB,                   iA+iB]
-
-	float32 mA = m_invMassA, mB = m_invMassB;
-	float32 iA = m_invIA, iB = m_invIB;
-
-	bool fixedRotation = (iA + iB == 0.0f);
-
-	m_mass.ex.x = mA + mB + m_rA.y * m_rA.y * iA + m_rB.y * m_rB.y * iB;
-	m_mass.ey.x = -m_rA.y * m_rA.x * iA - m_rB.y * m_rB.x * iB;
-	m_mass.ez.x = -m_rA.y * iA - m_rB.y * iB;
+	m_mass.ex.x = m1 + m2 + r1.y * r1.y * i1 + r2.y * r2.y * i2;
+	m_mass.ey.x = -r1.y * r1.x * i1 - r2.y * r2.x * i2;
+	m_mass.ez.x = -r1.y * i1 - r2.y * i2;
 	m_mass.ex.y = m_mass.ey.x;
-	m_mass.ey.y = mA + mB + m_rA.x * m_rA.x * iA + m_rB.x * m_rB.x * iB;
-	m_mass.ez.y = m_rA.x * iA + m_rB.x * iB;
+	m_mass.ey.y = m1 + m2 + r1.x * r1.x * i1 + r2.x * r2.x * i2;
+	m_mass.ez.y = r1.x * i1 + r2.x * i2;
 	m_mass.ex.z = m_mass.ez.x;
 	m_mass.ey.z = m_mass.ez.y;
-	m_mass.ez.z = iA + iB;
+	m_mass.ez.z = i1 + i2;
 
-	m_motorMass = iA + iB;
+	m_motorMass = i1 + i2;
 	if (m_motorMass > 0.0f)
 	{
 		m_motorMass = 1.0f / m_motorMass;
 	}
 
-	if (m_enableMotor == false || fixedRotation)
+	if (m_enableMotor == false)
 	{
 		m_motorImpulse = 0.0f;
 	}
 
-	if (m_enableLimit && fixedRotation == false)
+	if (m_enableLimit)
 	{
-		float32 jointAngle = aB - aA - m_referenceAngle;
+		float32 jointAngle = a2 - a1 - m_referenceAngle;
 		if (b2Abs(m_upperAngle - m_lowerAngle) < 2.0f * b2_angularSlop)
 		{
 			m_limitState = e_equalLimits;
@@ -137,7 +129,7 @@ void b2RevoluteJoint::InitVelocityConstraints(const b2SolverData& data)
 			}
 			m_limitState = e_atLowerLimit;
 		}
-		else if (jointAngle >= m_upperAngle)
+		else if (jointAngle > m_upperAngle)	// the exe tests "greater", not "greater or equal" (0x4e1150)
 		{
 			if (m_limitState != e_atUpperLimit)
 			{
@@ -164,11 +156,11 @@ void b2RevoluteJoint::InitVelocityConstraints(const b2SolverData& data)
 
 		b2Vec2 P(m_impulse.x, m_impulse.y);
 
-		vA -= mA * P;
-		wA -= iA * (b2Cross(m_rA, P) + m_motorImpulse + m_impulse.z);
+		v1 -= m1 * P;
+		w1 -= i1 * (b2Cross(r1, P) + m_motorImpulse + m_impulse.z);
 
-		vB += mB * P;
-		wB += iB * (b2Cross(m_rB, P) + m_motorImpulse + m_impulse.z);
+		v2 += m2 * P;
+		w2 += i2 * (b2Cross(r2, P) + m_motorImpulse + m_impulse.z);
 	}
 	else
 	{
@@ -176,46 +168,50 @@ void b2RevoluteJoint::InitVelocityConstraints(const b2SolverData& data)
 		m_motorImpulse = 0.0f;
 	}
 
-	data.velocities[m_indexA].v = vA;
-	data.velocities[m_indexA].w = wA;
-	data.velocities[m_indexB].v = vB;
-	data.velocities[m_indexB].w = wB;
+	data.velocities[m_indexA].v = v1;
+	data.velocities[m_indexA].w = w1;
+	data.velocities[m_indexB].v = v2;
+	data.velocities[m_indexB].w = w2;
 }
 
 void b2RevoluteJoint::SolveVelocityConstraints(const b2SolverData& data)
 {
-	b2Vec2 vA = data.velocities[m_indexA].v;
-	float32 wA = data.velocities[m_indexA].w;
-	b2Vec2 vB = data.velocities[m_indexB].v;
-	float32 wB = data.velocities[m_indexB].w;
+	b2Vec2 v1 = data.velocities[m_indexA].v;
+	float32 w1 = data.velocities[m_indexA].w;
+	b2Vec2 v2 = data.velocities[m_indexB].v;
+	float32 w2 = data.velocities[m_indexB].w;
 
-	float32 mA = m_invMassA, mB = m_invMassB;
-	float32 iA = m_invIA, iB = m_invIB;
+	b2Rot q1(data.positions[m_indexA].a), q2(data.positions[m_indexB].a);
 
-	bool fixedRotation = (iA + iB == 0.0f);
+	float32 m1 = m_invMassA, m2 = m_invMassB;
+	float32 i1 = m_invIA, i2 = m_invIB;
 
 	// Solve motor constraint.
-	if (m_enableMotor && m_limitState != e_equalLimits && fixedRotation == false)
+	if (m_enableMotor && m_limitState != e_equalLimits)
 	{
-		float32 Cdot = wB - wA - m_motorSpeed;
-		float32 impulse = -m_motorMass * Cdot;
+		float32 Cdot = w2 - w1 - m_motorSpeed;
+		float32 impulse = m_motorMass * (-Cdot);
 		float32 oldImpulse = m_motorImpulse;
 		float32 maxImpulse = data.step.dt * m_maxMotorTorque;
 		m_motorImpulse = b2Clamp(m_motorImpulse + impulse, -maxImpulse, maxImpulse);
 		impulse = m_motorImpulse - oldImpulse;
 
-		wA -= iA * impulse;
-		wB += iB * impulse;
+		w1 -= i1 * impulse;
+		w2 += i2 * impulse;
 	}
 
 	// Solve limit constraint.
-	if (m_enableLimit && m_limitState != e_inactiveLimit && fixedRotation == false)
+	if (m_enableLimit && m_limitState != e_inactiveLimit)
 	{
-		b2Vec2 Cdot1 = vB + b2Cross(wB, m_rB) - vA - b2Cross(wA, m_rA);
-		float32 Cdot2 = wB - wA;
+		b2Vec2 r1 = b2Mul(q1, m_localAnchorA - m_localCenterA);
+		b2Vec2 r2 = b2Mul(q2, m_localAnchorB - m_localCenterB);
+
+		// Solve point-to-point constraint
+		b2Vec2 Cdot1 = v2 + b2Cross(w2, r2) - v1 - b2Cross(w1, r1);
+		float32 Cdot2 = w2 - w1;
 		b2Vec3 Cdot(Cdot1.x, Cdot1.y, Cdot2);
 
-		b2Vec3 impulse = -m_mass.Solve33(Cdot);
+		b2Vec3 impulse = m_mass.Solve33(-Cdot);
 
 		if (m_limitState == e_equalLimits)
 		{
@@ -226,18 +222,13 @@ void b2RevoluteJoint::SolveVelocityConstraints(const b2SolverData& data)
 			float32 newImpulse = m_impulse.z + impulse.z;
 			if (newImpulse < 0.0f)
 			{
-				b2Vec2 rhs = -Cdot1 + m_impulse.z * b2Vec2(m_mass.ez.x, m_mass.ez.y);
-				b2Vec2 reduced = m_mass.Solve22(rhs);
+				b2Vec2 reduced = m_mass.Solve22(-Cdot1);
 				impulse.x = reduced.x;
 				impulse.y = reduced.y;
 				impulse.z = -m_impulse.z;
 				m_impulse.x += reduced.x;
 				m_impulse.y += reduced.y;
 				m_impulse.z = 0.0f;
-			}
-			else
-			{
-				m_impulse += impulse;
 			}
 		}
 		else if (m_limitState == e_atUpperLimit)
@@ -245,8 +236,7 @@ void b2RevoluteJoint::SolveVelocityConstraints(const b2SolverData& data)
 			float32 newImpulse = m_impulse.z + impulse.z;
 			if (newImpulse > 0.0f)
 			{
-				b2Vec2 rhs = -Cdot1 + m_impulse.z * b2Vec2(m_mass.ez.x, m_mass.ez.y);
-				b2Vec2 reduced = m_mass.Solve22(rhs);
+				b2Vec2 reduced = m_mass.Solve22(-Cdot1);
 				impulse.x = reduced.x;
 				impulse.y = reduced.y;
 				impulse.z = -m_impulse.z;
@@ -254,60 +244,55 @@ void b2RevoluteJoint::SolveVelocityConstraints(const b2SolverData& data)
 				m_impulse.y += reduced.y;
 				m_impulse.z = 0.0f;
 			}
-			else
-			{
-				m_impulse += impulse;
-			}
 		}
 
 		b2Vec2 P(impulse.x, impulse.y);
 
-		vA -= mA * P;
-		wA -= iA * (b2Cross(m_rA, P) + impulse.z);
+		v1 -= m1 * P;
+		w1 -= i1 * (b2Cross(r1, P) + impulse.z);
 
-		vB += mB * P;
-		wB += iB * (b2Cross(m_rB, P) + impulse.z);
+		v2 += m2 * P;
+		w2 += i2 * (b2Cross(r2, P) + impulse.z);
 	}
 	else
 	{
+		b2Vec2 r1 = b2Mul(q1, m_localAnchorA - m_localCenterA);
+		b2Vec2 r2 = b2Mul(q2, m_localAnchorB - m_localCenterB);
+
 		// Solve point-to-point constraint
-		b2Vec2 Cdot = vB + b2Cross(wB, m_rB) - vA - b2Cross(wA, m_rA);
+		b2Vec2 Cdot = v2 + b2Cross(w2, r2) - v1 - b2Cross(w1, r1);
 		b2Vec2 impulse = m_mass.Solve22(-Cdot);
 
 		m_impulse.x += impulse.x;
 		m_impulse.y += impulse.y;
 
-		vA -= mA * impulse;
-		wA -= iA * b2Cross(m_rA, impulse);
+		v1 -= m1 * impulse;
+		w1 -= i1 * b2Cross(r1, impulse);
 
-		vB += mB * impulse;
-		wB += iB * b2Cross(m_rB, impulse);
+		v2 += m2 * impulse;
+		w2 += i2 * b2Cross(r2, impulse);
 	}
 
-	data.velocities[m_indexA].v = vA;
-	data.velocities[m_indexA].w = wA;
-	data.velocities[m_indexB].v = vB;
-	data.velocities[m_indexB].w = wB;
+	data.velocities[m_indexA].v = v1;
+	data.velocities[m_indexA].w = w1;
+	data.velocities[m_indexB].v = v2;
+	data.velocities[m_indexB].w = w2;
 }
 
 bool b2RevoluteJoint::SolvePositionConstraints(const b2SolverData& data)
 {
-	b2Vec2 cA = data.positions[m_indexA].c;
-	float32 aA = data.positions[m_indexA].a;
-	b2Vec2 cB = data.positions[m_indexB].c;
-	float32 aB = data.positions[m_indexB].a;
-
-	b2Rot qA(aA), qB(aB);
+	b2Vec2 c1 = data.positions[m_indexA].c;
+	float32 a1 = data.positions[m_indexA].a;
+	b2Vec2 c2 = data.positions[m_indexB].c;
+	float32 a2 = data.positions[m_indexB].a;
 
 	float32 angularError = 0.0f;
 	float32 positionError = 0.0f;
 
-	bool fixedRotation = (m_invIA + m_invIB == 0.0f);
-
 	// Solve angular limit constraint.
-	if (m_enableLimit && m_limitState != e_inactiveLimit && fixedRotation == false)
+	if (m_enableLimit && m_limitState != e_inactiveLimit)
 	{
-		float32 angle = aB - aA - m_referenceAngle;
+		float32 angle = a2 - a1 - m_referenceAngle;
 		float32 limitImpulse = 0.0f;
 
 		if (m_limitState == e_equalLimits)
@@ -336,43 +321,68 @@ bool b2RevoluteJoint::SolvePositionConstraints(const b2SolverData& data)
 			limitImpulse = -m_motorMass * C;
 		}
 
-		aA -= m_invIA * limitImpulse;
-		aB += m_invIB * limitImpulse;
+		a1 -= m_invIA * limitImpulse;
+		a2 += m_invIB * limitImpulse;
 	}
 
 	// Solve point-to-point constraint.
 	{
-		qA.Set(aA);
-		qB.Set(aB);
-		b2Vec2 rA = b2Mul(qA, m_localAnchorA - m_localCenterA);
-		b2Vec2 rB = b2Mul(qB, m_localAnchorB - m_localCenterB);
+		b2Rot q1(a1), q2(a2);
+		b2Vec2 r1 = b2Mul(q1, m_localAnchorA - m_localCenterA);
+		b2Vec2 r2 = b2Mul(q2, m_localAnchorB - m_localCenterB);
 
-		b2Vec2 C = cB + rB - cA - rA;
+		b2Vec2 C = c2 + r2 - c1 - r1;
 		positionError = C.Length();
 
-		float32 mA = m_invMassA, mB = m_invMassB;
-		float32 iA = m_invIA, iB = m_invIB;
+		float32 invMass1 = m_invMassA, invMass2 = m_invMassB;
+		float32 invI1 = m_invIA, invI2 = m_invIB;
 
-		b2Mat22 K;
-		K.ex.x = mA + mB + iA * rA.y * rA.y + iB * rB.y * rB.y;
-		K.ex.y = -iA * rA.x * rA.y - iB * rB.x * rB.y;
-		K.ey.x = K.ex.y;
-		K.ey.y = mA + mB + iA * rA.x * rA.x + iB * rB.x * rB.x;
+		// Handle large detachment.
+		const float32 k_allowedStretch = 10.0f * b2_linearSlop;
+		if (C.LengthSquared() > k_allowedStretch * k_allowedStretch)
+		{
+			// Use a particle solution (no rotation).
+			b2Vec2 u = C; u.Normalize();
+			float32 m = invMass1 + invMass2;
+			if (m > 0.0f)
+			{
+				m = 1.0f / m;
+			}
+			b2Vec2 impulse = m * (-C);
+			const float32 k_beta = 0.5f;
+			c1 -= k_beta * invMass1 * impulse;
+			c2 += k_beta * invMass2 * impulse;
 
-		b2Vec2 impulse = -K.Solve(C);
+			C = c2 + r2 - c1 - r1;
+		}
 
-		cA -= mA * impulse;
-		aA -= iA * b2Cross(rA, impulse);
+		b2Mat22 K1;
+		K1.ex.x = invMass1 + invMass2;	K1.ey.x = 0.0f;
+		K1.ex.y = 0.0f;					K1.ey.y = invMass1 + invMass2;
 
-		cB += mB * impulse;
-		aB += iB * b2Cross(rB, impulse);
+		b2Mat22 K2;
+		K2.ex.x =  invI1 * r1.y * r1.y;	K2.ey.x = -invI1 * r1.x * r1.y;
+		K2.ex.y = -invI1 * r1.x * r1.y;	K2.ey.y =  invI1 * r1.x * r1.x;
+
+		b2Mat22 K3;
+		K3.ex.x =  invI2 * r2.y * r2.y;	K3.ey.x = -invI2 * r2.x * r2.y;
+		K3.ex.y = -invI2 * r2.x * r2.y;	K3.ey.y =  invI2 * r2.x * r2.x;
+
+		b2Mat22 K = K1 + K2 + K3;
+		b2Vec2 impulse = K.Solve(-C);
+
+		c1 -= invMass1 * impulse;
+		a1 -= invI1 * b2Cross(r1, impulse);
+
+		c2 += invMass2 * impulse;
+		a2 += invI2 * b2Cross(r2, impulse);
 	}
 
-	data.positions[m_indexA].c = cA;
-	data.positions[m_indexA].a = aA;
-	data.positions[m_indexB].c = cB;
-	data.positions[m_indexB].a = aB;
-	
+	data.positions[m_indexA].c = c1;
+	data.positions[m_indexA].a = a1;
+	data.positions[m_indexB].c = c2;
+	data.positions[m_indexB].a = a2;
+
 	return positionError <= b2_linearSlop && angularError <= b2_angularSlop;
 }
 

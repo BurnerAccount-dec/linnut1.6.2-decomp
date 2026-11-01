@@ -7,6 +7,7 @@ namespace ab {
 
 const char kLevelKey[33] = "USCaPQpA4TSNVxMI1v9SK9UC0yZuAnb2";
 const char kSeasonsKey[33] = "zePhest5faQuX2S2Apre@4reChAtEvUt";   // Game+0x31c in Angry Birds Seasons
+const char kSpaceKey[33] = "RmgdZ0JenLFgWwkYvCL2lSahFbEhFec4";   // Angry Birds Space scripts (found by the community; every Space .lua decrypts to Lua 5.1 bytecode)
 const char kSaveKey[33] = "44iUY5aTrlaYoet9lapRlaK1Ehlec5i0";
 const char kSeasonsSaveKey[33] = "brU4u=EbR4s_A3APu6U#7B!axAm*We#5";   // Seasons settings.lua / highscores.lua
 
@@ -158,10 +159,10 @@ bool ReadLuaFile(const std::string& path, std::vector<uint8_t>& bytes) {
     if (!f) return false;
     bytes.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
     std::vector<uint8_t> plain;
-    const char* keys[] = {kLevelKey, kSeasonsKey};
+    const char* keys[] = {kLevelKey, kSeasonsKey, kSpaceKey};
     static size_t firstKey = 0;                  // the key that worked last time goes first: a wrong key costs a whole file
-    for (size_t n = 0; n < 2; n++) {
-        size_t k = (n + firstKey) % 2;
+    for (size_t n = 0; n < 3; n++) {
+        size_t k = (n + firstKey) % 3;
         if (!AesDecryptCbc((const uint8_t*)keys[k], bytes, plain) || plain.size() <= 4) continue;
         // the decrypted file is either bytecode (starts with 0x1b) or plain Lua text; a file that was
         // not encrypted at all (or a wrong key) turns into noise, which has control characters near the start

@@ -160,7 +160,7 @@ void b2PrismaticJoint::InitVelocityConstraints(const b2SolverData& data)
 		m_a2 = b2Cross(rB, m_axis);
 
 		m_motorMass = mA + mB + iA * m_a1 * m_a1 + iB * m_a2 * m_a2;
-		if (m_motorMass > 0.0f)
+		if (m_motorMass > b2_epsilon)	// AngryBirdsRio.exe 0x4e4fa0 compares with epsilon, not zero
 		{
 			m_motorMass = 1.0f / m_motorMass;
 		}
@@ -206,7 +206,7 @@ void b2PrismaticJoint::InitVelocityConstraints(const b2SolverData& data)
 				m_impulse.z = 0.0f;
 			}
 		}
-		else if (jointTranslation >= m_upperTranslation)
+		else if (jointTranslation > m_upperTranslation)	// the exe tests "greater" (0x4e4fa0)
 		{
 			if (m_limitState != e_atUpperLimit)
 			{
@@ -373,13 +373,26 @@ bool b2PrismaticJoint::SolvePositionConstraints(const b2SolverData& data)
 	b2Vec2 rB = b2Mul(qB, m_localAnchorB - m_localCenterB);
 	b2Vec2 d = cB + rB - cA - rA;
 
-	b2Vec2 axis = b2Mul(qA, m_localXAxisA);
-	float32 a1 = b2Cross(d + rA, axis);
-	float32 a2 = b2Cross(rB, axis);
-	b2Vec2 perp = b2Mul(qA, m_localYAxisA);
+	// AngryBirdsRio.exe (0x4e5f00) keeps the fresh Jacobians in the joint and builds K from them.
+	b2Vec2 axis = m_axis;
+	float32 a1 = m_a1;
+	float32 a2 = m_a2;
+	if (m_enableLimit)
+	{
+		m_axis = b2Mul(qA, m_localXAxisA);
+		m_a1 = b2Cross(d + rA, m_axis);
+		m_a2 = b2Cross(rB, m_axis);
+		axis = m_axis;
+		a1 = m_a1;
+		a2 = m_a2;
+	}
+	m_perp = b2Mul(qA, m_localYAxisA);
+	b2Vec2 perp = m_perp;
 
-	float32 s1 = b2Cross(d + rA, perp);
-	float32 s2 = b2Cross(rB, perp);
+	m_s1 = b2Cross(d + rA, perp);
+	m_s2 = b2Cross(rB, perp);
+	float32 s1 = m_s1;
+	float32 s2 = m_s2;
 
 	b2Vec3 impulse;
 	b2Vec2 C1;
@@ -408,7 +421,7 @@ bool b2PrismaticJoint::SolvePositionConstraints(const b2SolverData& data)
 			linearError = b2Max(linearError, m_lowerTranslation - translation);
 			active = true;
 		}
-		else if (translation >= m_upperTranslation)
+		else if (translation > m_upperTranslation)
 		{
 			// Prevent large linear corrections and allow some slop.
 			C2 = b2Clamp(translation - m_upperTranslation - b2_linearSlop, 0.0f, b2_maxLinearCorrection);

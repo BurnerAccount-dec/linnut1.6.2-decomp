@@ -185,3 +185,5 @@
 #define b2_toiMaxRootIters b2_toiMaxRootIters_v22
 #define b2_toiRootIters b2_toiRootIters_v22
 #define b2_version b2_version_v22
+#define b2_maxTranslation b2_maxTranslation_v22
+#define b2_maxTranslationSquared b2_maxTranslationSquared_v22

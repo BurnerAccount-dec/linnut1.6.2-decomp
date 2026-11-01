@@ -5,6 +5,7 @@
 // Every method has a harmless default so the scripts can be run before the real physics, renderer
 // and audio exist; the real modules override the ones they implement.
 #pragma once
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -75,6 +76,8 @@ public:
     virtual void EndLevelLoad() {}
     virtual std::string ResolveDataFile(const std::string& path) { return path; }
     virtual void SaveLevel(const std::string& path) { (void)path; }
+    // v2.2: the text of a level the editor saved in this session (its temp copies), read before the file
+    virtual bool FindSavedLevel(const std::string& path, std::vector<uint8_t>& bytes) { (void)path; (void)bytes; return false; }
     virtual std::string ResolveUserFile(const std::string& file, bool appData) { (void)appData; return file; }
     virtual void CreateDirectory(const std::string& path) { (void)path; }
     virtual bool CheckDirectory(const std::string& path) { (void)path; return false; }
@@ -112,6 +115,8 @@ public:
     virtual int ColliderType(const std::string& n) { (void)n; return -1; }
     virtual void SetObjectAlpha(const std::string& n, float a) { (void)n; (void)a; }
     virtual float ObjectAlpha(const std::string& n) { (void)n; return -1; }
+    virtual void SetObjectZOrder(const std::string& n, float z) { (void)n; (void)z; }
+    virtual float ObjectZOrder(const std::string& n) { (void)n; return -1e9f; }
     virtual void SetColliderRule(int a, int b, bool collide) { (void)a; (void)b; (void)collide; }
     virtual bool ColliderRule(int a, int b) { (void)a; (void)b; return true; }
     virtual void SetPolygonRadius(float r) { (void)r; }
@@ -142,6 +147,10 @@ public:
     // that were not passed keep their previous setting. argc is the number of Lua arguments.
     virtual void SetRenderState(int argc, const float* args) { (void)argc; (void)args; }
     virtual void SetAlpha(float a) { (void)a; }
+    // v2.2: the colour that sprites are multiplied by (1, 1, 1: no tint), setRenderState arguments 15 to 17 and setTint
+    virtual void SetTint(float r, float g, float b) { (void)r; (void)g; (void)b; }
+    virtual void GetTint(float& r, float& g, float& b) { r = g = b = 1; }
+    virtual void SetRenderExtras(int what, float x, float y) { (void)what; (void)x; (void)y; }   // 0 skew, 1 bend, 2 z, 3 blur, 4 pixelate
     virtual void DrawRect(float r, float g, float b, float a, float x1, float y1, float x2, float y2, bool flag) {
         (void)r; (void)g; (void)b; (void)a; (void)x1; (void)y1; (void)x2; (void)y2; (void)flag; }
     virtual void DrawLine2D(float x1, float y1, float x2, float y2, float width, float r, float g, float b, float a) {
@@ -158,6 +167,8 @@ public:
     virtual void StartNewTrajectory() {}
     virtual void AddToTrajectory(float i, float x, float y) { (void)i; (void)x; (void)y; }
     virtual void AddPuffToTrajectory(float i, float x, float y) { (void)i; (void)x; (void)y; }
+    // the iPad's setCustomTrajectorySprites(dot1, dot2, dot3, puff): the trajectory being recorded is drawn with these sprites
+    virtual void SetCustomTrajectorySprites(const std::string& a, const std::string& b, const std::string& c, const std::string& d) { (void)a; (void)b; (void)c; (void)d; }
 
     // clipText(group, text, maxWidth): returns the wrapped lines. Default: one line, width 0.
     virtual std::vector<std::string> ClipText(const std::string& group, const std::string& text, float maxWidth, float& widest) {
@@ -200,6 +211,16 @@ public:
                                const std::string& vAlign, const std::string& hAlign) {
         (void)group; (void)text; (void)x; (void)y; (void)vAlign; (void)hAlign; }
     virtual void ResSetClipRect(float x, float y, float w, float h) { (void)x; (void)y; (void)w; (void)h; }
+    // Hatchery (iPad) egg painter: a paint canvas the brushes are stamped on, shown through the egg-shaped alpha mask of a sprite
+    virtual void CanvasInit(int w, int h) { (void)w; (void)h; }
+    virtual void CanvasClear(float r, float g, float b, float a) { (void)r; (void)g; (void)b; (void)a; }
+    virtual void CanvasPaint(const std::string& brush, float x, float y, float w, float h) { (void)brush; (void)x; (void)y; (void)w; (void)h; }
+    virtual void CanvasDraw(const std::string& mask) { (void)mask; }
+    virtual void CanvasDominant(std::string& first, std::string& second) { first.clear(); second.clear(); }
+    struct CompoItem { std::string sprite; float x = 0, y = 0, scale = 1, angle = 0; };
+    virtual void SetupCompoObject(const std::string& object, const std::vector<CompoItem>& items, float scale) { (void)object; (void)items; (void)scale; }
+    virtual bool CanvasMakeSprite(const std::string& name, int width, int height, int pivotX, int pivotY, bool save, const std::string& file) { (void)name; (void)width; (void)height; (void)pivotX; (void)pivotY; (void)save; (void)file; return false; }
+    virtual bool CanvasLoadSprite(const std::string& name, const std::string& file, int pivotX, int pivotY) { (void)name; (void)file; (void)pivotX; (void)pivotY; return false; }
     virtual void ResGetSpriteBounds(const std::string& sheet, const std::string& sprite, float& w, float& h) { (void)sheet; (void)sprite; w = h = 0; }
     virtual void ResGetSpritePivot(const std::string& sheet, const std::string& sprite, float& px, float& py) { (void)sheet; (void)sprite; px = py = 0; }
     virtual void ResGetCompoSpriteBounds(const std::string& sheet, const std::string& sprite, float& x1, float& y1, float& x2, float& y2) {
@@ -221,7 +242,19 @@ public:
     virtual bool ResIsAudioPlaying(const std::string& name) { (void)name; return false; }
     virtual void ResSetTrackVolume(float volume, int track) { if (track >= 0 && track < 16) trackVolume_[track] = volume; }
     virtual float ResGetTrackVolume(int track) { return (track >= 0 && track < 16) ? trackVolume_[track] : 0; }
+    // v2.2 audio controls (res.setAudioSpeed / pauseAudio / resumeAudio / isAudioPaused / setMasterVolume / setAudioClipVolume / setAudioClipSpeed); track -1 = all
+    virtual void ResSetAudioSpeed(float speed, int track) { (void)speed; (void)track; }
+    virtual float ResGetAudioSpeed(int track) { (void)track; return 1; }
+    virtual void ResPauseAudio(bool paused, int track) { (void)paused; (void)track; }
+    virtual bool ResIsAudioPaused(int track) { (void)track; return false; }
+    virtual void ResSetMasterVolume(float v) { (void)v; }
+    virtual float ResGetMasterVolume() { return 1; }
+    virtual void ResSetAudioClipVolume(const std::string& n, float v) { (void)n; (void)v; }
+    virtual void ResSetAudioClipSpeed(const std::string& n, float s) { (void)n; (void)s; }
     virtual void ResOpenURL(const std::string& url) { (void)url; }
+    virtual void PlayVideo(const std::string& path) { (void)path; }   // playVideo("videos/x.m4v")
+    virtual void StopVideo() {}                      // v2.2: stopVideo()
+    virtual bool IsVideoPlaying() { return false; }  // v2.2: isVideoPlaying()
 
     // ---- particles.*
     // addParticles(type, amount, x, y, w, h, angle): type is the key in particleTable.particles

@@ -96,6 +96,10 @@ b2ContactSolver::b2ContactSolver(b2Contact** contacts, int32 contactCount,
 			b2Assert(kNormal > b2_epsilon);
 			ccp->normalMass = 1.0f / kNormal;
 
+			// The exe (Box2D 2.1.0) computes the position solver's mass once here: every dynamic body counts as mass 1.
+			float32 kEqualized = bodyA->m_mass * bodyA->m_invMass + bodyB->m_mass * bodyB->m_invMass + bodyA->m_mass * bodyA->m_invI * rnA + bodyB->m_mass * bodyB->m_invI * rnB;
+			ccp->equalizedMass = 1.0f / kEqualized;
+
 			b2Vec2 tangent = b2Cross(cc->normal, 1.0f);
 
 			float32 rtA = b2Cross(ccp->rA, tangent);
@@ -579,14 +583,20 @@ bool b2ContactSolver::SolvePositionConstraints(float32 baumgarte)
 		float32 invIB = bodyB->m_mass * bodyB->m_invI;
 
 		// Solve normal constraints
+		// AngryBirds.exe (0x4e4070 / 0x4e5660) evaluates the normal, points and separations of all the manifold points
+		// before applying any of the impulses of this constraint.
+		b2PositionSolverManifold psms[b2_maxManifoldPoints];
 		for (int32 j = 0; j < c->pointCount; ++j)
 		{
-			b2PositionSolverManifold psm;
-			psm.Initialize(c, j);
-			b2Vec2 normal = psm.normal;
+			psms[j].Initialize(c, j);
+		}
 
-			b2Vec2 point = psm.point;
-			float32 separation = psm.separation;
+		for (int32 j = 0; j < c->pointCount; ++j)
+		{
+			b2Vec2 normal = psms[j].normal;
+
+			b2Vec2 point = psms[j].point;
+			float32 separation = psms[j].separation;
 
 			b2Vec2 rA = point - bodyA->m_sweep.c;
 			b2Vec2 rB = point - bodyB->m_sweep.c;
@@ -597,13 +607,8 @@ bool b2ContactSolver::SolvePositionConstraints(float32 baumgarte)
 			// Prevent large corrections and allow slop.
 			float32 C = b2Clamp(baumgarte * (separation + b2_linearSlop), -b2_maxLinearCorrection, 0.0f);
 
-			// Compute the effective mass.
-			float32 rnA = b2Cross(rA, normal);
-			float32 rnB = b2Cross(rB, normal);
-			float32 K = invMassA + invMassB + invIA * rnA * rnA + invIB * rnB * rnB;
-
-			// Compute normal impulse
-			float32 impulse = K > 0.0f ? - C / K : 0.0f;
+			// Compute normal impulse (the exe uses the equalized mass from the constructor)
+			float32 impulse = -c->points[j].equalizedMass * C;
 
 			b2Vec2 P = impulse * normal;
 

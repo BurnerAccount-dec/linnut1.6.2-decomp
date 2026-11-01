@@ -26,15 +26,25 @@ const b2Transform b2Transform_identity(b2Vec2_zero, b2Mat22_identity);
 /// than computing the inverse in one-shot cases.
 b2Vec3 b2Mat33::Solve33(const b2Vec3& b) const
 {
-	float32 det = b2Dot(col1, b2Cross(col2, col3));
+	// Same term order as the retail 1.6.2 exe (FUN_004dc990 @ 0x4dc990), so the
+	// float rounding matches.
+	float32 det = (col3.y * col2.x - col2.y * col3.x) * col1.z +
+				  (col2.z * col3.x - col2.x * col3.z) * col1.y +
+				  col1.x * (col2.y * col3.z - col2.z * col3.y);
 	if (det != 0.0f)
 	{
 		det = 1.0f / det;
 	}
 	b2Vec3 x;
-	x.x = det * b2Dot(b, b2Cross(col2, col3));
-	x.y = det * b2Dot(col1, b2Cross(b, col3));
-	x.z = det * b2Dot(col1, b2Cross(col2, b));
+	x.x = (b.z * (col3.y * col2.x - col2.y * col3.x) +
+		   b.x * (col2.y * col3.z - col2.z * col3.y) +
+		   b.y * (col2.z * col3.x - col2.x * col3.z)) * det;
+	x.y = ((col3.y * b.x - b.y * col3.x) * col1.z +
+		   (b.z * col3.x - b.x * col3.z) * col1.y +
+		   (b.y * col3.z - col3.y * b.z) * col1.x) * det;
+	x.z = det * ((b.y * col2.x - col2.y * b.x) * col1.z +
+				 (col2.z * b.x - b.z * col2.x) * col1.y +
+				 (col2.y * b.z - col2.z * b.y) * col1.x);
 	return x;
 }
 

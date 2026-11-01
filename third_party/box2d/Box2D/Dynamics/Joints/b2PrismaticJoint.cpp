@@ -385,7 +385,7 @@ bool b2PrismaticJoint::SolvePositionConstraints(float32 baumgarte)
 			linearError = m_lowerTranslation - translation;
 			active = true;
 		}
-		else if (translation >= m_upperTranslation)
+		else if (translation > m_upperTranslation)
 		{
 			// Prevent large linear corrections and allow some slop.
 			C2 = b2Clamp(translation - m_upperTranslation - b2_linearSlop, 0.0f, b2_maxLinearCorrection);

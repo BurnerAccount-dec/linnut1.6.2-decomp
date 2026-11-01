@@ -71,49 +71,46 @@ int32 b2PolygonShape::GetChildCount() const
 	return 1;
 }
 
+// AngryBirdsRio.exe (0x4e6b30): triangles from the origin; the exe's loop is unrolled by four, so the areas of four triangles are
+// added together first (newest first) and then to the running sum. The centroid sums run in vertex order.
 static b2Vec2 ComputeCentroid(const b2Vec2* vs, int32 count)
 {
 	b2Assert(count >= 3);
 
 	b2Vec2 c; c.Set(0.0f, 0.0f);
 	float32 area = 0.0f;
+	const float32 inv3 = 0.33333334f;
 
-	// pRef is the reference point for forming triangles.
-	// It's location doesn't change the result (except for rounding error).
-	b2Vec2 pRef(0.0f, 0.0f);
-#if 0
-	// This code would put the reference point inside the polygon.
-	for (int32 i = 0; i < count; ++i)
+	float32 tri[4];
+	int32 i = 0;
+	for (; i + 4 <= count; i += 4)
 	{
-		pRef += vs[i];
+		for (int32 k = 0; k < 4; ++k)
+		{
+			const b2Vec2& p1 = vs[i + k];
+			const b2Vec2& p2 = (i + k + 1 < count) ? vs[i + k + 1] : vs[0];
+			float32 triangleArea = ((p2.y - 0.0f) * (p1.x - 0.0f) - (p1.y - 0.0f) * (p2.x - 0.0f)) * 0.5f;
+			tri[k] = triangleArea;
+			float32 w = triangleArea * inv3;
+			c.x = c.x + w * (p1.x + 0.0f + p2.x);
+			c.y = c.y + w * (p1.y + 0.0f + p2.y);
+		}
+		area = tri[3] + tri[2] + tri[1] + tri[0] + area;
 	}
-	pRef *= 1.0f / count;
-#endif
-
-	const float32 inv3 = 1.0f / 3.0f;
-
-	for (int32 i = 0; i < count; ++i)
+	for (; i < count; ++i)
 	{
-		// Triangle vertices.
-		b2Vec2 p1 = pRef;
-		b2Vec2 p2 = vs[i];
-		b2Vec2 p3 = i + 1 < count ? vs[i+1] : vs[0];
-
-		b2Vec2 e1 = p2 - p1;
-		b2Vec2 e2 = p3 - p1;
-
-		float32 D = b2Cross(e1, e2);
-
-		float32 triangleArea = 0.5f * D;
-		area += triangleArea;
-
-		// Area weighted centroid
-		c += triangleArea * inv3 * (p1 + p2 + p3);
+		const b2Vec2& p1 = vs[i];
+		const b2Vec2& p2 = (i + 1 < count) ? vs[i + 1] : vs[0];
+		float32 triangleArea = ((p2.y - 0.0f) * (p1.x - 0.0f) - (p1.y - 0.0f) * (p2.x - 0.0f)) * 0.5f;
+		area = triangleArea + area;
+		float32 w = triangleArea * inv3;
+		c.x = c.x + w * (p1.x + 0.0f + p2.x);
+		c.y = c.y + w * (p1.y + 0.0f + p2.y);
 	}
 
-	// Centroid
 	b2Assert(area > b2_epsilon);
-	c *= 1.0f / area;
+	c.x = (1.0f / area) * c.x;
+	c.y = (1.0f / area) * c.y;
 	return c;
 }
 
@@ -303,59 +300,41 @@ void b2PolygonShape::ComputeMass(b2MassData* massData, float32 density) const
 	//
 	// The rest of the derivation is handled by computer algebra.
 
+	// AngryBirdsRio.exe (0x4e7530): the triangles are formed from the body origin (not the polygon's mean point) and the
+	// inertia stays about that origin; the exe's terms and the order of its sums are kept.
 	b2Assert(m_vertexCount >= 3);
 
-	b2Vec2 center; center.Set(0.0f, 0.0f);
-	float32 area = 0.0f;
-	float32 I = 0.0f;
-
-	// s is the reference point for forming triangles.
-	// It's location doesn't change the result (except for rounding error).
-	b2Vec2 s(0.0f, 0.0f);
-
-	// This code would put the reference point inside the polygon.
-	for (int32 i = 0; i < m_vertexCount; ++i)
+	if (m_vertexCount == 2)
 	{
-		s += m_vertices[i];
+		massData->center = 0.5f * (m_vertices[0] + m_vertices[1]);
+		massData->mass = 0.0f;
+		massData->I = 0.0f;
+		return;
 	}
-	s *= 1.0f / m_vertexCount;
 
-	const float32 k_inv3 = 1.0f / 3.0f;
+	float32 cx = 0.0f, cy = 0.0f, area = 0.0f, I = 0.0f;
+	const float32 k_inv3 = 0.33333334f;
 
 	for (int32 i = 0; i < m_vertexCount; ++i)
 	{
-		// Triangle vertices.
-		b2Vec2 e1 = m_vertices[i] - s;
-		b2Vec2 e2 = i + 1 < m_vertexCount ? m_vertices[i+1] - s : m_vertices[0] - s;
+		const b2Vec2& p1 = m_vertices[i];
+		const b2Vec2& p2 = i + 1 < m_vertexCount ? m_vertices[i + 1] : m_vertices[0];
+		float32 ex1 = p1.x - 0.0f, ey1 = p1.y - 0.0f;
+		float32 ex2 = p2.x - 0.0f, ey2 = p2.y - 0.0f;
 
-		float32 D = b2Cross(e1, e2);
-
-		float32 triangleArea = 0.5f * D;
+		float32 D = ex1 * ey2 - ey1 * ex2;
+		float32 triangleArea = D * 0.5f;
 		area += triangleArea;
 
-		// Area weighted centroid
-		center += triangleArea * k_inv3 * (e1 + e2);
+		float32 t = triangleArea * k_inv3;
+		cx = t * (p1.x + 0.0f + p2.x) + cx;
+		cy = t * (p1.y + 0.0f + p2.y) + cy;
 
-		float32 ex1 = e1.x, ey1 = e1.y;
-		float32 ex2 = e2.x, ey2 = e2.y;
-
-		float32 intx2 = ex1*ex1 + ex2*ex1 + ex2*ex2;
-		float32 inty2 = ey1*ey1 + ey2*ey1 + ey2*ey2;
-
-		I += (0.25f * k_inv3 * D) * (intx2 + inty2);
+		I = (((ex1 * ex1 + ex2 * ex1 + ex2 * ex2) * 0.25f + ex1 * 0.0f + ex2 * 0.0f) * k_inv3 + 0.0f +
+			 ((ey2 * ey2 + ey1 * ey1 + ey2 * ey1) * 0.25f + ey1 * 0.0f + ey2 * 0.0f) * k_inv3 + 0.0f) * D + I;
 	}
 
-	// Total mass
 	massData->mass = density * area;
-
-	// Center of mass
-	b2Assert(area > b2_epsilon);
-	center *= 1.0f / area;
-	massData->center = center + s;
-
-	// Inertia tensor relative to the local origin (point s).
+	massData->center.Set((1.0f / area) * cx, (1.0f / area) * cy);
 	massData->I = density * I;
-	
-	// Shift to center of mass then to original body origin.
-	massData->I += massData->mass * (b2Dot(massData->center, massData->center) - b2Dot(center, center));
 }

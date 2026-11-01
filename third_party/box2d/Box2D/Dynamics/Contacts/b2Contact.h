@@ -122,6 +122,9 @@ protected:
 		// This bullet contact had a TOI event
 		e_bulletHitFlag		= 0x0010,
 
+		// The global TOI pass has computed m_toi for this contact.
+		e_toiFlag			= 0x0020,
+
 	};
 
 	/// Flag this contact for filtering. Filtering will occur the next time step.
@@ -159,7 +162,7 @@ protected:
 	b2Manifold m_manifold;
 
 	int32 m_toiCount;
-//	float32 m_toi;
+	float32 m_toi;      // AngryBirds.exe: the global TOI pass keeps each contact's time of impact until a body it touches moves
 };
 
 inline b2Manifold* b2Contact::GetManifold()

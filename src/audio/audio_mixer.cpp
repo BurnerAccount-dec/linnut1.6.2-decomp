@@ -126,6 +126,31 @@ void AudioMixer::AddClip(const std::string& name, const std::string& path) {
     }
 }
 
+
+// v2.2: a clip that was decoded elsewhere (the sound of a video): resampled to the output rate like any other clip
+void AudioMixer::AddPcmClip(const std::string& name, int rate, int channels, const std::vector<int16_t>& samples) {
+    if (channels < 1 || rate < 1) return;
+    auto clip = std::make_shared<AudioClip>();
+    clip->channels = channels; clip->rate = rate; clip->samples = samples;
+    int target;
+    { std::lock_guard<std::mutex> l(m_); target = rate_; }
+    if (rate != target) {
+        size_t inFrames = samples.size() / channels, outFrames = (size_t)((double)inFrames * target / rate);
+        std::vector<int16_t> r(outFrames * channels);
+        for (size_t i = 0; i < outFrames && inFrames > 0; i++) {
+            double src = (double)i * rate / target;
+            size_t a = (size_t)src, b = std::min(a + 1, inFrames - 1);
+            float t = (float)(src - a);
+            for (int c = 0; c < channels; c++) r[i * channels + c] = (int16_t)(samples[a * channels + c] * (1 - t) + samples[b * channels + c] * t);
+        }
+        clip->samples.swap(r); clip->rate = target;
+    }
+    std::lock_guard<std::mutex> l(m_);
+    Entry e;
+    e.clip = clip;
+    clips_[name] = e;
+}
+
 void AudioMixer::PreloadLoop() {
     std::unique_lock<std::mutex> l(m_);
     for (;;) {
@@ -226,6 +251,43 @@ void AudioMixer::SetTrackVolume(float volume, int track) {
     trackVolume_[track] = std::min(1.0f, std::max(0.0f, volume));
 }
 
+
+// ---- v2.2 playback controls
+void AudioMixer::SetSpeed(float speed, int track) {
+    std::lock_guard<std::mutex> l(m_);
+    speed = std::min(8.0f, std::max(0.05f, speed));
+    if (track < 0) masterSpeed_ = speed;
+    else if (track < kAudioTracks) trackSpeed_[track] = speed;
+}
+float AudioMixer::Speed(int track) const {
+    std::lock_guard<std::mutex> l(m_);
+    return track < 0 ? masterSpeed_ : track < kAudioTracks ? trackSpeed_[track] : 1.0f;
+}
+void AudioMixer::Pause(bool paused, int track) {
+    std::lock_guard<std::mutex> l(m_);
+    if (track < 0) paused_ = paused;
+    else if (track < kAudioTracks) trackPaused_[track] = paused;
+}
+bool AudioMixer::Paused(int track) const {
+    std::lock_guard<std::mutex> l(m_);
+    return track < 0 ? paused_ : track < kAudioTracks ? trackPaused_[track] : false;
+}
+void AudioMixer::SetMasterVolume(float v) {
+    std::lock_guard<std::mutex> l(m_);
+    masterVolume_ = std::min(4.0f, std::max(0.0f, v));
+}
+void AudioMixer::SetClipVolume(const std::string& name, float volume) {
+    std::lock_guard<std::mutex> l(m_);
+    for (Voice& v : active_) if (v.name == name) v.volume = volume;
+    for (Voice& v : waiting_) if (v.name == name) v.volume = volume;
+}
+void AudioMixer::SetClipSpeed(const std::string& name, float speed) {
+    std::lock_guard<std::mutex> l(m_);
+    speed = std::min(8.0f, std::max(0.05f, speed));
+    for (Voice& v : active_) if (v.name == name) v.speed = speed;
+    for (Voice& v : waiting_) if (v.name == name) v.speed = speed;
+}
+
 void AudioMixer::Mix(int16_t* out, int frames) {
     std::lock_guard<std::mutex> l(m_);
     int ch = channels_;
@@ -237,8 +299,36 @@ void AudioMixer::Mix(int16_t* out, int frames) {
     active_.erase(std::remove_if(active_.begin(), active_.end(), [](const Voice& v) { return v.stopped; }), active_.end());
 
     for (Voice& v : active_) {
-        int gain = (int)(trackVolume_[v.track] * v.volume * 4096.0);
+        int gain = (int)(trackVolume_[v.track] * v.volume * masterVolume_ * 4096.0);
         const std::vector<int16_t>& s = v.clip->samples;
+        float speed = masterSpeed_ * trackSpeed_[v.track] * v.speed;
+        bool paused = paused_ || trackPaused_[v.track];
+        if (paused) continue;
+        if (speed != 1.0f || v.frac != 0) {
+            // v2.2: resampled voice (linear interpolation), one output frame at a time
+            int cc = v.clip->channels;
+            size_t clipFrames = cc > 0 ? s.size() / cc : 0;
+            int g = (int)(trackVolume_[v.track] * v.volume * masterVolume_ * 4096.0);
+            for (int i = 0; i < frames; i++) {
+                size_t fi = cc > 0 ? v.pos / cc : 0;
+                if (fi >= clipFrames) {
+                    if (!v.loop || clipFrames == 0) { v.stopped = true; break; }
+                    fi %= clipFrames; v.pos = fi * cc;
+                }
+                size_t ni = fi + 1 < clipFrames ? fi + 1 : (v.loop ? 0 : fi);
+                float t = (float)v.frac;
+                for (int k = 0; k < ch; k++) {
+                    int c = cc == 1 ? 0 : k;
+                    float a = (float)s[fi * cc + c], b = (float)s[ni * cc + c];
+                    sum_[(size_t)i * ch + k] += (int)((a + (b - a) * t) * g) >> 12;
+                }
+                v.frac += speed;
+                size_t adv = (size_t)v.frac;
+                v.frac -= (double)adv;
+                v.pos += adv * cc;
+            }
+            continue;
+        }
         bool mono = ch == 2 && v.clip->channels == 1;
         size_t need = mono ? count / 2 : count;           // samples to read from the clip
         size_t got = 0;

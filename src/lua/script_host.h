@@ -12,6 +12,7 @@ extern "C" {
 namespace ab {
 
 struct BootConfig {
+    std::string commonScriptPath;             // Angry Birds Space: scripts_common holds gamelogic.lua (config.lua commonScriptPath)
     std::string scriptPath = "scripts";       // folder with gamelogic.lua, blocks.lua, ...
     std::string imagePath = "images/1024X768";   // the script takes the part after the first "/" as the asset profile (keys of loadlist.lua)
     std::string fontPath = "fonts";

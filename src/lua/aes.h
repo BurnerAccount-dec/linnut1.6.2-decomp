@@ -15,6 +15,8 @@ extern const char kLevelKey[33];
 extern const char kSaveKey[33];
 // Script key of Angry Birds Seasons.
 extern const char kSeasonsKey[33];
+// Script key of Angry Birds Space.
+extern const char kSpaceKey[33];
 extern const char kSeasonsSaveKey[33];
 
 // Returns false when the size is not a multiple of 16 or the padding is wrong.
