@@ -632,6 +632,16 @@ void GamePlatform::BeginFrame() {
 
 void GamePlatform::EndFrame() {
     FlushZ();
+    // Rio: once the level is no longer drawn (exited to the menu or the loading screen) its particles are gone, and so are the result-screen stars (menu list) that were still alive
+    if (gameDrawnLast_ && !gameDrawn_ && scripts_ && scripts_->IsRio()) {
+        static const bool partDbg2 = std::getenv("AB_PARTDBG") != nullptr;
+        if (partDbg2) std::fprintf(stderr, "THEME level left: %d particles\n", (int)particles_.size());
+        particles_.clear();
+    }
+    gameDrawnLast_ = gameDrawn_; gameDrawn_ = false;
+    // 2.0.0 draws the menu list itself, in screen space, over everything (0x4161c0)
+    if (!menuParticlesByScript_ && !IsSeasonsScripts()) DrawParticlesOf(false, 1);
+    FlushZ();
     if (!cursors_.empty() && backend_) {
         backend_->SetClip(false, 0, 0, 0, 0);
         RenderState keep = state_;
@@ -644,16 +654,8 @@ void GamePlatform::EndFrame() {
             drawingCursor_ = false;
         }
         state_ = keep;
+        FlushZ();
     }
-    // Rio: once the level is no longer drawn (exited to the menu or the loading screen) its particles are gone, and so are the result-screen stars (menu list) that were still alive
-    if (gameDrawnLast_ && !gameDrawn_ && scripts_ && scripts_->IsRio()) {
-        static const bool partDbg2 = std::getenv("AB_PARTDBG") != nullptr;
-        if (partDbg2) std::fprintf(stderr, "THEME level left: %d particles\n", (int)particles_.size());
-        particles_.clear();
-    }
-    gameDrawnLast_ = gameDrawn_; gameDrawn_ = false;
-    // 2.0.0 draws the menu list itself, in screen space, over everything (0x4161c0)
-    if (!menuParticlesByScript_ && !IsSeasonsScripts()) DrawParticlesOf(false, 1);
     if (backend_) backend_->EndFrame();
 }
 
@@ -680,12 +682,51 @@ void GamePlatform::SetRenderState(int argc, const float* a) {
     if (argc >= 22) for (int i = 0; i < 9; i++) state_.bendProfile[i] = a[13 + i];
 }
 
+// A quad with the sort kind of what is being drawn: a game object, a sprite with a render state z, or neither.
+GamePlatform::QueuedQuad GamePlatform::MakeQuad(int tex, float alpha, float r, float g, float b) {
+    QueuedQuad q = {};
+    q.tex = tex; q.mask = -1; q.alpha = alpha; q.r = r; q.g = g; q.b = b;
+    if (drawingCursor_) q.kind = 0;
+    else if (drawingNative_) { q.kind = 1; q.key = nativeKey_; }
+    else if (state_.z != 0) { q.kind = 2; q.key = state_.z; }
+    return q;
+}
+
+// Puts a quad in the frame list. Kind 0 goes to the end. A game object (kind 1) goes to the end too, unless a sprite with a higher z is
+// already in the list after the last object: then it goes below that sprite. A sprite (kind 2) goes right after the last object or
+// sprite whose z is not higher than its own; with none, before the first one that is higher; with no objects or sprites, at the end.
+void GamePlatform::EmitQuad(QueuedQuad& q) {
+    size_t pos = zQueue_.size();
+    if (q.kind == 1 && spriteCount_ > 0) {
+        size_t from = zQueue_.size();
+        while (from > 0 && zQueue_[from - 1].kind != 1) from--;      // just after the last object
+        for (size_t i = from; i < zQueue_.size(); i++)
+            if (zQueue_[i].kind == 2 && zQueue_[i].key > q.key) { pos = i; break; }
+    } else if (q.kind == 2 && keyedCount_ > 0) {
+        size_t after = (size_t)-1, before = (size_t)-1;
+        for (size_t i = 0; i < zQueue_.size(); i++) {
+            if (!zQueue_[i].kind) continue;
+            if (zQueue_[i].key <= q.key) after = i;
+            else if (before == (size_t)-1) before = i;
+        }
+        if (after != (size_t)-1) pos = after + 1;
+        else if (before != (size_t)-1) pos = before;
+    }
+    if (q.kind) keyedCount_++;
+    if (q.kind == 2) spriteCount_++;
+    zQueue_.insert(zQueue_.begin() + pos, q);
+}
+
 void GamePlatform::FlushZ() {
     if (zQueue_.empty()) return;
     std::vector<QueuedQuad> q;
     q.swap(zQueue_);
-    std::stable_sort(q.begin(), q.end(), [](const QueuedQuad& a, const QueuedQuad& b) { return a.z < b.z; });
-    for (const QueuedQuad& c : q) if (backend_) backend_->DrawQuad(c.tex, c.xy, c.uv, c.r, c.g, c.b, c.alpha);
+    keyedCount_ = spriteCount_ = 0;
+    if (!backend_) return;
+    for (const QueuedQuad& c : q) {
+        if (c.mask >= 0) backend_->DrawMaskedQuad(c.tex, c.mask, c.xy, c.tuv, c.uv, c.alpha);
+        else backend_->DrawQuad(c.tex, c.xy, c.uv, c.r, c.g, c.b, c.alpha);
+    }
 }
 
 void GamePlatform::ResSetClipRect(float x, float y, float w, float h) {
@@ -827,7 +868,13 @@ void GamePlatform::DrawSpriteAt(const SpriteSheet& sheet, const Sprite& spr, flo
     if (state_.flipX) std::swap(u0, u1);
     const float us[4] = {u0, u1, u1, u0}, vs[4] = {v0, v0, v1, v1};
     for (int i = 0; i < 4; i++) { uv[i * 2] = us[i]; uv[i * 2 + 1] = vs[i]; }
-    if (tileTexture_) { FlushZ(); backend_->DrawMaskedQuad(tileTexture_->handle, tex->handle, xy, tileUV, uv, state_.alpha); return; }
+    if (tileTexture_) {
+        QueuedQuad q = MakeQuad(tex->handle, state_.alpha, 1, 1, 1);
+        q.mask = tex->handle; q.tex = tileTexture_->handle;     // DrawMaskedQuad(tile, sprite, ...): the sprite is the mask
+        std::memcpy(q.xy, xy, sizeof xy); std::memcpy(q.uv, uv, sizeof uv); std::memcpy(q.tuv, tileUV, sizeof tileUV);
+        EmitQuad(q);
+        return;
+    }
     // v2.2: a bent sprite is drawn as a grid of 8 x 8 pieces; each vertex is moved by bendX * profile(row) / bendY * profile(column)
     const int n = (state_.bendX != 0 || state_.bendY != 0) ? 8 : 1;
     // v2.2 pixelation: the sprite is cut into blocks of state_.pixelate sprite pixels, each block showing the texture at its middle
@@ -862,34 +909,29 @@ void GamePlatform::DrawSpriteAt(const SpriteSheet& sheet, const Sprite& spr, flo
                     vertex(gi + di[k], gj + dj[k], cxy + k * 2, cuv + k * 2, uvU, uvV);
                     cxy[k * 2] += offX; cxy[k * 2 + 1] += offY;
                 }
-                if (state_.z != 0) {
-                    QueuedQuad q; q.z = state_.z; q.seq = (int)zQueue_.size(); q.tex = tex->handle; q.alpha = tapAlpha; q.r = state_.tintR; q.g = state_.tintG; q.b = state_.tintB;
-                    std::memcpy(q.xy, cxy, sizeof cxy); std::memcpy(q.uv, cuv, sizeof cuv);
-                    zQueue_.push_back(q);
-                } else {
-                    FlushZ();
-                    backend_->DrawQuad(tex->handle, cxy, cuv, state_.tintR, state_.tintG, state_.tintB, tapAlpha);
-                }
+                QueuedQuad q = MakeQuad(tex->handle, tapAlpha, state_.tintR, state_.tintG, state_.tintB);
+                std::memcpy(q.xy, cxy, sizeof cxy); std::memcpy(q.uv, cuv, sizeof cuv);
+                EmitQuad(q);
             }
     }
 }
 
 // 0x40abd0: colour 0..1, corners are whole numbers. Without inWorld the render state is first reset.
 void GamePlatform::DrawRect(float r, float g, float b, float a, float x1, float y1, float x2, float y2, bool inWorld) {
-    FlushZ();
     if (!inWorld) state_ = RenderState();
     if (!backend_) return;
     x1 = std::trunc(x1); y1 = std::trunc(y1); x2 = std::trunc(x2); y2 = std::trunc(y2);
     float xy[8], uv[8] = {0, 0, 0, 0, 0, 0, 0, 0};
     const float px[4] = {x1, x2, x2, x1}, py[4] = {y1, y1, y2, y2};
     for (int i = 0; i < 4; i++) Transform(px[i], py[i], x1 + state_.pivotX, y1 + state_.pivotY, xy[i * 2], xy[i * 2 + 1]);
-    backend_->DrawQuad(-1, xy, uv, r, g, b, a);
+    QueuedQuad q = MakeQuad(-1, a, r, g, b);
+    std::memcpy(q.xy, xy, sizeof xy); std::memcpy(q.uv, uv, sizeof uv);
+    EmitQuad(q);
 }
 
 // v2.2: lines and rectangles turn about (first corner + pivot) like sprites do (the retail exes' debug overlays on the 8 key rely on it); before, the pivot was ignored
 // 0x415310: whole-number coordinates and width, colour 0..255
 void GamePlatform::DrawLine2D(float x1, float y1, float x2, float y2, float width, float r, float g, float b, float a) {
-    FlushZ();
     if (!backend_) return;
     x1 = std::trunc(x1); y1 = std::trunc(y1); x2 = std::trunc(x2); y2 = std::trunc(y2);
     width = std::trunc(width);
@@ -899,7 +941,9 @@ void GamePlatform::DrawLine2D(float x1, float y1, float x2, float y2, float widt
     float px[4] = {x1 + nx, x2 + nx, x2 - nx, x1 - nx}, py[4] = {y1 + ny, y2 + ny, y2 - ny, y1 - ny};
     float xy[8], uv[8] = {0, 0, 0, 0, 0, 0, 0, 0};
     for (int i = 0; i < 4; i++) Transform(px[i], py[i], x1 + state_.pivotX, y1 + state_.pivotY, xy[i * 2], xy[i * 2 + 1]);
-    backend_->DrawQuad(-1, xy, uv, r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f);
+    QueuedQuad q = MakeQuad(-1, a / 255.0f, r / 255.0f, g / 255.0f, b / 255.0f);
+    std::memcpy(q.xy, xy, sizeof xy); std::memcpy(q.uv, uv, sizeof uv);
+    EmitQuad(q);
 }
 
 void GamePlatform::ResCreateSpriteSheet(const std::string& path) {
@@ -1036,7 +1080,6 @@ float GamePlatform::ResGetFontMaxDescending() { const BitmapFont* f = CurrentFon
 // either order; the defaults are TOP and LEFT.
 void GamePlatform::ResDrawString(const std::string& group, const std::string& key, float x, float y,
                                  const std::string& a1, const std::string& a2) {
-    FlushZ();
     // a text group name means the text is a key of that group ("MI_PLAY"); an empty group draws the text itself
     const std::string text = group.empty() ? key : ResGetString(group, key);
     const BitmapFont* font = CurrentFont();
@@ -1242,7 +1285,6 @@ void GamePlatform::Wheel(int notches) {
 // drawBackgroundNative: every looping layer is a row of copies of its sprite, shifted by the camera
 // times the layer's parallax speed.
 void GamePlatform::DrawBackground() {
-    FlushZ();
     if (!backend_) return;
     // The non-looping layers (the cranes) are placed one after another: the first at episode4BGCranes.startX / 16
     // sprite widths, each next one half a sprite width further.
@@ -1291,7 +1333,6 @@ void GamePlatform::DrawBackground() {
 // drawForegroundNative: the ground colour below the first foreground sprite, then the foreground
 // sprites repeated at 1.5 times the world scale.
 void GamePlatform::DrawForeground() {
-    FlushZ();
     if (!backend_) return;
     // a foreground layer is a sprite or a composite sprite (the Ham 'o' Ween menu draws its trees and pumpkins as composites)
     auto extent = [&](const std::string& name, float& w, float& pivotX, float& h, float& pivotY) {
@@ -1405,7 +1446,6 @@ void GamePlatform::DrawPhysObject(PhysObject& o) {
 // drawGameNative: static blocks, then the other blocks, the trajectory dots, the birds, and
 // finally everything with a z of 5 or more.
 void GamePlatform::DrawGame() {
-    FlushZ();
     gameDrawn_ = true;
     if (!backend_) return;
     state_ = RenderState();
@@ -1424,7 +1464,12 @@ void GamePlatform::DrawGame() {
         if (rio || anySet)
             std::stable_sort(group.begin(), group.end(), [rio](PhysObject* a, PhysObject* b) {
                 return (rio || a->zSet ? a->zOrder : 0) < (rio || b->zSet ? b->zOrder : 0); });
-        for (PhysObject* o : group) DrawPhysObject(*o);
+        for (PhysObject* o : group) {
+            drawingNative_ = true;                          // v2.2.1: the object's quads are sorted against render state z sprites by its z_order
+            nativeKey_ = (rio || o->zSet) ? o->zOrder : 0;
+            DrawPhysObject(*o);
+            drawingNative_ = false;
+        }
         state_.alpha = 1;                          // setObjectAlpha belongs to one object, not to what is drawn next
     };
     drawGroup([&](PhysObject& o) { return isStatic(o) && o.zOrder < 5; });
@@ -2068,14 +2113,15 @@ void GamePlatform::CanvasDraw(const std::string& mask) {
         canvas_.composedRev = canvas_.revision;
     }
     if (canvas_.texture < 0) return;
-    FlushZ();
     float x = -(float)sp->pivotX, y = -(float)sp->pivotY, w = (float)sp->w, h = (float)sp->h;
     float cx = x + state_.pivotX, cy = y + state_.pivotY;
     const float px[4] = {x, x + w, x + w, x}, py[4] = {y, y, y + h, y + h};
     const float uv[8] = {0, 0, 1, 0, 1, 1, 0, 1};
     float xy[8];
     for (int i = 0; i < 4; i++) Transform(px[i], py[i], cx, cy, xy[i * 2], xy[i * 2 + 1]);
-    backend_->DrawQuad(canvas_.texture, xy, uv, 1, 1, 1, state_.alpha);
+    QueuedQuad q = MakeQuad(canvas_.texture, state_.alpha, 1, 1, 1);
+    std::memcpy(q.xy, xy, sizeof xy); std::memcpy(q.uv, uv, sizeof uv);
+    EmitQuad(q);
 }
 
 // the two brush colours that cover most of the egg (empty when there is hardly any paint, or only one colour)
