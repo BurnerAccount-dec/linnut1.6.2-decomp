@@ -74,7 +74,7 @@ public:
     float MasterVolume() const { return masterVolume_; }
     void SetClipVolume(const std::string& name, float volume);     // the voices of that clip playing now
     void SetClipSpeed(const std::string& name, float speed);
-    // v2.3: pitch (speed and pitch together, like a record), tempo (speed alone, pitch unchanged), pan (-1 left .. 1 right), seek and tell. They apply to the voices
+    // v2.4: pitch (speed and pitch together, like a record), tempo (speed alone, pitch unchanged), pan (-1 left .. 1 right), seek and tell. They apply to the voices
     // of that clip playing now and to every play of it afterwards (until ResetClipEffects), so they can be set before the clip is played.
     void SetClipPitch(const std::string& name, float pitch);
     void SetClipTempo(const std::string& name, float tempo);
@@ -103,7 +103,7 @@ private:
         float volume = 1;
         int id = 0, track = 0;
         bool loop = false, stopped = false;
-        float pitch = 1, tempo = 1, pan = 0;     // v2.3
+        float pitch = 1, tempo = 1, pan = 0;     // v2.4
         bool inFx = false;                       // the position lives in posD while the effect path mixes the voice
         double posD = 0, base = 0, lastTf = 1;   // source frame; where the stretch started; tempo last mixed with
         unsigned long long outCount = 0;

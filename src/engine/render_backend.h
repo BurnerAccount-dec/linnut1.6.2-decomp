@@ -27,9 +27,9 @@ public:
     // texture's alpha at maskUV (used for the ground blocks, which show a theme texture through a sprite shape).
     virtual void DrawMaskedQuad(int tileTexture, int maskTexture, const float xy[8], const float tileUV[8], const float maskUV[8], float alpha) = 0;
     virtual void SetClip(bool enabled, float x, float y, float w, float h) = 0;
-    // v2.3: how the following quads mix with what is there: 0 normal, 1 additive, 2 multiply, 3 screen (the sprites are premultiplied)
+    // v2.4: how the following quads mix with what is there: 0 normal, 1 additive, 2 multiply, 3 screen (the sprites are premultiplied)
     virtual void SetBlend(int mode) { (void)mode; }
-    // v2.3: the colour a masked (tiled) quad is multiplied by, 0..n per channel; DrawQuad has its own colour arguments
+    // v2.4: the colour a masked (tiled) quad is multiplied by, 0..n per channel; DrawQuad has its own colour arguments
     virtual void SetTileTint(float r, float g, float b) { (void)r; (void)g; (void)b; }
     virtual void EndFrame() = 0;
 };

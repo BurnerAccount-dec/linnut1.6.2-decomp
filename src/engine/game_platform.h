@@ -324,8 +324,8 @@ private:
         float tintR = 1, tintG = 1, tintB = 1;   // v2.2: sprites are multiplied by this colour (setRenderState arguments 15 to 17, setTint)
         float blur = 0;       // v2.2: sprites are drawn 9 times spread over this many pixels (setRenderState argument 18, setBlur)
         float pixelate = 0;   // v2.2: sprites are drawn in blocks of this many sprite pixels (setRenderState argument 19, setPixelate)
-        int blend = 0;                   // v2.3: 0 normal, 1 additive, 2 multiply, 3 screen (setBlendMode, setRenderState argument 20)
-        int effect = 0;                  // v2.3: 0 none, 1 grayscale, 2 sepia, 3 invert, 4 chromatic, 5 glow (setShader, setRenderState argument 21)
+        int blend = 0;                   // v2.4: 0 normal, 1 additive, 2 multiply, 3 screen (setBlendMode, setRenderState argument 20)
+        int effect = 0;                  // v2.4: 0 none, 1 grayscale, 2 sepia, 3 invert, 4 chromatic, 5 glow (setShader, setRenderState argument 21)
         float z = 0;                     // setRenderState argument 13: the sprite is placed among the game's objects by z (see EmitQuad); 0 = drawn in call order
     };
     // v2.2.1: everything drawn in a frame waits in one list and is sent to the backend by FlushZ (clip changes and the end of the frame).
@@ -344,7 +344,7 @@ private:
     const TextureInfo* TextureFile(const std::string& path, bool repeat);
     void DrawSpriteAt(const SpriteSheet& sheet, const Sprite& sp, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height);
     void DrawSpriteAtRaw(const SpriteSheet& sheet, const Sprite& sp, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height);
-    // v2.3: graphics settings of one target (see Platform::SetRenderOverride). Applied on top of the render state when a sprite is drawn for that target.
+    // v2.4: graphics settings of one target (see Platform::SetRenderOverride). Applied on top of the render state when a sprite is drawn for that target.
     struct RenderOverride {
         bool alpha = false, tint[3] = {false, false, false}, skew = false, bend = false, z = false, blur = false, pixelate = false, blend = false, effect = false, rot = false;
         float a = 1, t[3] = {1, 1, 1}, skewX = 0, skewY = 0, bendX = 0, bendY = 0, zv = 0, blurV = 0, pixV = 0, rotV = 0;

@@ -183,16 +183,16 @@ public:
     // v2.2: the colour that sprites are multiplied by (1, 1, 1: no tint), setRenderState arguments 15 to 17 and setTint
     virtual void SetTint(float r, float g, float b) { (void)r; (void)g; (void)b; }
     virtual void GetTint(float& r, float& g, float& b) { r = g = b = 1; }
-    // v2.3: a graphics setting for one target instead of the render state. target: an object name, a sprite or composite sprite name, or "background" /
+    // v2.4: a graphics setting for one target instead of the render state. target: an object name, a sprite or composite sprite name, or "background" /
     // "foreground" / "trajectory" / "particles" (what the engine draws itself). what: 0 alpha, 1 tint (a, b, c), 2 skew, 3 bend, 4 z, 5 blur, 6 pixelate,
     // 7 blend mode, 8 shader, 9 visual rotation, 10 one colour channel (a = 0..3 for r g b a, b = value), 11 clear everything of that target
     virtual void SetRenderOverride(const std::string& target, int what, float a, float b, float c) { (void)target; (void)what; (void)a; (void)b; (void)c; }
     virtual bool GetRenderOverride(const std::string& target, int what, float& a, float& b, float& c) { (void)target; (void)what; a = b = c = 0; return false; }
     virtual bool HasObject(const std::string& name) { (void)name; return false; }
-    // v2.3: SetBlendMode / SetShader on the render state itself (setRenderState's arguments 20 and 21)
+    // v2.4: SetBlendMode / SetShader on the render state itself (setRenderState's arguments 20 and 21)
     virtual void SetBlendMode(int mode) { (void)mode; }
     virtual void SetShaderEffect(int effect) { (void)effect; }
-    // v2.3: res.getSpritePixel(sprite, x, y): the colour of one pixel of a sprite's picture, false if there is no such sprite or pixel
+    // v2.4: res.getSpritePixel(sprite, x, y): the colour of one pixel of a sprite's picture, false if there is no such sprite or pixel
     struct CompoPartInfo { std::string sprite; float x = 0, y = 0, scale = 1, angle = 0; };
     virtual bool ResGetCompoParts(const std::string& name, std::vector<CompoPartInfo>& out) { (void)name; (void)out; return false; }
     virtual bool ResGetSpritePixel(const std::string& sprite, int x, int y, int& r, int& g, int& b, int& a) { (void)sprite; (void)x; (void)y; r = g = b = a = 0; return false; }
@@ -308,7 +308,7 @@ public:
     virtual float ResGetMasterVolume() { return 1; }
     virtual void ResSetAudioClipVolume(const std::string& n, float v) { (void)n; (void)v; }
     virtual void ResSetAudioClipSpeed(const std::string& n, float s) { (void)n; (void)s; }
-    // v2.3: per-clip pitch / tempo / pan, seek and tell (res.setAudioClipPitch ...)
+    // v2.4: per-clip pitch / tempo / pan, seek and tell (res.setAudioClipPitch ...)
     virtual void ResSetAudioClipPitch(const std::string& n, float v) { (void)n; (void)v; }
     virtual void ResSetAudioClipTempo(const std::string& n, float v) { (void)n; (void)v; }
     virtual void ResSetAudioClipPan(const std::string& n, float v) { (void)n; (void)v; }
@@ -316,7 +316,7 @@ public:
     virtual bool ResSeekAudioClip(const std::string& n, double s) { (void)n; (void)s; return false; }
     virtual double ResAudioClipTime(const std::string& n) { (void)n; return -1; }
     virtual double ResAudioClipLength(const std::string& n) { (void)n; return -1; }
-    virtual void ResSetString(const std::string& group, const std::string& key, const std::string& text) { (void)group; (void)key; (void)text; }   // v2.3: res.setString
+    virtual void ResSetString(const std::string& group, const std::string& key, const std::string& text) { (void)group; (void)key; (void)text; }   // v2.4: res.setString
     virtual void ResOpenURL(const std::string& url) { (void)url; }
     virtual void PlayVideo(const std::string& path) { (void)path; }   // playVideo("videos/x.m4v")
     virtual void StopVideo() {}                      // v2.2: stopVideo()

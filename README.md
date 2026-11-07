@@ -2,7 +2,7 @@
 
 An unofficial, from-scratch reimplementation of the Angry Birds PC engine, rebuilt from a Ghidra decompile of the 1.6.2 executable. It is written in C++ (SDL2, OpenGL 1.x, Lua 5.1, Box2D 2.1 and 2.2) and does not re-implement the game logic: it runs the game's **original Lua scripts** and provides the native functions those scripts expect, so levels, menus, physics and scoring behave like the original.
 
-Version 2.3. What works, per game:
+Version 2.4. What works, per game:
 
 | Game | Play | Level editor | Notes |
 |---|---|---|---|
@@ -37,11 +37,22 @@ Version 2.3. What works, per game:
 
 **Space planet gravity.** The pull follows the exe's contact list: one entry per touching fixture pair (an object made of several fixtures is pulled once per pair), applied last entry first and only to objects that are awake; a gravity sensor with parameter 19 sets the linear damping of objects flagged with parameter 1 or 34 to 100 when they leave it.
 
+## New in 2.4
+
+Version 2.4 adds the Angry Birds Space fixes that followed 2.3 and a set of new script functions for modding. In short:
+
+* **Space:** the level limits and the draw order now follow the retail exe (the Utopia 4-30 crash and Red Planet 5-30 are fixed), and the folder of the Space prototype build (`AngryBirdsSpace_v1.0.0_proto_Windows`) loads.
+* **Objects and physics:** `setScale` / `getScale`, `setSpeedCap` (a speed limit for one object that replaces `setMaxTranslation` for it), `getTouchingObjects`, `rayCast` (nearest hit or every hit along the ray) and `fileExists`.
+* **Audio:** pitch, tempo and stereo pan per clip (settable before the clip plays), seeking inside a playing clip, reading its position and length.
+* **Graphics:** blend modes, built-in shader presets (grayscale, sepia, invert, chromatic aberration, glow), single tint channels, a visual-only rotation, a pixel colour lookup, a composite sprite part list, and a **target** argument that lets the graphics settings apply to one object, sprite, composite sprite or to the background, foreground, trajectory dots and particles. All of it also works on tiled texture blocks.
+* **Text and console:** `res.setString` injects new text; the console gained `text`, `texts`, `gravity`, `maxtranslation`, `scale`, `speedcap`, `blend` and `shader`.
+* **The command prompt** closes together with the game when the game is closed normally, and stays open after a crash so the message can be read.
+
 **Space level limits.** `setLevelLimits(minX, minY, maxX, maxY)` keeps all four limits and an object that moves outside them is removed; the old rule (anything below y 20 is gone) is now only used by the other games. It made the Utopia boss (4-30, which spawns its popcorn at y 60) and the Red Planet boss (5-30) delete themselves on the first frame, and removed birds that flew low in some planet levels.
 
 **Space and Rio draw order.** See "Draw order and z": one pass over the z layers, as the exes do.
 
-## New script functions in 2.3 (modding)
+## New script functions in 2.4 (modding)
 
 Every one of these is native, so it works in every game and version the engine runs. The graphics setters take an optional **target** as their last argument (see "Graphics settings for one target").
 
@@ -50,7 +61,7 @@ Every one of these is native, so it works in every game and version the engine r
 | Function | What it does |
 |---|---|
 | `setScale(name, sx [, sy])`, `getScale(name)` | The scale the object's picture is drawn with: the same value `setObjectParameter(name, 5, v)` sets, without going through it. Leave `sy` out for a uniform scale. `getScale` returns `sx, sy` (nil if there is no such object). It scales the picture only; `resizeCircle` changes the shape (the Time Travel puffer bird calls both). |
-| `setSpeedCap(name, maxSpeed [, maxVx, maxVy])`, `getSpeedCap(name)`, `clearSpeedCap(name)` | A limit for one object: after every physics step its velocity is brought back under `maxSpeed` (length) and, if given, `maxVx` / `maxVy` (0 or nil = no limit on that one). It is applied on top of Box2D's global `setMaxTranslation`, which still limits how far any body may move in one step (to let a capped object go faster than that, raise `setMaxTranslation`). |
+| `setSpeedCap(name, maxSpeed [, maxVx, maxVy])`, `getSpeedCap(name)`, `clearSpeedCap(name)` | A limit for one object only. `maxSpeed` (units per second) **replaces** the global `setMaxTranslation` for that body, inside Box2D's solver: a capped object can go faster than the world's limit (if `maxSpeed` is higher) or be held lower (if it is lower), while every other object keeps the world's limit. `maxVx` / `maxVy` (optional, 0 or nil = none) clamp each axis after every step. `clearSpeedCap` gives the body back to the world's limit. |
 | `getTouchingObjects(name)` | A table of the names of every object the body touches this very step (it walks the body's contact list; sensors and disabled contacts included). |
 | `rayCast(x1, y1, x2, y2 [, all])` | Box2D's own ray cast. Without `all`: `name, hitX, hitY, normalX, normalY, fraction` of the nearest object (nil if none). With `all = true`: a table of `{name, x, y, nx, ny, fraction}` for every object the ray passes through, nearest first (lasers through stacked glass, piercing shots). `getRayCastedObjects` is still there. |
 | `fileExists(path)` | true if the file exists in the game folder or in the saves folder; nothing is loaded. |
@@ -86,7 +97,7 @@ Already there, nothing new needed:
 
 ### The console
 
-New commands: `text <group> <key> <text>`, `texts [group]`, `gravity [x y]`, `maxtranslation <t>`, `scale <object> <sx> [sy]`, `speedcap <object> <speed>`, `blend <object> <mode>`, `shader <object> <name>`. Anything else typed is still run as Lua (`lua getTouchingObjects("pig_3")`), and since every native is a Lua function, anything the engine does can be changed from there.
+New commands (also listed in "The console" below): `text <group> <key> <text>`, `texts [group]`, `gravity [x y]`, `maxtranslation <t>`, `scale <object> <sx> [sy]`, `speedcap <object> <speed>`, `blend <object> <mode>`, `shader <object> <name>`. Anything else typed is still run as Lua (`lua getTouchingObjects("pig_3")`), and since every native is a Lua function, anything the engine does can be changed from there.
 
 ### Prototype build and window
 
@@ -450,6 +461,9 @@ The window that opens behind the game accepts typed lines. Click into it, type a
 | `box2d 21` / `box2d 22` | choose Box2D 2.1.1 or 2.2.0; it is switched when the next level loads (restart the level). The same as the `AB_BOX2D` variable, without restarting the engine |
 | `polyradius 0.1` | collision skin of boxes and polygons made from now on (Box2D 2.2) |
 | `zorder`, `zorder <name>`, `zorder <name> <z>`, `zfront <name>`, `zback <name>` | list the objects back to front with their `z_order`, show or set one object's z, bring it to the front / send it to the back |
+| `text <group> <key> <text>`, `texts [group]` | sets or adds one text (what `res.getString` and `drawString` read), or lists the text groups / the texts of one group |
+| `gravity [x y]`, `maxtranslation [t]` | shows or sets the world's gravity, and the longest distance a body moves in one physics step |
+| `scale <object> <sx> [sy]`, `speedcap <object> <speed>`, `blend <object> <mode>`, `shader <object> <name>` | the same as `setScale`, `setSpeedCap`, `setBlendMode` and `setShader` for one object (`blend`: normal, add, multiply, screen; `shader`: none, grayscale, sepia, invert, chromatic, glow) |
 | `lua <code>` or just the code | runs Lua among the game's scripts, for example `lua print(score)` or `lua setAlpha(0.5)` |
 
 Environment variables, set in the command prompt before starting the engine (`set NAME=value`, `set NAME=` to clear):
