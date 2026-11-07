@@ -50,8 +50,8 @@ public:
     virtual void ApplyImpulse(float ix, float iy, float px, float py) = 0;
     virtual void ApplyForce(float fx, float fy, float px, float py) = 0;
     virtual void SetSensor(bool on) = 0;                 // every fixture
-    virtual void SetMaxSpeed(float s) { (void)s; }   // v2.3: this body's own limit instead of the world's max translation (0: the world's)
-    virtual void Touching(std::vector<PhysObject*>& out) const { (void)out; }   // v2.3: the objects on the other side of this body's touching contacts right now
+    virtual void SetMaxSpeed(float s) { (void)s; }   // v2.4: this body's own limit instead of the world's max translation (0: the world's)
+    virtual void Touching(std::vector<PhysObject*>& out) const { (void)out; }   // v2.4: the objects on the other side of this body's touching contacts right now
     virtual bool Bounds(float& x0, float& y0, float& x1, float& y1) const = 0;   // union of the fixtures' boxes; false: no fixture
     virtual float LinearDamping() const = 0;
     virtual float AngularDamping() const = 0;
@@ -121,7 +121,7 @@ struct PhysObject : FrameObject {
     float gravMin = 0, gravMax = 0, gravRadius = -1; // ids 25, 26, 27 (+0x168, +0x16c, +0x170); radius <= -1: a directional field
     bool spaceFlagA = false, spaceActive19e = false; // Space ids 19 (+0x188) and 20 (+0x19e), read by the contact filter at 0x4624e0
     bool hidden = false;                             // Space id 33 (+0x1ab) = 0: isVisible false, not drawn
-    float capSpeed = 0, capVx = 0, capVy = 0;        // v2.3 setSpeedCap: 0 = no limit, applied after every physics step
+    float capSpeed = 0, capVx = 0, capVy = 0;        // v2.4 setSpeedCap: 0 = no limit, applied after every physics step
     bool zSet = false;                               // setObjectZOrder was used: the object is drawn by zOrder in every game (Rio always sorts by it)
 };
 
@@ -230,12 +230,12 @@ public:
     int ColliderType(const std::string& n) const;
     void SetDecoration(const std::string& n, const std::string& sprite, int amount, float increment, float scale);
     void SetSpriteLook(const std::string& n, int what, float a, float b);   // 0 sprite angle, 1 pivot offset, 2 texture scale (Space natives)
-    void SetObjectScale(const std::string& n, float sx, float sy);            // v2.3 setScale: the scale every game draws (turns scaled drawing on)
+    void SetObjectScale(const std::string& n, float sx, float sy);            // v2.4 setScale: the scale every game draws (turns scaled drawing on)
     bool GetObjectScale(const std::string& n, float& sx, float& sy) const;
-    void SetSpeedCap(const std::string& n, float speed, float vx, float vy);  // v2.3 setSpeedCap
+    void SetSpeedCap(const std::string& n, float speed, float vx, float vy);  // v2.4 setSpeedCap
     bool GetSpeedCap(const std::string& n, float& speed, float& vx, float& vy) const;
     void ApplySpeedCaps();                                                     // after every Step
-    std::vector<std::string> TouchingObjects(const std::string& n) const;      // v2.3 getTouchingObjects
+    std::vector<std::string> TouchingObjects(const std::string& n) const;      // v2.4 getTouchingObjects
     void SetObjectAlpha(const std::string& n, float a);       // 0..1, clamped
     float ObjectAlpha(const std::string& n) const;            // -1 if there is no such object
     void SetObjectZOrder(const std::string& n, float z);     // draw order: higher is drawn later (in front)

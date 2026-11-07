@@ -1583,7 +1583,7 @@ int l_setObjectParameter(lua_State* L) {
     if (rio && id == 5) P(L)->SetObjectParameter(S(L, 1), 6, value != 1.0f ? 1.0f : 0.0f);
     return 0;
 }
-// ---- v2.3 natives, every game
+// ---- v2.4 natives, every game
 // setScale(name, sx [, sy]) / getScale(name) -> sx, sy: the scale the sprite of an object is drawn with (what setObjectParameter(name, 5, v) sets; a missing sy
 // means sy = sx). Turns scaled drawing on in the games that need it. It scales the picture only: the shape stays as it is (resizeCircle changes the shape).
 int l_setScale(lua_State* L) {
@@ -1686,7 +1686,7 @@ int l_setRenderState(lua_State* L) {
     if (argc >= 17) P(L)->SetTint(N(L, 15), N(L, 16), N(L, 17));      // v2.2: setRenderState(..., z, bendFunction, tintR, tintG, tintB)
     if (argc >= 18) P(L)->SetRenderExtras(3, N(L, 18), 0);     // ... tintR, tintG, tintB, blur, pixelate
     if (argc >= 19) P(L)->SetRenderExtras(4, N(L, 19), 0);
-    if (argc >= 20 && lua_type(L, 20) != LUA_TNIL) P(L)->SetBlendMode(BlendFrom(L, 20));      // v2.3: ... pixelate, blend mode, shader
+    if (argc >= 20 && lua_type(L, 20) != LUA_TNIL) P(L)->SetBlendMode(BlendFrom(L, 20));      // v2.4: ... pixelate, blend mode, shader
     if (argc >= 21 && lua_type(L, 21) != LUA_TNIL) P(L)->SetShaderEffect(ShaderFrom(L, 21));
     return 0;
 }
@@ -1832,7 +1832,7 @@ int l_setBlur(lua_State* L) { std::string t = TargetArg(L, 2); if (t.empty()) P(
 int l_setPixelate(lua_State* L) { std::string t = TargetArg(L, 2); if (t.empty()) P(L)->SetRenderExtras(4, N(L, 1), 0); else P(L)->SetRenderOverride(t, 6, N(L, 1), 0, 0); return 0; }   // setPixelate(size): blocks of size x size sprite pixels; 0 = off
 int l_resetBlur(lua_State* L) { std::string t = TargetArg(L, 1); if (t.empty()) P(L)->SetRenderExtras(3, 0, 0); else P(L)->SetRenderOverride(t, 5, 0, 0, 0); return 0; }
 int l_resetPixelate(lua_State* L) { std::string t = TargetArg(L, 1); if (t.empty()) P(L)->SetRenderExtras(4, 0, 0); else P(L)->SetRenderOverride(t, 6, 0, 0, 0); return 0; }
-// v2.3: setBlendMode(mode [, target]): "normal", "add", "multiply" or "screen" (or 0..3). getBlendMode() is not kept; the mode stays until it is set again.
+// v2.4: setBlendMode(mode [, target]): "normal", "add", "multiply" or "screen" (or 0..3). getBlendMode() is not kept; the mode stays until it is set again.
 int BlendFrom(lua_State* L, int i) {
     if (lua_isnumber(L, i)) return (int)lua_tonumber(L, i);
     std::string s = lua_type(L, i) == LUA_TSTRING ? lua_tostring(L, i) : "";
@@ -1847,7 +1847,7 @@ int l_setBlendMode(lua_State* L) {
     if (t.empty()) P(L)->SetBlendMode(m); else P(L)->SetRenderOverride(t, 7, (float)m, 0, 0);
     return 0;
 }
-// v2.3: setShader(name [, target]): "none", "grayscale", "sepia", "invert", "chromatic" (colour fringes) or "glow" (0..5). The renderer is fixed-function OpenGL 1.x,
+// v2.4: setShader(name [, target]): "none", "grayscale", "sepia", "invert", "chromatic" (colour fringes) or "glow" (0..5). The renderer is fixed-function OpenGL 1.x,
 // so these are built in rather than programs you write.
 int ShaderFrom(lua_State* L, int i) {
     if (lua_isnumber(L, i)) return (int)lua_tonumber(L, i);
@@ -1863,7 +1863,7 @@ int l_setShader(lua_State* L) {
     if (t.empty()) P(L)->SetShaderEffect(m); else P(L)->SetRenderOverride(t, 8, (float)m, 0, 0);
     return 0;
 }
-// v2.3: setTintChannel("r" | "g" | "b" | "a", value [, target]): one channel of the tint (or the alpha) and nothing else. Values above 1 brighten.
+// v2.4: setTintChannel("r" | "g" | "b" | "a", value [, target]): one channel of the tint (or the alpha) and nothing else. Values above 1 brighten.
 int l_setTintChannel(lua_State* L) {
     std::string c = lua_type(L, 1) == LUA_TSTRING ? lua_tostring(L, 1) : "";
     int ch = (c == "r" || c == "R" || c == "red") ? 0 : (c == "g" || c == "G" || c == "green") ? 1 : (c == "b" || c == "B" || c == "blue") ? 2 : 3;
@@ -1876,7 +1876,7 @@ int l_setTintChannel(lua_State* L) {
     if (ch == 3) P(L)->SetAlpha(v); else P(L)->SetTint(r, g, b);
     return 0;
 }
-// v2.3: setVisualRotation(radians [, target]): turns what is drawn and nothing else. For an object it is setSpriteRotation (the body is not touched); for a
+// v2.4: setVisualRotation(radians [, target]): turns what is drawn and nothing else. For an object it is setSpriteRotation (the body is not touched); for a
 // sprite or group it is added to the angle of what is drawn; without a target it is the render state's angle (setRenderState's fifth value).
 int l_setVisualRotation(lua_State* L) {
     std::string t = TargetArg(L, 2);
@@ -1885,7 +1885,7 @@ int l_setVisualRotation(lua_State* L) {
     else P(L)->SetRenderOverride(t, 9, N(L, 1), 0, 0);
     return 0;
 }
-// v2.3: resetRenderOverrides(target): forgets every graphics setting made for that target
+// v2.4: resetRenderOverrides(target): forgets every graphics setting made for that target
 int l_resetRenderOverrides(lua_State* L) { P(L)->SetRenderOverride(S(L, 1), 11, 0, 0, 0); return 0; }
 // res.getSpritePixel(sprite, x, y) -> r, g, b, a (0..255) of the pixel x pixels right and y pixels down from the sprite's top left corner, or nil
 int r_getSpritePixel(lua_State* L) {
@@ -2182,7 +2182,7 @@ int r_setMasterVolume(lua_State* L) { P(L)->ResSetMasterVolume(N(L, 1)); return 
 int r_getMasterVolume(lua_State* L) { lua_pushnumber(L, P(L)->ResGetMasterVolume()); return 1; }
 int r_setAudioClipVolume(lua_State* L) { P(L)->ResSetAudioClipVolume(S(L, 1), N(L, 2)); return 0; }
 int r_setAudioClipSpeed(lua_State* L) { P(L)->ResSetAudioClipSpeed(S(L, 1), N(L, 2)); return 0; }
-// v2.3: setAudioClipPitch(name, p) (speed and pitch together), setAudioClipTempo(name, t) (speed alone), setAudioClipPan(name, -1..1), resetAudioClipEffects(name),
+// v2.4: setAudioClipPitch(name, p) (speed and pitch together), setAudioClipTempo(name, t) (speed alone), setAudioClipPan(name, -1..1), resetAudioClipEffects(name),
 // seekAudioClip(name, seconds) -> true if a voice of it plays, getAudioClipTime(name) -> seconds or -1, getAudioClipLength(name) -> seconds or -1.
 // All of them also work before the clip is played: the setting is kept for the name and every later play of it starts with it.
 // res.setString(group, key, text): sets one text of a text group (the group is made when it is new), so scripts and the console can inject wholly new text; res.getString reads it back

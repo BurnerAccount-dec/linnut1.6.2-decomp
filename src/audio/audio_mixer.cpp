@@ -347,7 +347,7 @@ double AudioMixer::ClipLength(const std::string& name) {
 }
 
 
-// v2.3: the voice with a pitch, tempo or pan set. Same pitch and tempo: plain resampling. Different: two overlapping Hann grains (overlap-add), which
+// v2.4: the voice with a pitch, tempo or pan set. Same pitch and tempo: plain resampling. Different: two overlapping Hann grains (overlap-add), which
 // changes the length without changing the pitch.
 void AudioMixer::MixFx(Voice& v, int frames, float speed) {
     const int ch = channels_;

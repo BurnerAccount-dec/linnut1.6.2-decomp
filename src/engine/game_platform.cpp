@@ -808,7 +808,7 @@ GamePlatform::QueuedQuad GamePlatform::MakeQuad(int tex, float alpha, float r, f
 void GamePlatform::EmitQuad(QueuedQuad& q) {
     static bool inEffect = false;
     if (!inEffect && (state_.effect == 4 || state_.effect == 5) && q.tex >= 0 && q.mask < 0 && !drawingCursor_) {
-        // v2.3 chromatic aberration (red and blue copies pulled apart) and glow (soft additive copies around it); the fixed-function renderer has no shaders
+        // v2.4 chromatic aberration (red and blue copies pulled apart) and glow (soft additive copies around it); the fixed-function renderer has no shaders
         inEffect = true;
         const float d = state_.effect == 4 ? 2.5f : 3.0f;
         const float dx[4] = {-d, d, 0, 0}, dy[4] = {0, 0, -d, d};
@@ -976,7 +976,7 @@ void GamePlatform::ResGetCompoSpriteBounds(const std::string&, const std::string
     x1 = (float)-ox; y1 = (float)-oy; x2 = (float)(w - ox); y2 = (float)(h - oy);
 }
 
-// v2.3 shader presets 1..3 (grayscale, sepia, invert) as a converted copy of the texture, made once. The sheets are premultiplied, so the same maths holds.
+// v2.4 shader presets 1..3 (grayscale, sepia, invert) as a converted copy of the texture, made once. The sheets are premultiplied, so the same maths holds.
 int GamePlatform::VariantTexture(int handle, int effect) {
     auto src = handleSource_.find(handle);
     if (src == handleSource_.end() || !backend_) return handle;
@@ -1060,7 +1060,7 @@ bool GamePlatform::ResGetCompoParts(const std::string& name, std::vector<CompoPa
     return true;
 }
 
-// v2.3: the graphics settings kept for a target are put on the render state for the draw (the group being drawn, then the composite sprite, then the sprite)
+// v2.4: the graphics settings kept for a target are put on the render state for the draw (the group being drawn, then the composite sprite, then the sprite)
 void GamePlatform::ApplyOverride(const RenderOverride& o) {
     if (o.alpha) state_.alpha *= o.a;
     if (o.tint[0]) state_.tintR *= o.t[0];
