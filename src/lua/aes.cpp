@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "lua/aes.h"
 #include "lua/sevenzip.h"
 #include "lua/dec_folder.h"
@@ -139,6 +140,38 @@ void AesEncryptCbc(const uint8_t key[32], const std::vector<uint8_t>& in, std::v
     }
 }
 
+static bool g_spaceFamily = false;
+void SetSaveFamilySpace(bool space) { g_spaceFamily = space; }
+
+#ifdef _WIN32
+extern "C" __declspec(dllimport) int __stdcall MoveFileExA(const char* from, const char* to, unsigned long flags);
+#endif
+
+bool WriteFileSafely(const std::string& path, const std::vector<uint8_t>& bytes) {
+    std::string tmp = path + ".tmp";
+    FILE* f = std::fopen(tmp.c_str(), "wb");
+    if (!f) return false;
+    bool ok = bytes.empty() || std::fwrite(bytes.data(), 1, bytes.size(), f) == bytes.size();
+    ok = (std::fflush(f) == 0) && ok;
+    ok = (std::fclose(f) == 0) && ok;
+    if (!ok) { std::remove(tmp.c_str()); return false; }
+    if (FILE* in = std::fopen(path.c_str(), "rb")) {                 // the last good file stays as <path>.bak
+        std::vector<uint8_t> old;
+        uint8_t buf[4096];
+        size_t n;
+        while ((n = std::fread(buf, 1, sizeof(buf), in)) > 0) old.insert(old.end(), buf, buf + n);
+        std::fclose(in);
+        if (!old.empty()) if (FILE* b = std::fopen((path + ".bak").c_str(), "wb")) { std::fwrite(old.data(), 1, old.size(), b); std::fclose(b); }
+    }
+#ifdef _WIN32
+    ok = MoveFileExA(tmp.c_str(), path.c_str(), 0x1 | 0x8) != 0;         // MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
+#else
+    ok = std::rename(tmp.c_str(), path.c_str()) == 0;
+#endif
+    if (!ok) std::remove(tmp.c_str());
+    return ok;
+}
+
 bool ReadSaveFile(const std::string& path, std::string& text, bool& encrypted, const char** keyUsed) {
     std::ifstream f(path.c_str(), std::ios::binary);
     if (!f) return false;
@@ -146,12 +179,22 @@ bool ReadSaveFile(const std::string& path, std::string& text, bool& encrypted, c
     encrypted = false;
     if (keyUsed) *keyUsed = kSaveKey;
     const char* keys[] = {kSaveKey, kSeasonsSaveKey, kSpaceSaveKey, kStarWarsSaveKey};
+    const char* foundKey = nullptr;
     for (size_t k = 0; k < 4 && !encrypted; k++) {
         if (!AesDecryptCbc((const uint8_t*)keys[k], bytes, plain)) continue;
         encrypted = true;
         for (size_t i = 0; i < plain.size() && i < 64; i++)
             if (plain[i] < 0x20 && plain[i] != '\t' && plain[i] != '\n' && plain[i] != '\r') encrypted = false;
-        if (encrypted && keyUsed) *keyUsed = keys[k];
+        if (encrypted) { foundKey = keys[k]; if (keyUsed) *keyUsed = keys[k]; }
+    }
+    // a Space or Star Wars save in the folder of an older game (saves written by the wrong game): its tables do not fit these scripts
+    // (settings.playtime is a table per device there), so it is kept as <file>.original and the game starts with empty saves
+    if (encrypted && !g_spaceFamily && (foundKey == kSpaceSaveKey || foundKey == kStarWarsSaveKey)) {
+        std::ifstream probe((path + ".original").c_str(), std::ios::binary);
+        if (!probe) { std::ofstream keep((path + ".original").c_str(), std::ios::binary); keep.write((const char*)bytes.data(), (std::streamsize)bytes.size()); }
+        encrypted = false; bytes.clear(); plain.clear();
+        text.clear();
+        return true;
     }
     if (encrypted) bytes = plain;
     else if (!bytes.empty() && bytes.size() % 16 == 0) {

@@ -33,6 +33,9 @@ void AesEncryptCbc(const uint8_t key[32], const std::vector<uint8_t>& in, std::v
 
 // Reads a save file. `encrypted` tells whether it was an original encrypted one (decrypts with kSaveKey
 // to text); otherwise the text is the file as it is. Returns false when the file cannot be opened.
+void SetSaveFamilySpace(bool space);   // Space and Star Wars saves are read only by those games
+// Writes a save file so that a crash or a closed window cannot leave half a file: the bytes go to <path>.tmp first, the previous file is kept as <path>.bak, then the new file replaces the old one in one step
+bool WriteFileSafely(const std::string& path, const std::vector<uint8_t>& bytes);
 bool ReadSaveFile(const std::string& path, std::string& text, bool& encrypted, const char** keyUsed = nullptr);
 
 // Reads a Lua file. If it is an encrypted one (it decrypts with kLevelKey to Lua bytecode or to plain

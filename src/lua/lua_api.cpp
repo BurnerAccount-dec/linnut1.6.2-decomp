@@ -789,6 +789,7 @@ int SaveLuaFileImpl(lua_State* L, const std::string& file, const std::string& na
     std::string old;
     bool encrypted = false;
     const char* saveKey = ab::kSaveKey;
+    ab::SetSaveFamilySpace(IsSpaceData(L));
     ab::ReadSaveFile(path, old, encrypted, &saveKey);   // 1.x, Seasons and Space saves have their own keys
     static int isSpace = -1, isStarWars = -1;
     if (isSpace < 0) {
@@ -847,12 +848,7 @@ int SaveLuaFileImpl(lua_State* L, const std::string& file, const std::string& na
             bytes = enc;
         }
     }
-    if (FILE* f = std::fopen(path.c_str(), "wb")) {
-        std::fwrite(bytes.data(), 1, bytes.size(), f);
-        std::fclose(f);
-    } else {
-        P(L)->Print("saveLuaFile: cannot write " + path);
-    }
+    if (!ab::WriteFileSafely(path, bytes)) P(L)->Print("saveLuaFile: cannot write " + path);
     return 0;
 }
 int l_saveLuaFile(lua_State* L) { return SaveLuaFileImpl(L, S(L, 1), S(L, 2), B(L, 3)); }
@@ -1355,6 +1351,7 @@ int l_setJointParameters(lua_State* L) {
     return 0;
 }
 int l_checkJointLimits(lua_State* L) { P(L)->CheckJointLimits(S(L, 1)); return 0; }
+int l_handleJointLimits(lua_State* L) { P(L)->CheckJointLimits(S(L, 1), B(L, 2)); return 0; }
 int l_destroyJoint(lua_State* L) {
     std::string n = S(L, 1);
     P(L)->DestroyJoint(n);
@@ -1430,9 +1427,11 @@ int BodyCmd(lua_State* L, int cmd, bool boolArg = false) {
     return 0;
 }
 int l_enableAimingAid(lua_State* L) { float r = 0; P(L)->BodyCommand("", 20, lua_toboolean(L, 1) ? 1.0f : 0.0f, r); return 0; }
-int l_setAimingAidSprite(lua_State* L) { float r = 0; P(L)->BodyCommand(lua_isstring(L, 1) ? lua_tostring(L, 1) : "", 21, 0, r); return 0; }
+int l_setAimingAidSprite(lua_State* L) { float r = 0; P(L)->BodyCommand(lua_isstring(L, 1) ? lua_tostring(L, 1) : "", 21, lua_isnumber(L, 2) ? (float)lua_tonumber(L, 2) : 1.0f, r); return 0; }
 int l_clearAimingAid(lua_State* L) { float r = 0; P(L)->BodyCommand("", 23, 0, r); return 0; }
 int l_updateBirdTrajectoryTable(lua_State* L) { float r = 0; P(L)->BodyCommand(lua_isstring(L, 1) ? lua_tostring(L, 1) : "BirdSimulation", 24, 0, r); return 0; }
+int l_spriteExists(lua_State* L) { lua_pushboolean(L, P(L)->SpriteExists(S(L, 1))); return 1; }
+int l_simulateAimingAid(lua_State* L) { float st[2] = {N(L, 5), N(L, 6)}; lua_pushboolean(L, P(L)->AimSimulate(lua_isstring(L, 1) ? lua_tostring(L, 1) : "", N(L, 2), N(L, 3), lua_isnumber(L, 4) ? (int)lua_tonumber(L, 4) : 120, lua_isnumber(L, 5) && lua_isnumber(L, 6) ? st : nullptr)); return 1; }
 int l_setSensorGravityMask(lua_State* L) { return BodyCmd(L, 10); }
 int l_setRevertGravity(lua_State* L) { float r = 0; P(L)->BodyCommand(S(L, 1), 14, B(L, 2) ? 1.0f : 0.0f, r); return 0; }
 int l_setRevertGravityWithMultiplier(lua_State* L) { float r = 0; P(L)->BodyCommand(S(L, 1), 15, B(L, 2) ? 1.0f : 0.0f, r); P(L)->BodyCommand(S(L, 1), 16, NOpt(L, 3, 0), r); P(L)->BodyCommand(S(L, 1), 17, NOpt(L, 4, 0), r); return 0; }
@@ -1737,6 +1736,7 @@ int l_fileExists(lua_State* L) {
     return 1;
 }
 int l_setPhysicsSimulationScale(lua_State* L) { P(L)->SetPhysicsSimulationScale(N(L, 1)); return 0; }
+int l_setStartingCameraValue(lua_State* L) { P(L)->SetStartingCameraValue(B(L, 1)); return 0; }
 int l_setThemeOffsetY(lua_State* L) { P(L)->SetThemeOffsetY(N(L, 2)); return 0; }
 int l_setPhysicsEnabled(lua_State* L) { P(L)->SetPhysicsEnabled(B(L, 1)); return 0; }
 int l_isPhysicsEnabled(lua_State* L) { lua_pushboolean(L, P(L)->IsPhysicsEnabled()); return 1; }
@@ -2080,6 +2080,7 @@ int l_getTimeDifferenceInSeconds(lua_State* L) {
 int l_drawLevelParticlesNative(lua_State* L) { P(L)->DrawLevelParticles((int)N(L, 1)); return 0; }
 int l_noop(lua_State*) { return 0; }   // setAlpha, drawLevelParticlesNative (the game view already draws its particles)
 int l_setWorldGravity(lua_State* L) { P(L)->SetWorldGravity(N(L, 1), N(L, 2)); return 0; }
+int l_getWorldGravity(lua_State* L) { float x = 0, y = 0; P(L)->GetWorldGravity(x, y); lua_pushnumber(L, x); lua_pushnumber(L, y); return 2; }
 int l_clearParticlesNative(lua_State* L) { P(L)->ClearParticles(); return 0; }
 int l_drawGameNative(lua_State* L) { P(L)->DrawGame(); return 0; }
 int l_drawBackgroundNative(lua_State* L) { P(L)->DrawBackground(); return 0; }
@@ -2366,6 +2367,30 @@ int l_readDataFile(lua_State* L) {
     return 1;
 }
 int l_drawParticlesFiltered(lua_State* L) { P(L)->DrawParticlesFiltered((int)N(L, 1)); return 0; }
+int l_setRestitution(lua_State* L) { P(L)->SetObjectRestitution(S(L, 1), N(L, 2)); return 0; }
+int l_getFullScreenWidth(lua_State* L) { lua_getfield(L, LUA_REGISTRYINDEX, "ab.env"); lua_getfield(L, -1, "screenWidth"); lua_remove(L, -2); if (!lua_isnumber(L, -1)) { lua_pop(L, 1); lua_pushnumber(L, 0); } return 1; }
+int l_getFullScreenHeight(lua_State* L) { lua_getfield(L, LUA_REGISTRYINDEX, "ab.env"); lua_getfield(L, -1, "screenHeight"); lua_remove(L, -2); if (!lua_isnumber(L, -1)) { lua_pop(L, 1); lua_pushnumber(L, 0); } return 1; }
+int l_performBitwiseOr(lua_State* L) { lua_pushnumber(L, (double)((int)N(L, 1) | (int)N(L, 2))); return 1; }   // 0x40dcb0
+// Retail natives (names from the registration table in AngryBirdsStarWars.exe)
+float g_waterForceMultiplier = 1.0f;   // setWaterForceMultiplier 0x40d490 / getWaterForceMultiplier 0x40d4a0
+int l_setWaterForceMultiplier(lua_State* L) { g_waterForceMultiplier = (float)N(L, 1); return 0; }
+int l_getWaterForceMultiplier(lua_State* L) { lua_pushnumber(L, g_waterForceMultiplier); return 1; }
+int l_fileExistsInAppData(lua_State* L) {   // 0x421ee0
+    std::vector<uint8_t> bytes;
+    lua_pushboolean(L, ab::ReadLuaFile(S(L, 1), bytes) && !bytes.empty());
+    return 1;
+}
+int l_loadTextFileToString(lua_State* L) {   // 0x419560
+    std::vector<uint8_t> bytes;
+    std::string path = S(L, 1);
+    bool found = ab::ReadLuaFile(path, bytes);
+    if (!found) { std::string alt = P(L)->ResolveDataFile(path); found = alt != path && ab::ReadLuaFile(alt, bytes); }
+    if (!found) { lua_pushnil(L); return 1; }
+    lua_pushlstring(L, (const char*)bytes.data(), bytes.size());
+    return 1;
+}
+int l_isGameOverlayActive(lua_State* L) { lua_pushboolean(L, 0); return 1; }   // 0x40d450 stub in retail
+int l_retailNoop(lua_State*) { return 0; }   // clearScreen, refreshCurrentLocale, recoverRenderObjects, ...
 int l_setObjectDensity(lua_State* L) { P(L)->SetObjectDensity(S(L, 1), N(L, 2)); return 0; }
 int r_keepLastFrame(lua_State* L) { P(L)->ResKeepLastFrame(lua_toboolean(L, 1) != 0); return 0; }
 int r_spawnFGLayerParticles(lua_State* L) { P(L)->SpawnFGLayerParticles((int)lua_tonumber(L, 1)); return 0; }
@@ -2441,20 +2466,20 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"checkJointLimits", l_checkJointLimits}, {"destroyJoint", l_destroyJoint},
         {"removeObject", l_removeObject}, {"savePersistentLuaFile", l_savePersistentLuaFile}, {"applyImpulse", l_applyImpulse}, {"applyForce", l_applyForce}, {"applyForceNative", l_applyForce}, {"setObjectDecoration", l_setObjectDecoration}, {"setNormalTrailSprite", l_setNormalTrailSprite}, {"setSpecialTrailSprite", l_setSpecialTrailSprite}, {"setSpriteRotation", l_setSpriteRotation}, {"setPivotOffset", l_setPivotOffset}, {"setTextureScale", l_setTextureScale}, {"setRecordVelocity", l_setRecordVelocity},
         {"setPosition", l_setPosition}, {"setRotation", l_setRotation}, {"setVelocity", l_setVelocity},
-        {"setAngularVelocity", l_setAngularVelocity}, {"setLinearDamping", l_setLinearDamping}, {"clearShapesArray", l_clearShapesArray}, {"addBoxToCompoundList", l_addBoxToCompoundList}, {"addPolygonToCompoundList", l_addPolygonToCompoundList}, {"addLineToCompoundList", l_addLineToCompoundList}, {"addCircleToCompoundList", l_addCircleToCompoundList}, {"setCompoundShapeLinearDamping", l_setCompoundShapeLinearDamping}, {"setCompoundShapeParameter", l_setCompoundShapeParameter}, {"createCompoundObject", l_createCompoundObject}, {"finalizeCompoundObject", l_finalizeCompoundObject}, {"enableAimingAid", l_enableAimingAid}, {"setAimingAidSprite", l_setAimingAidSprite}, {"clearAimingAid", l_clearAimingAid}, {"updateBirdTrajectoryTable", l_updateBirdTrajectoryTable}, {"setSensorGravityMask", l_setSensorGravityMask}, {"setRevertGravity", l_setRevertGravity}, {"setRevertGravityWithMultiplier", l_setRevertGravityWithMultiplier}, {"setObjectGravityCategory", l_setObjectGravityCategory},
+        {"setAngularVelocity", l_setAngularVelocity}, {"setLinearDamping", l_setLinearDamping}, {"clearShapesArray", l_clearShapesArray}, {"addBoxToCompoundList", l_addBoxToCompoundList}, {"addPolygonToCompoundList", l_addPolygonToCompoundList}, {"addLineToCompoundList", l_addLineToCompoundList}, {"addCircleToCompoundList", l_addCircleToCompoundList}, {"setCompoundShapeLinearDamping", l_setCompoundShapeLinearDamping}, {"setCompoundShapeParameter", l_setCompoundShapeParameter}, {"createCompoundObject", l_createCompoundObject}, {"finalizeCompoundObject", l_finalizeCompoundObject}, {"enableAimingAid", l_enableAimingAid}, {"setAimingAidSprite", l_setAimingAidSprite}, {"clearAimingAid", l_clearAimingAid}, {"updateBirdTrajectoryTable", l_updateBirdTrajectoryTable}, {"simulateAimingAid", l_simulateAimingAid}, {"spriteExists", l_spriteExists}, {"setSensorGravityMask", l_setSensorGravityMask}, {"setRevertGravity", l_setRevertGravity}, {"setRevertGravityWithMultiplier", l_setRevertGravityWithMultiplier}, {"setObjectGravityCategory", l_setObjectGravityCategory},
         {"setSensorMinimumAndMaximumForces", l_setSensorMinimumAndMaximumForces}, {"setGravityForceMultiplier", l_setGravityForceMultiplier},
         {"getGravityForceMultiplier", l_getGravityForceMultiplier}, {"setAngularDamping", l_setAngularDamping},
         {"setFixedRotation", l_setFixedRotation}, {"setActive", l_setActive}, {"multiplyVelocity", l_multiplyVelocity}, {"setAsSensor", l_setAsSensor},
         {"getAngularVelocity", l_getAngularVelocity}, {"setSleeping", l_setSleeping},
         {"getAngle", l_getAngle}, {"getWorldPoint", l_getWorldPoint}, {"setObjectParameter", l_setObjectParameter}, {"setScale", l_setScale}, {"getScale", l_getScale}, {"setSpeedCap", l_setSpeedCap}, {"getSpeedCap", l_getSpeedCap}, {"clearSpeedCap", l_clearSpeedCap}, {"getTouchingObjects", l_getTouchingObjects}, {"rayCast", l_rayCast}, {"fileExists", l_fileExists},
-        {"setPhysicsSimulationScale", l_setPhysicsSimulationScale}, {"setPhysicsEnabled", l_setPhysicsEnabled}, {"setThemeOffsetY", l_setThemeOffsetY},
+        {"setPhysicsSimulationScale", l_setPhysicsSimulationScale}, {"setPhysicsEnabled", l_setPhysicsEnabled}, {"setThemeOffsetY", l_setThemeOffsetY}, {"setStartingCameraValue", l_setStartingCameraValue},
         {"isPhysicsEnabled", l_isPhysicsEnabled}, {"setLevelLimits", l_setLevelLimits},
         {"setTopLeft", l_setTopLeft}, {"setWorldScale", l_setWorldScale}, {"setMaxWorldScale", l_setMaxWorldScale}, {"resetMouseWheelScale", l_resetMouseWheelScale},
         {"setMaxTranslation", l_setMaxTranslation},
         {"setRenderState", l_setRenderState}, {"drawRect", l_drawRect}, {"drawLine2D", l_drawLine2D},
         {"drawTexturedRect", l_nothing}, {"drawSome", l_nothing},
         {"drawGameNative", l_drawGameNative}, {"drawBackgroundNative", l_drawBackgroundNative},
-        {"drawForegroundNative", l_drawForegroundNative}, {"drawParticlesFiltered", l_drawParticlesFiltered}, {"readDataFile", l_readDataFile}, {"setObjectDensity", l_setObjectDensity}, {"drawParticlesNative", l_drawParticlesNative},
+        {"drawForegroundNative", l_drawForegroundNative}, {"drawParticlesFiltered", l_drawParticlesFiltered}, {"readDataFile", l_readDataFile}, {"setObjectDensity", l_setObjectDensity}, {"setRestitution", l_setRestitution}, {"handleJointLimits", l_handleJointLimits}, {"getFullScreenWidth", l_getFullScreenWidth}, {"getFullScreenHeight", l_getFullScreenHeight}, {"performBitwiseOr", l_performBitwiseOr}, {"setWaterForceMultiplier", l_setWaterForceMultiplier}, {"getWaterForceMultiplier", l_getWaterForceMultiplier}, {"fileExistsInAppData", l_fileExistsInAppData}, {"loadTextFileToString", l_loadTextFileToString}, {"isGameOverlayActive", l_isGameOverlayActive}, {"clearScreen", l_retailNoop}, {"refreshCurrentLocale", l_retailNoop}, {"recoverRenderObjects", l_retailNoop}, {"drawParticlesNative", l_drawParticlesNative},
         {"setSprite", l_setSprite}, {"setMaterial", l_setMaterial}, {"setTexture", l_setTexture}, {"setTheme", l_setTheme},
         {"clipText", l_clipText},
         {"startNewTrajectory", l_startNewTrajectory}, {"addToTrajectory", l_addToTrajectory},
@@ -2481,7 +2506,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"getTimeDifference", l_getTimeDifference}, {"setAlpha", l_setAlpha}, {"setBlendMode", l_setBlendMode}, {"setShader", l_setShader}, {"setTintChannel", l_setTintChannel}, {"setVisualRotation", l_setVisualRotation}, {"resetRenderOverrides", l_resetRenderOverrides}, {"setTint", l_setTint}, {"getTint", l_getTint}, {"resetTint", l_resetTint}, {"setSkew", l_setSkew}, {"setBend", l_setBend}, {"setRenderZ", l_setRenderZ}, {"setBlur", l_setBlur}, {"setPixelate", l_setPixelate}, {"resetBlur", l_resetBlur}, {"resetPixelate", l_resetPixelate}, {"drawUITextNative", l_drawUITextNative},
         {"getTImeDifferenceInSeconds", l_getTimeDifferenceInSeconds}, {"checkRegistrationResult", l_false}, {"getClipboardText", l_emptyString},
         {"canOpenProgram", l_false}, {"openProgram", l_nothing}, {"hasLocationCapability", l_false}, {"drawLevelParticlesNative", l_drawLevelParticlesNative},
-        {"setWorldGravity", l_setWorldGravity},
+        {"setWorldGravity", l_setWorldGravity}, {"getWorldGravity", l_getWorldGravity},
         {"getOSName", l_osName}, {"getOSVersion", l_osVersion}, {"getModel", l_deviceModel},
         {"getManufacturer", l_deviceManufacturer}, {"getCurrentLocale", l_currentLocale},
         {"initLocales", l_nothing}, {"setRetinaResolution", l_nothing},

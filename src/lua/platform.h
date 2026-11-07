@@ -103,7 +103,7 @@ public:
     // Returns false if an end object does not exist.
     virtual bool CreateJoint(JointDef& d) { (void)d; return true; }
     virtual void SetJointParameters(const JointParams& p) { (void)p; }
-    virtual void CheckJointLimits(const std::string& name) { (void)name; }
+    virtual void CheckJointLimits(const std::string& name, bool stop = false) { (void)name; (void)stop; }
     virtual void DestroyJoint(const std::string& name) { (void)name; }
     // Returns the names of the links (createJoint type 5) that fired; the caller deletes joints[name].
     virtual std::vector<std::string> RemoveObject(const std::string& name) { (void)name; return std::vector<std::string>(); }
@@ -122,6 +122,8 @@ public:
     virtual void SetVelocity(const std::string& n, float vx, float vy) { (void)n; (void)vx; (void)vy; }
     virtual void SetAngularVelocity(const std::string& n, float w) { (void)n; (void)w; }
     virtual bool BodyCommand(const std::string& n, int cmd, float a, float& result) { (void)n; (void)cmd; (void)a; (void)result; return false; }
+    virtual bool SpriteExists(const std::string& name) { (void)name; return false; }
+    virtual bool AimSimulate(const std::string& bird, float vx, float vy, int points, const float* start) { (void)bird; (void)vx; (void)vy; (void)points; (void)start; return false; }   // extension: aiming aid path with bounces
     virtual void SetSleeping(const std::string& n, bool sleeping) { (void)n; (void)sleeping; }
     virtual float GetAngle(const std::string& n) { (void)n; return 0; }
     virtual void GetWorldPoint(const std::string& n, float lx, float ly, float& wx, float& wy) { (void)n; wx = lx; wy = ly; }
@@ -160,8 +162,10 @@ public:
     virtual void SetObjectParameter(const std::string& n, int id, float value) { (void)n; (void)id; (void)value; }
     virtual void SetPhysicsSimulationScale(float s) { (void)s; }
     virtual void SetWorldGravity(float x, float y) { (void)x; (void)y; }
+    virtual void GetWorldGravity(float& x, float& y) { x = 0; y = -10; }
     virtual void ClearParticles() {}
     virtual void SetPhysicsEnabled(bool on) { physicsEnabled_ = on; }
+    virtual void SetStartingCameraValue(bool) {}   // Star Wars setStartingCameraValue (0x40d8e0): sets the flag "the background's reference camera has been taken"
     virtual void SetThemeOffsetY(float) {}   // Space setThemeOffsetY(theme, v) (0x466e40)
     virtual bool IsPhysicsEnabled() { return physicsEnabled_; }
     virtual void SetLevelLimits(float minX, float minY, float maxX, float maxY) { (void)minX; (void)minY; (void)maxX; (void)maxY; }
@@ -231,6 +235,7 @@ public:
     virtual void SpawnFGLayerParticles(int id) { (void)id; }
     virtual void ResKeepLastFrame(bool on) { (void)on; }                                    // Classic screenwipe: captureSprite before anything is drawn this frame takes the last finished frame
     virtual void ResCaptureSprite(const std::string& name) { (void)name; }                  // v2.5 (Star Wars): the last frame becomes a sprite of that name
+    virtual void SetObjectRestitution(const std::string& n, float r) { (void)n; (void)r; }   // Star Wars setRestitution
     virtual void SetObjectDensity(const std::string& n, float density) { (void)n; (void)density; }   // v2.5 (Star Wars setMass)
     virtual void AddParticlesMode(const std::string& type, float amount, float x, float y, float w, float h, float angle, int mode) { AddParticles(type, amount, x, y, w, h, angle); (void)mode; }
     virtual void DrawParticlesFiltered(int filter) { (void)filter; }                         // 1 background, 2 foreground, 3 notification

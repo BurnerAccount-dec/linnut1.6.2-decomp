@@ -58,6 +58,7 @@ public:
     virtual void SetAngularDamping(float d) = 0;
     virtual void SetLinearDamping(float d) = 0;
     virtual void SetFixedRotation(bool on) = 0;
+    virtual void SetRestitution(float r) { (void)r; }      // Star Wars setRestitution (0x419d10): the value goes into the body's shape data (+0x14 of the record at +100)
     virtual void SetDensity(float d) { (void)d; }          // v2.5: every fixture, then the mass is worked out again
     virtual void SetActive(bool on) = 0;
     virtual float ShapeRadius() const = 0;               // the first fixture's skin radius (polygons) or radius (circles)
@@ -170,7 +171,7 @@ public:
     // list in ENGINE_SPEC.md). Returns false if an end object is missing (the original creates nothing).
     virtual bool CreateJoint(JointDef& d) = 0;          // may rewrite x1..y2, see the .cpp
     virtual void SetJointParameters(const JointParams& p) = 0;
-    virtual void CheckJointLimits(const std::string& name) = 0;
+    virtual void CheckJointLimits(const std::string& name, bool stop = false) = 0;   // stop: Star Wars handleJointLimits (0x410810) sets the motor speed to 0 instead of turning it round
     void DestroyJoint(const std::string& name);
 
     // Returns the names of the type-5 "link" joints that fired (the caller removes joints[name] from Lua).
@@ -201,6 +202,8 @@ public:
     bool GravityPull(const PhysObject& s, const PhysObject& t, float tx, float ty, float tvx, float tvy, float timer, float mass, float& fx, float& fy) const;
     // the aiming aid (updateBirdTrajectoryTable): the object flown on from its position and velocity under the gravitation sensors and its damping, one point every `every` steps
     void SimulateTrajectory(const std::string& n, int steps, int every, float h, std::vector<std::pair<float, float>>& out);
+    // extension of the retail trail (which is the bird's free flight): the bird alone in a world with the world's gravity, launched with this velocity and stepped like the real world; no blocks, no ground
+    virtual bool SimulateFlight(const std::string& bird, float vx, float vy, int steps, int every, float h, std::vector<std::pair<float, float>>& out, const float* start = nullptr) { (void)bird; (void)vx; (void)vy; (void)steps; (void)every; (void)h; (void)out; (void)start; return false; }
     float gravityForceMultiplier = 4;        // setGravityForceMultiplier (game +0x368)
     bool BodyCommand(const std::string& n, int cmd, float a, float& result);
     void SetSleeping(const std::string& n, bool sleeping);

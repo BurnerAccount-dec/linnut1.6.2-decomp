@@ -3,6 +3,9 @@
 #include "physics/physics_world.h"
 #include <memory>
 
+#include <algorithm>
+#include <vector>
+#include <cstdlib>
 #include <cmath>
 #include <cstdio>
 #include <string>

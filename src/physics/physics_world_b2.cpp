@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
+#include <map>
 
 #include "physics/physics_world.h"
 
@@ -73,6 +75,7 @@ public:
     }
     void ApplyImpulse(float ix, float iy, float px, float py) override { Wake("ApplyImpulse"); b_->ApplyLinearImpulse(b2Vec2(ix, iy), b2Vec2(px, py)); }
     void ApplyForce(float fx, float fy, float px, float py) override { Wake("ApplyForce"); b_->ApplyForce(b2Vec2(fx, fy), b2Vec2(px, py)); }
+    void SetRestitution(float r) override { for (b2Fixture* f = b_->GetFixtureList(); f; f = f->GetNext()) f->SetRestitution(r); }
     void SetDensity(float d) override {
         for (b2Fixture* f = b_->GetFixtureList(); f; f = f->GetNext()) f->SetDensity(d);
         b_->ResetMassData();
@@ -245,6 +248,36 @@ public:
                 std::fprintf(stderr, "CT %d %s | %s touching=%d enabled=%d points=%d\n", stepNo, a->name.c_str(), b->name.c_str(),
                              c->IsTouching() ? 1 : 0, c->IsEnabled() ? 1 : 0, c->GetManifold()->pointCount);
             }
+    }
+    // The aiming aid's arc (extension of the retail trail, which is the bird's free flight): the bird alone in a world with the same gravity, launched with
+    // the given velocity and stepped like the real world (1/30 s, 10 + 10 iterations, the speed caps after every step). No blocks, no ground.
+    bool SimulateFlight(const std::string& bird, float vx, float vy, int steps, int every, float h, std::vector<std::pair<float, float>>& out, const float* start = nullptr) override {
+        PhysObject* o = Find(bird);
+        if (!o || !o->pbody) return false;
+        b2Body* src = BodyOf(o);
+        b2World scratch(world_.GetGravity(), true);
+        b2BodyDef bd; bd.type = b2_dynamicBody; bd.position = start ? b2Vec2(start[0], start[1]) : src->GetPosition(); bd.angle = src->GetAngle();
+        bd.linearDamping = src->GetLinearDamping(); bd.angularDamping = src->GetAngularDamping(); bd.bullet = true;
+        b2Body* bb = scratch.CreateBody(&bd);
+        for (b2Fixture* f = src->GetFixtureList(); f; f = f->GetNext()) {
+            if (f->IsSensor()) continue;
+            b2FixtureDef fd; fd.shape = f->GetShape(); fd.friction = f->GetFriction(); fd.restitution = f->GetRestitution(); fd.density = f->GetDensity(); fd.filter = f->GetFilterData();
+            bb->CreateFixture(&fd);
+        }
+        bb->SetLinearVelocity(b2Vec2(vx, vy));
+        for (int i = 0; i < steps; i++) {
+            scratch.Step(h, 10, 10);
+            if (o->capVx > 0 || o->capVy > 0 || o->capSpeed > 0) {
+                b2Vec2 n0 = bb->GetLinearVelocity();
+                if (o->capVx > 0) n0.x = std::max(-o->capVx, std::min(o->capVx, n0.x));
+                if (o->capVy > 0) n0.y = std::max(-o->capVy, std::min(o->capVy, n0.y));
+                if (o->capSpeed > 0) { float sp = std::sqrt(n0.x * n0.x + n0.y * n0.y); if (sp > o->capSpeed) { float k = o->capSpeed / sp; n0.x *= k; n0.y *= k; } }
+                bb->SetLinearVelocity(n0);
+            }
+            b2Vec2 p = bb->GetPosition();
+            if (every > 0 && (i + 1) % every == 0) out.push_back({p.x, p.y});
+        }
+        return true;
     }
     void ClearForces() override { world_.ClearForces(); }
     void SetGravity(float x, float y) override { world_.SetGravity(b2Vec2(x, y)); }
@@ -465,9 +498,9 @@ public:
     }
 
     void SetJointParameters(const JointParams& p) override {
-        JointRecord* r = FindJoint(p.name);
-        if (!r) return;
-        b2Joint* joint = static_cast<b2Joint*>(r->joint);
+        for (auto& rec : joints_) {      // 0x411a20 walks every joint record and applies the values to each one with this name
+        if (rec->name != p.name) continue;
+        b2Joint* joint = static_cast<b2Joint*>(rec->joint);
         if (joint->GetType() == e_revoluteJoint) {
             b2RevoluteJoint* j = static_cast<b2RevoluteJoint*>(joint);
             if (p.hasMotor) j->EnableMotor(p.motor);
@@ -489,26 +522,29 @@ public:
             if (p.hasFrequency) j->SetFrequency(p.frequency);
             if (p.hasDampingRatio) j->SetDampingRatio(p.dampingRatio);
         }
+        }
     }
 
-    void CheckJointLimits(const std::string& name) override {
-        JointRecord* r = FindJoint(name);
-        if (!r) return;
-        b2Joint* joint = static_cast<b2Joint*>(r->joint);
+    // 0x410810 (handleJointLimits in Star Wars, the same body as checkJointLimits): a motor with limits that has reached the limit its speed points at turns round, or stops when `stop` is set.
+    // The exe's prismatic test reads (motor and limit on and speed > 0 and upper reached) or (speed < 0 and lower reached): the lower side does not look at the two flags.
+    void CheckJointLimits(const std::string& name, bool stop = false) override {
+        for (auto& rec : joints_) {      // every joint with this name (0x410810 loops over all records)
+        if (rec->name != name) continue;
+        b2Joint* joint = static_cast<b2Joint*>(rec->joint);
         if (joint->GetType() == e_revoluteJoint) {
             b2RevoluteJoint* j = static_cast<b2RevoluteJoint*>(joint);
-            if (!(j->IsMotorEnabled() && j->IsLimitEnabled())) return;
+            if (!(j->IsMotorEnabled() && j->IsLimitEnabled())) continue;
             float speed = j->GetMotorSpeed();
             float angle = j->GetJointAngle();
             if ((speed > 0 && angle >= j->GetUpperLimit()) || (speed < 0 && angle <= j->GetLowerLimit()))
-                j->SetMotorSpeed(-speed);
+                j->SetMotorSpeed(stop ? 0.0f : -speed);
         } else if (joint->GetType() == e_prismaticJoint) {
             b2PrismaticJoint* j = static_cast<b2PrismaticJoint*>(joint);
-            if (!(j->IsMotorEnabled() && j->IsLimitEnabled())) return;
             float speed = j->GetMotorSpeed();
             float t = j->GetJointTranslation();
-            if ((speed > 0 && t >= j->GetUpperLimit()) || (speed < 0 && t <= j->GetLowerLimit()))
-                j->SetMotorSpeed(-speed);
+            if ((j->IsMotorEnabled() && j->IsLimitEnabled() && speed > 0 && t >= j->GetUpperLimit()) || (speed < 0 && t <= j->GetLowerLimit()))
+                j->SetMotorSpeed(stop ? 0.0f : -speed);
+        }
         }
     }
 

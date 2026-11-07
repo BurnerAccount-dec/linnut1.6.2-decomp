@@ -60,6 +60,13 @@ for _, n in ipairs({"createAudioOutput", "createAudioInput", "startAudioOutput",
                     "updateBirdTrajectoryTable",
                     }) do ifMissing(n, function() end) end
 -- setRevoluteJointSpeed(jointName, speed) (0x465f50): the motor speed of every joint with that name
+-- natives of the Star Wars exe that no shipped script calls (0x40d880 / 0x40d8a0 keep the rendering flag, 0x421c50 is the toy-code checksum for a server that is gone)
+local renderingDisabled = false
+ifMissing("setGameRenderingDisabled", function(b) renderingDisabled = b and true or false end)
+ifMissing("isGameRenderingDisabled", function() return renderingDisabled end)
+ifMissing("getUnlockRequestChecksum", function() return "" end)
+for _, n in ipairs({"toggleZoomSteps", "setPhysicsScale", "setFlashAnimation", "updateThemeParticlesNative", "loadLevelFromAppData",
+                    "loadLuaFileFromAppDataToObject", "native_loadTextFileToLuaTable"}) do ifMissing(n, function() end) end
 ifMissing("setRevoluteJointSpeed", function(name, speed) env.setJointParameters({name = name, motorSpeed = speed}) end)
 -- the drawing natives live in the res table; Space scripts call them as globals
 ifMissing("drawTexturedLine2D", function(...) return env.res.drawTexturedLine2D(...) end)
@@ -103,7 +110,6 @@ ifMissing("getAimingTime", function()
 end)
 -- camera: the scripts drive the view with setWorldScale / setTopLeft; the limits and the starting value are remembered for them
 ifMissing("setCameraLimits", function(w) env.g_cameraLimitWidth = w end)
-ifMissing("setStartingCameraValue", function(v) env.g_startingCameraValue = v end)
 
 -- removeBreakableJointsFromObject (0x4804b0): every breakable joint that has the object at one end is destroyed
 ifMissing("removeBreakableJointsFromObject", function(name)
@@ -295,21 +301,25 @@ if env.readDataFile then
         end
         return value()
     end
-    -- the value of a track at a time: linear between keyframes, the first / last value outside them, the latest keyframe for sprites
+    -- the value of a track at a time: linear between keyframes, the first / last value outside them, the latest keyframe for sprites.
+    -- Time only moves forward while a clip plays, so each track remembers the keyframe it was at and the search starts there (a clip of
+    -- hundreds of keyframes per track used to be walked from the start for every target every frame). Returns the value, or two numbers
+    -- (x, y) for a pair, without making a table.
     local function sample(track, time)
         local k = track.keyframes
-        if #k == 0 then return nil end
-        if time <= k[1][1] then return k[1][2] end
-        for i = 2, #k do
-            if time < k[i][1] then
-                if track.type == "DiscreteSprite" then return k[i - 1][2] end
-                local a, b = k[i - 1], k[i]
-                local f = (time - a[1]) / (b[1] - a[1])
-                if type(a[2]) == "table" then return {a[2][1] + (b[2][1] - a[2][1]) * f, a[2][2] + (b[2][2] - a[2][2]) * f} end
-                return a[2] + (b[2] - a[2]) * f
-            end
-        end
-        return k[#k][2]
+        local n = #k
+        if n == 0 then return nil end
+        local i = track.cur or 2
+        if i < 2 or i > n or time < k[i - 1][1] then i = 2 end
+        if time <= k[1][1] then track.cur = 2 local v = k[1][2] if type(v) == "table" then return v[1], v[2] end return v end
+        while i <= n and time >= k[i][1] do i = i + 1 end
+        track.cur = i <= n and i or n
+        if i > n then local v = k[n][2] if type(v) == "table" then return v[1], v[2] end return v end
+        local a, b = k[i - 1], k[i]
+        if track.type == "DiscreteSprite" then return a[2] end
+        local f = (time - a[1]) / (b[1] - a[1])
+        if type(a[2]) == "table" then return a[2][1] + (b[2][1] - a[2][1]) * f, a[2][2] + (b[2][2] - a[2][2]) * f end
+        return a[2] + (b[2] - a[2]) * f
     end
     env.cutsceneLoad = function(tag, file)
         local text
@@ -366,7 +376,7 @@ if env.readDataFile then
         if not c or not c.actions then return end
         if not action or not c.actions[action] then action = next(c.actions) end
         buildNodes(c, action)
-        c.time, c.playing, c.mode = 0, true, mode or "once"
+        c.time, c.playing, c.mode, c.finished = 0, true, mode or "once", false
     end
     env.cutsceneClose = function(tag) cuts[tag] = nil end
     env.cutsceneSetTranslation = function(tag, x, y) local c = cuts[tag] if c then c.x, c.y = x, y end end
@@ -374,23 +384,29 @@ if env.readDataFile then
     env.cutsceneSetRotation = function(tag, a) local c = cuts[tag] if c then c.angle = a end end
     env.updateCutscene = function(dt)
         for _, c in pairs(cuts) do
-            if c.playing then
+            if c.playing and not c.finished then
                 c.time = c.time + dt
                 if c.time > c.duration then
-                    if c.mode == "repeat" and c.duration > 0 then c.time = c.time % c.duration else c.time = c.duration end
+                    if c.mode == "repeat" and c.duration > 0 then c.time = c.time % c.duration else c.time, c.finished = c.duration, true end   -- a clip played once stays on its last picture and is not stepped again
                 end
             end
         end
     end
+    -- cutsceneStop(tag) (0x411500), cutsceneStopAll (0x40d350), cutsceneCloseAll (0x40d340), cutsceneSeek(tag, time) (0x411580)
+    env.cutsceneStop = function(tag) local c = cuts[tag] if c then c.playing = false end end
+    env.cutsceneStopAll = function() for _, c in pairs(cuts) do c.playing = false end end
+    env.cutsceneCloseAll = function() for tag in pairs(cuts) do cuts[tag] = nil end end
+    env.cutsceneSeek = function(tag, time) local c = cuts[tag] if c then c.time, c.finished = time or 0, false for _, n in ipairs(c.nodes) do for _, tr in pairs(n.tracks) do if type(tr) == "table" then tr.cur = nil end end end end end
     local function drawNode(c, n, px, py, psx, psy, pang)
         local t = n.tracks
-        local pos = t.translation and sample(t.translation, c.time) or {0, 0}
-        local sc = t.scale and sample(t.scale, c.time) or {1, 1}
-        local rot = t.rotation and sample(t.rotation, c.time) or 0
+        local pos1, pos2, sc1, sc2, rot = 0, 0, 1, 1, 0
+        if t.translation then pos1, pos2 = sample(t.translation, c.time) if not pos1 then pos1, pos2 = 0, 0 end end
+        if t.scale then sc1, sc2 = sample(t.scale, c.time) if not sc1 then sc1, sc2 = 1, 1 end end
+        if t.rotation then rot = sample(t.rotation, c.time) or 0 end
         local ca, sa = math.cos(pang), math.sin(pang)
-        local x = px + (pos[1] * psx) * ca - (pos[2] * psy) * sa
-        local y = py + (pos[1] * psx) * sa + (pos[2] * psy) * ca
-        local sx, sy, ang = psx * sc[1], psy * sc[2], pang + rot
+        local x = px + (pos1 * psx) * ca - (pos2 * psy) * sa
+        local y = py + (pos1 * psx) * sa + (pos2 * psy) * ca
+        local sx, sy, ang = psx * sc1, psy * (sc2 or sc1), pang + rot
         local sprite = t.sprite and sample(t.sprite, c.time)
         if sprite and sx ~= 0 and sy ~= 0 then
             env.setRenderState(0, 0, sx, sy, ang, 0, 0, 1)

@@ -8,6 +8,7 @@
 //   scripts.LoadScripts(); scripts.CreateStartUpAssets();
 //   each frame:  platform.RunFrame(dt);      // = the exe's Game::update (0x408980)
 #pragma once
+#include <array>
 #include <memory>
 #include <functional>
 #include <string>
@@ -156,6 +157,7 @@ public:
     void ResKeepLastFrame(bool on) override { keepLast_ = on; if (!on) lastFrame_.clear(); }
     bool keepLast_ = false; int quadsThisFrame_ = 0; std::vector<unsigned char> lastFrame_; int lastW_ = 0, lastH_ = 0;
     void SetObjectDensity(const std::string& n, float density) override;
+    void SetObjectRestitution(const std::string& n, float r) override;
     void AddParticlesMode(const std::string& type, float amount, float x, float y, float w, float h, float angle, int mode) override;
     void DrawParticlesFiltered(int filter) override;
     void ResGetSpriteBounds(const std::string& sheet, const std::string& sprite, float& w, float& h) override;
@@ -167,7 +169,7 @@ public:
     float CreateCompound(const BodyDef& d, const std::vector<CompoundShape>& s, float damping) override { return Physics().CreateCompound(d, s, damping); }
     bool CreateJoint(JointDef& d) override { return Physics().CreateJoint(d); }
     void SetJointParameters(const JointParams& p) override { Physics().SetJointParameters(p); }
-    void CheckJointLimits(const std::string& n) override { Physics().CheckJointLimits(n); }
+    void CheckJointLimits(const std::string& n, bool stop = false) override { Physics().CheckJointLimits(n, stop); }
     void DestroyJoint(const std::string& n) override { Physics().DestroyJoint(n); }
     std::vector<std::string> RemoveObject(const std::string& n) override { return Physics().RemoveObject(n); }
     CollisionPrediction PredictCollision(const std::string& a, const std::string& b, float restitution, const float* vel = nullptr) override { return Physics().PredictCollision(a, b, restitution, vel); }
@@ -218,6 +220,8 @@ public:
     void SetVelocity(const std::string& n, float vx, float vy) override { Physics().SetVelocity(n, vx, vy); }
     void SetAngularVelocity(const std::string& n, float w) override { Physics().SetAngularVelocity(n, w); }
     bool BodyCommand(const std::string& n, int cmd, float a, float& result) override;   // cmds 20..24: the Space aiming aid
+    bool SpriteExists(const std::string& name) override { return sprites_.Find(name) != nullptr; }
+    bool AimSimulate(const std::string& bird, float vx, float vy, int points, const float* start = nullptr) override;
     void SetSleeping(const std::string& n, bool s) override { Physics().SetSleeping(n, s); }
     float GetAngle(const std::string& n) override { return Physics().GetAngle(n); }
     void GetWorldPoint(const std::string& n, float lx, float ly, float& wx, float& wy) override { Physics().GetWorldPoint(n, lx, ly, wx, wy); }
@@ -240,6 +244,7 @@ public:
     void ResDrawSprite(const std::string& sprite, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height) override;
     void DrawTexturedLine2D(const std::string& sprite, float x1, float y1, float x2, float y2, float width, float r, float g, float b, float a) override;
     void SetWorldGravity(float x, float y) override { Physics().SetGravity(x, y); }
+    void GetWorldGravity(float& x, float& y) override { Physics().GetGravity(x, y); }
     void SetMaxTranslation(float t) override { Physics().SetMaxTranslation(t); }
     void ClearParticles() override { particles_.clear(); }
     void CreateThemeSprite(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, float speedX, int layer) override;
@@ -389,10 +394,21 @@ private:
 
     struct BgLayer { std::string sprite; float speed = 1, scale = 1; bool looping = true; float autoScroll = 0, offset = 0; bool space = false; float offX = 0, offY = 0, baseOffY = 0;
                      // Space (0x48bdd0 / 0x467f70): the layer's own numbers
-                     bool empty = false; float zDist = 0, xMult = 1, yMult = 1, angleMult = 0, posX = 0, posY = 0, scaleSpeed = 1, angle = 0; };
+                     bool empty = false; float zDist = 0, xMult = 1, yMult = 1, angleMult = 0, posX = 0, posY = 0, scaleSpeed = 1, angle = 0;
+                     // NEW_THEME_SYSTEM (0x44c1b0): scaleX / scaleY (0xbc / 0xc0), the flag bits (0xa4: 1 OVERSTRETCH_ANCHOR_V, 2 V_REPEAT, 4 H_REPEAT, 0x20 ANCHOR_V, 0x40, 0x100 / 0x200 REPEAT_LEFT_ONLY / REPEAT_RIGHT_ONLY) and the rocks spawnParameters scatters
+                     float scaleX = 1, scaleY = 1; int flags = 0; bool hasFlags = false; float relY = 3.4028235e38f; bool elemTable = false; float velX = 0, velY = 0, lastOutX = 0, lastOutY = 0, lastW = 0, lastH = 0; bool upFill = false, downFill = false; float upR = 0, upG = 0, upB = 0, downR = 0, downG = 0, downB = 0;
+                     std::vector<std::string> spawnList; int spawnAmount = 0; float spawnVelX = 0, spawnVelY = 0, spawnXVar = 0, spawnSX = 0, spawnSY = 0, spawnSW = 0, spawnSH = 0, spawnWW = 0, spawnWH = 0; bool spawned = false; std::vector<std::array<float,3>> inst; };
     struct { bool have = false; float camX = 0, camY = 0, ws = 1, nH0 = 0; } bgRef_;   // 0x467f70: the camera and screen the parallax is measured from
     void DrawSpaceBackground();
+    void UpdateNewThemeLayers(std::vector<BgLayer>& layers, float dt);
+    void DrawNewThemeBackground();
+    void DrawNewThemeLayers(std::vector<BgLayer>& layers, int layerBase);
+    std::vector<BgLayer> ntFg_;                    // the fgLayers of a NEW_THEME_SYSTEM theme (drawn by the same routine, vector 0x264)                 // 0x44c1b0 and its helpers: the NEW_THEME_SYSTEM draw
+    bool newTheme_ = false;                        // the theme table has NEW_THEME_SYSTEM (+0x166)
+    struct { bool have = false, fromLevel = false; int tries = 0; float refX = 0, refY = 0, s88 = 1; } ntRef_;   // ThemeSystem +0x1c / +0x20 (reference camera) and +0x88 (its scale), read once (0x44b820)
     void SetThemeOffsetY(float v) override;
+    void SetStartingCameraValue(bool b) override { bgRef_.have = b; }
+    std::string bgTheme_;                          // 0x1a4: the theme the reference belongs to (0x435f70 clears it only when the theme changes)
     struct TrajectoryPoint { float x, y; };
     void CallCollisionPair(const char* fn, const std::string& a, const std::string& b);
     bool HasScriptFunction(const char* fn);
@@ -401,6 +417,7 @@ private:
     std::string aimSprite_;                        // setAimingAidSprite
     // The retail AimingAid (0x45dd00 constructor, 0x45dea0 populate, 0x45dfd0 update, 0x45d570 draw)
     struct AimDot { float x, y, s; };              // x: distance along the path in points, y: its spin, s: scale
+    float aimScale_ = 1;                           // setAimingAidSprite(name, scale): dot size factor (extension)
     std::vector<TrajectoryPoint> aimPts_;          // the trajectory table in metres (updateBirdTrajectoryTable)
     std::vector<AimDot> aimDots_;
     bool aimOn_ = false;                           // AimingAid +0x38
@@ -463,6 +480,7 @@ private:
     std::vector<FgNamed> fgNamed_;
     std::map<int, std::string> fgParticles_;
     bool swTheme_ = false;
+    bool swBg_ = false;                            // a Star Wars theme (its table has textureScale): backgrounds are drawn at the retail Star Wars scale
     void SpawnFGLayerParticles(int id) override;      // Star Wars' foreground layers with named fields (offsetY, downFillColor)
     std::vector<float> fgSpeed_, fgScale_, fgAuto_, fgOffset_;      // per foreground layer: parallax speed and scale (entries 3 and 4; 1 and 1.5 when absent)
     float groundR_ = 0, groundG_ = 0, groundB_ = 0;

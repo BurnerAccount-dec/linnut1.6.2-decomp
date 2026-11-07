@@ -1,3 +1,4 @@
+#include <fstream>
 #include <cstdlib>
 #include "lua/script_host.h"
 #include "lua/aes.h"
@@ -228,25 +229,34 @@ bool ScriptHost::IsSpaceDataFolder() const {
 }
 
 void ScriptHost::LoadPersisted(const char* tableName, const char* fileName, bool onlyIfExists) {
+    ab::SetSaveFamilySpace(IsSpaceDataFolder());
     std::string path = platform_.ResolveUserFile(fileName, true), text;
     bool encrypted = false;
     if (onlyIfExists && !ab::ReadSaveFile(path, text, encrypted)) return;
+    // The file, or the copy the last save kept as <file>.bak when the file is missing, empty or cannot be read (a game closed in the middle of a save): never start with an empty save while a good one exists
     lua_newtable(L_);                                           // the file's own environment
-    if (!ab::ReadSaveFile(path, text, encrypted)) {
-        platform_.Print("no saved file " + path);
-    } else {
-        platform_.Print("saved file " + path + (encrypted ? " (encrypted original)" : " (plain)"));
-        if (luaL_loadbuffer(L_, text.data(), text.size(), ("@" + path).c_str()) == 0) {
+    const std::string candidates[2] = {path, path + ".bak"};
+    bool loaded = false;
+    for (int c = 0; c < 2 && !loaded; c++) {
+        text.clear(); encrypted = false;
+        if (!ab::ReadSaveFile(candidates[c], text, encrypted)) {
+            if (c == 0) platform_.Print("no saved file " + path);
+            continue;
+        }
+        if (c == 0 && text.find_first_not_of(" \t\r\n") == std::string::npos) {                 // an empty file: the save was cut off, or this is a save of another game that was set aside
+            std::ifstream bak((path + ".bak").c_str(), std::ios::binary);
+            if (bak.good()) { platform_.Print("saved file " + path + " is empty, trying " + path + ".bak"); continue; }
+        }
+        platform_.Print("saved file " + candidates[c] + (encrypted ? " (encrypted original)" : " (plain)"));
+        if (luaL_loadbuffer(L_, text.data(), text.size(), ("@" + candidates[c]).c_str()) == 0) {
             lua_pushvalue(L_, -2);
             lua_setfenv(L_, -2);
-            if (lua_pcall(L_, 0, 0, 0) != 0) {
-                platform_.Print(std::string("cannot run ") + path + ": " + lua_tostring(L_, -1));
-                lua_pop(L_, 1);
-            }
-        } else {
-            platform_.Print(std::string("cannot read ") + path + ": " + lua_tostring(L_, -1));
-            lua_pop(L_, 1);
+            if (lua_pcall(L_, 0, 0, 0) == 0) { loaded = true; break; }
         }
+        platform_.Print(std::string("cannot read ") + candidates[c] + ": " + lua_tostring(L_, -1));
+        lua_pop(L_, 1);
+        if (c == 0) { std::ofstream keep((path + ".corrupt").c_str(), std::ios::binary); keep.write(text.data(), (std::streamsize)text.size()); }   // what could not be read is kept, not overwritten
+        lua_pop(L_, 1); lua_newtable(L_);                       // a fresh environment for the next candidate
     }
     lua_getfield(L_, -1, tableName);
     if (lua_istable(L_, -1)) lua_remove(L_, -2);

@@ -1,3 +1,4 @@
+#include <chrono>
 #include <random>
 #include <type_traits>
 #include <algorithm>
@@ -230,6 +231,7 @@ void GamePlatform::RunFrame(float dt) {
     }
     Physics().Frame().physicsScale = physicsScale;
     // Angry Birds Space (the exe's 0x482990): every frame each background element moves by its velocity and its scale grows by its scaleSpeed
+    if (scripts_ && scripts_->IsSpace() && newTheme_) { UpdateNewThemeLayers(bgLayers_, dt); UpdateNewThemeLayers(ntFg_, dt); }
     if (scripts_ && scripts_->IsSpace()) for (ThemeSprite& t : themeSprites_) {
         t.x += t.velX * dt; t.y += t.velY * dt;
         if (t.wrapW > 0) { if (t.x > t.wrapW) t.x -= 2 * t.wrapW; else if (t.x < -t.wrapW) t.x += 2 * t.wrapW; }
@@ -296,13 +298,13 @@ void GamePlatform::RunFrame(float dt) {
         if (scripts_ && at2 && execFrame == std::atoi(at2) && std::getenv("AB_EXEC2")) scripts_->RunString(std::getenv("AB_EXEC2"));
         if (scripts_ && at3 && execFrame == std::atoi(at3) && std::getenv("AB_EXEC3")) scripts_->RunString(std::getenv("AB_EXEC3"));
     }
-    // Classic 1.6.2: a screenwipe_classic.lua next to gamelogic.lua (Star Wars' screen wipe between scenes, see extras/) is loaded once the scripts are up
+    // Classic 1.6.2: an extra_scripts.lua next to gamelogic.lua (Star Wars' screen wipe between scenes, see extras/) is loaded once the scripts are up
     if (scripts_ && execFrame == 3 && !scripts_->IsSpace() && !IsSeasonsScripts() && !std::getenv("AB_NOSCREENWIPE"))
         scripts_->RunString(
             "local env = _G.getfenv(1)\n"
-            "if env.screenwipe == nil and _G.type(env.loadLuaFile) == 'function' and env.scriptPath and _G.io then\n"
-            "  local f = _G.io.open(env.scriptPath .. '/screenwipe_classic.lua', 'rb')\n"
-            "  if f then f:close(); _G.pcall(env.loadLuaFile, env.scriptPath .. '/screenwipe_classic.lua', '', false, false) end\n"
+            "if env.extraScripts == nil and _G.type(env.loadLuaFile) == 'function' and env.scriptPath and _G.io then\n"
+            "  local f = _G.io.open(env.scriptPath .. '/extra_scripts.lua', 'rb')\n"
+            "  if f then f:close(); _G.pcall(env.loadLuaFile, env.scriptPath .. '/extra_scripts.lua', '', false, false) end\n"
             "end\n");
     // Space: the scripts' debug keys (fps, background, hit boxes, level skip, ...) sit behind `not releaseBuild`, and options.lua sets releaseBuild
     // (so the retail game has none). They are switched on the way the other games' are: cheats on, and the functions that read the keys run in a
@@ -324,6 +326,7 @@ void GamePlatform::RunFrame(float dt) {
                             "W.getLevelProgress=function() return 99999 end; W.isComicWatched=function() return true end; "
                             "W.isEpisodePurchased=function() return true end; W.isEggsteroidLevelUnlocked=function() return true end end");
     if (scripts_ && scripts_->IsSpace() && dt > 0) { UpdateAimingAid(dt); StepThemeAnimations(dt); }
+    else if (scripts_ && dt > 0 && (aimEnabled_ || !aimDots_.empty())) UpdateAimingAid(dt);   // Classic: extra_scripts.lua drives the aiming aid
     if (scripts_ && scripts_->IsRio() && dt > 0) {
         if (Physics().Frame().running) UpdateRioGettingUp(dt);
         SelectRioAnimations(dt);
@@ -966,7 +969,9 @@ void GamePlatform::DrawTexturedLine2D(const std::string& name, float x1, float y
     float dx = x2 - x1, dy = y2 - y1, len = std::sqrt(dx * dx + dy * dy);
     if (len <= 0) return;
     RenderState keep = state_;
-    if (sp->h > sp->w * 2 && sp->pivotY < 0) {
+    // Star Wars / Space (0x425810): the quad's corners are p1 + n/2, p1 - n/2, p2 + n/2, p2 - n/2 with n the line's normal times the width, and they take the sprite's
+    // top left, top right, bottom left and bottom right: the picture's height always runs along the line, its width across it, whatever the sprite looks like
+    if ((scripts_ && scripts_->IsSpace()) || (sp->h > sp->w * 2 && sp->pivotY < 0)) {
         // Star Wars' beams (the pink birds' gravity rays) are tall sprites: the picture runs along its height, from the top centre (its pivot) to the far end
         state_.angle = keep.angle + std::atan2(dy, dx) - 1.5707963f;
         state_.pivotX = width * 0.5f; state_.pivotY = 0;
@@ -1362,6 +1367,10 @@ void GamePlatform::SetObjectDensity(const std::string& n, float density) {
     if (PhysObject* o = Physics().Find(n)) o->pbody->SetDensity(density);
 }
 
+void GamePlatform::SetObjectRestitution(const std::string& n, float r) {
+    if (PhysObject* o = Physics().Find(n)) o->pbody->SetRestitution(r);
+}
+
 // addParticlesWithMode: a notification particle (mode 3) lives in the menu list and is drawn over everything in screen space
 void GamePlatform::AddParticlesMode(const std::string& type, float amount, float x, float y, float w, float h, float angle, int mode) {
     size_t before = particles_.size();
@@ -1542,8 +1551,9 @@ namespace ab {
 void GamePlatform::SetTheme(const std::string& themeArg) {
     const char* themeEnv = std::getenv("AB_THEME");     // test aid: draw this theme in every level
     const std::string theme = themeEnv ? std::string(themeEnv) : themeArg;
-    bgRef_.have = false;
-    swTheme_ = false; fgParticles_.clear(); bgLayers_.clear(); fgLayers_.clear(); fgSpeed_.clear(); fgScale_.clear(); fgAuto_.clear(); fgOffset_.clear(); fgNamed_.clear(); themeTexture_.clear();
+    if (theme != bgTheme_) { bgRef_.have = false; bgRef_.nH0 = 0; bgTheme_ = theme; }
+    ntRef_ = decltype(ntRef_)();   // the ThemeSystem is made again with every level, its reference camera is read again   // 0x435f70: the reference camera and the first screen height are dropped only when the theme changes
+    swTheme_ = false; swBg_ = false; newTheme_ = false; ntFg_.clear(); fgParticles_.clear(); bgLayers_.clear(); fgLayers_.clear(); fgSpeed_.clear(); fgScale_.clear(); fgAuto_.clear(); fgOffset_.clear(); fgNamed_.clear(); themeTexture_.clear();
     if (!scripts_) return;
     lua_State* L = scripts_->State();
     int top = lua_gettop(L);
@@ -1569,9 +1579,12 @@ void GamePlatform::SetTheme(const std::string& themeArg) {
                     groundR_ = number(lua_gettop(L), "r", 0); groundG_ = number(lua_gettop(L), "g", 0); groundB_ = number(lua_gettop(L), "b", 0);
                 }
                 lua_pop(L, 1);
+                lua_getfield(L, t, "textureScale"); swBg_ = lua_isnumber(L, -1) != 0; lua_pop(L, 1);
                 lua_getfield(L, t, "texture");
                 if (lua_isstring(L, -1)) themeTexture_ = lua_tostring(L, -1);
                 lua_pop(L, 1);
+                bool newThemeSystem = false;   // NEW_THEME_SYSTEM (0x166): the layers are Flash-style, a missing xMult is 0 and not 1 (0x43b8xx layer loader)
+                lua_getfield(L, t, "NEW_THEME_SYSTEM"); newThemeSystem = lua_toboolean(L, -1) != 0; lua_pop(L, 1); newTheme_ = newThemeSystem;
                 lua_getfield(L, t, "bgLayers");
                 if (lua_istable(L, -1)) {
                     int n = (int)lua_objlen(L, -1);
@@ -1580,22 +1593,45 @@ void GamePlatform::SetTheme(const std::string& themeArg) {
                         if (lua_istable(L, -1)) {
                             BgLayer layer;
                             lua_getfield(L, -1, "sprite");
-                            if (lua_isstring(L, -1)) {      // Angry Birds Space: named fields; layers without a sprite only carry the scattered elements, but keep their place in the list
+                            const bool spriteIsList = lua_istable(L, -1);   // Star Wars: "sprite" can be a list of rocks that spawnParameters scatters (asteroid field)
+                            if (lua_isstring(L, -1) || spriteIsList) {      // Angry Birds Space: named fields; layers without a sprite only carry the scattered elements, but keep their place in the list
                                 layer.space = true;
-                                layer.sprite = lua_tostring(L, -1);
+                                std::vector<std::string> spriteList;
+                                if (spriteIsList) {
+                                    for (int k = 1; k <= (int)lua_objlen(L, -1); k++) { lua_rawgeti(L, -1, k); if (lua_isstring(L, -1)) spriteList.push_back(lua_tostring(L, -1)); lua_pop(L, 1); }
+                                    if (!spriteList.empty()) layer.sprite = spriteList[0];   // 0x43b...: the list is the layer's animation frames; without a timeline the first one stays
+                                } else layer.sprite = lua_tostring(L, -1);
                                 layer.empty = layer.sprite.empty();
                                 int lt = lua_gettop(L) - 1;
                                 layer.zDist = number(lt, "zDistance", 0);
-                                layer.xMult = number(lt, "xMult", 1); layer.yMult = number(lt, "yMult", 1);
+                                layer.xMult = number(lt, "xMult", newThemeSystem ? 0.0f : 1.0f); layer.yMult = number(lt, "yMult", 1);
                                 layer.angleMult = number(lt, "angleMult", 0);
                                 layer.speed = number(lt, "parallaxSpeed", 1);
                                 layer.scale = number(lt, "scale", 1);
                                 layer.posX = number(lt, "posX", 0); layer.posY = number(lt, "posY", 0);
-                                layer.offX = number(lt, "offsetX", 0); layer.offY = number(lt, "offsetY", 0); layer.baseOffY = layer.offY;
+                                layer.offX = number(lt, "offsetX", 0); layer.offY = number(lt, "offsetY", 0); layer.baseOffY = layer.offY; layer.relY = number(lt, "relativeY", 3.4028235e38f);
                                 layer.scaleSpeed = number(lt, "scaleSpeed", 1);
+                                layer.velX = number(lt, "velX", 0); layer.velY = number(lt, "velY", 0);
+                                layer.scaleX = number(lt, "scaleX", layer.scale); layer.scaleY = number(lt, "scaleY", layer.scale);
+                                lua_getfield(L, lt, "flags");
+                                if (lua_istable(L, -1)) {   // the flag strings of the layer loader (0x43c0xx)
+                                    layer.hasFlags = true;
+                                    for (int k = 1; k <= (int)lua_objlen(L, -1); k++) {
+                                        lua_rawgeti(L, -1, k);
+                                        if (lua_isstring(L, -1)) {
+                                            std::string fl = lua_tostring(L, -1);
+                                            if (fl == "OVERSTRETCH_ANCHOR_V") layer.flags |= 1; else if (fl == "V_REPEAT") layer.flags |= 2; else if (fl == "H_REPEAT") layer.flags |= 4;
+                                            else if (fl == "REFRESH_ANIMATION_TIMELINE") layer.flags |= 8; else if (fl == "REFRESH_ANIMATION_COORDINATES") layer.flags |= 0x10; else if (fl == "ANCHOR_V") layer.flags |= 0x20;
+                                            else if (fl == "PREVENT_STRETCH_SCALE") layer.flags |= 0x80; else if (fl == "REPEAT_LEFT_ONLY") layer.flags |= 0x100; else if (fl == "REPEAT_RIGHT_ONLY") layer.flags |= 0x200;
+                                        }
+                                        lua_pop(L, 1);
+                                    }
+                                }
+                                lua_pop(L, 1);
                                 // The scattered elements of the layer (themes.lua "elements": amount, scale, variation, w, h, velX, velY, sprites). The retail exe
                                 // creates them itself; scripts that scatter their own (they define populateWithRandomThemeSprites*) are left alone.
                                 lua_getfield(L, lt, "elements");
+                                if (lua_istable(L, -1)) { lua_pushnil(L); layer.elemTable = lua_next(L, -2) != 0; if (layer.elemTable) lua_pop(L, 2); }   // 0xa8..0xac: the layer's own element list
                                 if (lua_istable(L, -1) && !HasScriptFunction("populateWithRandomThemeSpritesNew") && !HasScriptFunction("populateWithRandomThemeSprites")) {
                                     int et = lua_gettop(L);
                                     int amount = (int)number(et, "amount", 0);
@@ -1618,6 +1654,19 @@ void GamePlatform::SetTheme(const std::string& themeArg) {
                                             themeSprites_.push_back(t);
                                         }
                                     }
+                                }
+                                lua_pop(L, 1);
+                                // spawnParameters (0x44adb0): kept on the layer, the rocks are scattered by the first draw (0x44a800 needs the level's limits)
+                                lua_getfield(L, lt, "spawnParameters");
+                                if (lua_istable(L, -1) && !spriteList.empty()) {
+                                    int spt = lua_gettop(L);
+                                    layer.spawnList = spriteList;
+                                    layer.spawnAmount = (int)number(spt, "amount", 0);
+                                    layer.spawnXVar = number(spt, "xSpeedVariance", 0);
+                                    layer.spawnVelX = number(lt, "velX", 0); layer.spawnVelY = number(lt, "velY", 0);
+                                    lua_getfield(L, spt, "area");
+                                    if (lua_istable(L, -1)) { int at = lua_gettop(L); layer.spawnSX = number(at, "screenX", 0); layer.spawnSY = number(at, "screenY", 0); layer.spawnSW = number(at, "screenW", 0); layer.spawnSH = number(at, "screenH", 0); layer.spawnWW = number(at, "worldW", 0); layer.spawnWH = number(at, "worldH", 0); }
+                                    lua_pop(L, 1);
                                 }
                                 lua_pop(L, 1);
                                 lua_getfield(L, lt, "bLoop");
@@ -1654,6 +1703,38 @@ void GamePlatform::SetTheme(const std::string& themeArg) {
                     for (int i = 1; i <= n; i++) {
                         lua_rawgeti(L, -1, i);
                         if (lua_istable(L, -1)) {
+                            if (newTheme_) {   // NEW_THEME_SYSTEM: the foreground layers go through the same routine as the background (0x44c1b0, vector 0x264)
+                                lua_getfield(L, -1, "sprite");
+                                if (lua_isstring(L, -1)) {
+                                    int lt = lua_gettop(L) - 1;
+                                    BgLayer fl; fl.space = true; fl.sprite = lua_tostring(L, -1);
+                                    fl.zDist = number(lt, "zDistance", 0); fl.xMult = number(lt, "xMult", 0); fl.yMult = number(lt, "yMult", 1);
+                                    fl.scale = number(lt, "scale", 1); fl.scaleX = number(lt, "scaleX", fl.scale); fl.scaleY = number(lt, "scaleY", fl.scale);
+                                    fl.posX = number(lt, "posX", 0); fl.posY = number(lt, "posY", 0); fl.offX = number(lt, "offsetX", 0); fl.offY = number(lt, "offsetY", 0); fl.baseOffY = fl.offY; fl.relY = number(lt, "relativeY", 3.4028235e38f);
+                                    lua_getfield(L, lt, "flags");
+                                    if (lua_istable(L, -1)) {
+                                        fl.hasFlags = true;
+                                        for (int k = 1; k <= (int)lua_objlen(L, -1); k++) {
+                                            lua_rawgeti(L, -1, k);
+                                            if (lua_isstring(L, -1)) {
+                                                std::string fs = lua_tostring(L, -1);
+                                                if (fs == "OVERSTRETCH_ANCHOR_V") fl.flags |= 1; else if (fs == "V_REPEAT") fl.flags |= 2; else if (fs == "H_REPEAT") fl.flags |= 4;
+                                                else if (fs == "ANCHOR_V") fl.flags |= 0x20; else if (fs == "PREVENT_STRETCH_SCALE") fl.flags |= 0x80; else if (fs == "REPEAT_LEFT_ONLY") fl.flags |= 0x100; else if (fs == "REPEAT_RIGHT_ONLY") fl.flags |= 0x200;
+                                            }
+                                            lua_pop(L, 1);
+                                        }
+                                    }
+                                    lua_pop(L, 1);
+                                    lua_getfield(L, lt, "downFillColor");
+                                    if (lua_istable(L, -1)) { fl.downFill = true; fl.downR = number(lua_gettop(L), "r", 0); fl.downG = number(lua_gettop(L), "g", 0); fl.downB = number(lua_gettop(L), "b", 0); }
+                                    lua_pop(L, 1);
+                                    lua_getfield(L, lt, "upFillColor");
+                                    if (lua_istable(L, -1)) { fl.upFill = true; fl.upR = number(lua_gettop(L), "r", 0); fl.upG = number(lua_gettop(L), "g", 0); fl.upB = number(lua_gettop(L), "b", 0); }
+                                    lua_pop(L, 1);
+                                    ntFg_.push_back(fl);
+                                }
+                                lua_pop(L, 1);
+                            }
                             // Star Wars' newer themes (Cloud City) name the fields: sprite, scale, zDistance, velX, offsetY, downFillColor
                             lua_getfield(L, -1, "particles");
                             if (lua_isstring(L, -1)) { std::string pn = lua_tostring(L, -1); lua_pop(L, 1); float idf = 0; GetNumber(L, lua_gettop(L), "spawnerId", idf); fgParticles_[(int)idf] = pn; lua_getfield(L, -1, "sprite"); }
@@ -1741,11 +1822,215 @@ void GamePlatform::Wheel(int notches) {
     zoomT_ = 0.0f;
 }
 
+// 0x44b200: every layer drifts by its velocity times (1 - zDistance); one that has left the screen in its direction of travel jumps back by whole sprite widths
+void GamePlatform::UpdateNewThemeLayers(std::vector<BgLayer>& layers, float dt) {
+    if (!scripts_ || !ntRef_.have || dt <= 0) return;
+    lua_State* L = scripts_->State();
+    int top0 = lua_gettop(L);
+    float camX = 0, camY = 0, lim;
+    const float ws = worldScale_ > 0 ? worldScale_ : 1.0f, S = ntRef_.s88 > 0 ? ntRef_.s88 : 1.0f;
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    const int env = lua_gettop(L);
+    lua_getfield(L, env, "screen");
+    if (lua_istable(L, -1)) { GetNumber(L, lua_gettop(L), "x", camX); GetNumber(L, lua_gettop(L), "y", camY); }
+    lua_pop(L, 1);
+    float left = camX, right = camX + (float)screenWidth_ / ws, topW = camY, bottom = camY + (float)screenHeight_ / ws;
+    if (GetNumber(L, env, "leftLimitWorld", lim) && lim < left) left = lim;
+    if (GetNumber(L, env, "rightLimitWorld", lim) && lim > right) right = lim;
+    if (GetNumber(L, env, "topLimitWorld", lim) && lim < topW) topW = lim;
+    if (GetNumber(L, env, "bottomLimitWorld", lim) && lim > bottom) bottom = lim;
+    lua_settop(L, top0);
+    const float f4 = ws / S;
+    for (BgLayer& layer : layers) {
+        float k = 1.0f - layer.zDist;
+        layer.posX += dt * layer.velX * k; layer.posY += dt * layer.velY * k;
+        if ((layer.velX == 0 && layer.velY == 0) || layer.lastW <= 0 || layer.lastH <= 0) continue;
+        float f = layer.zDist + f4 * k;
+        float halfW = 0.5f * f * layer.scaleX * layer.lastW / ws, halfH = 0.5f * f * layer.scaleY * layer.lastH / ws;
+        if (halfW <= 0 || halfH <= 0) continue;
+        float shiftX = layer.scaleX * layer.lastW * (1.0f + std::trunc((right - left) / (2.0f * halfW)));
+        float shiftY = layer.scaleY * layer.lastH * (1.0f + std::trunc((bottom - topW) / (2.0f * halfH)));
+        if (layer.lastOutX - halfW > right && layer.velX > 0) layer.posX -= shiftX;
+        else if (left > layer.lastOutX + halfW && layer.velX < 0) layer.posX += shiftX;
+        else if (topW > layer.lastOutY + halfH && layer.velY < 0) layer.posY += shiftY;
+        else if (bottom < layer.lastOutY - halfH && layer.velY > 0) layer.posY -= shiftY;
+    }
+}
+
+// NEW_THEME_SYSTEM draw (Star Wars; 0x44c1b0 with 0x44a030 size, 0x44a1a0 position, 0x44a320 draw, 0x44bfa0 / 0x44bdf0 repeats, 0x44b820 reference camera).
+// A layer is placed in world coordinates and goes through the camera: screen = (world - camera) * worldScale. zDistance z is 1 for a layer that stays on the
+// screen and 0 for one that sticks to the world. No reference screen size is used.
+void GamePlatform::DrawNewThemeLayers(std::vector<BgLayer>& layers, int layerBase) {
+    if (!scripts_) return;
+    lua_State* L = scripts_->State();
+    const float sw = (float)screenWidth_, sh = (float)screenHeight_;
+    float camX = 0, camY = 0;
+    const float ws = worldScale_ > 0 ? worldScale_ : 1.0f;
+    int top = lua_gettop(L);
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    const int env = lua_gettop(L);
+    lua_getfield(L, env, "screen");
+    if (lua_istable(L, -1)) { GetNumber(L, lua_gettop(L), "x", camX); GetNumber(L, lua_gettop(L), "y", camY); }
+    lua_pop(L, 1);
+    auto envBool = [&](const char* k) { lua_getfield(L, env, k); bool b = lua_toboolean(L, -1) != 0; lua_pop(L, 1); return b; };
+    // 0x44b820, first call: the reference camera is the level's castleCameraData for this device (px, py, sx); g_useLowerCameraAsThemeReferencePoint takes
+    // birdCameraData instead; g_useZeroAsThemeReferencePointX / Y zero it. Without level data the first frame's camera stands in.
+    // until the level's own camera data has been seen (it is loaded after the first frames of a level) the camera of the moment stands in; the search stops after 300 frames
+    if (!ntRef_.have || (!ntRef_.fromLevel && ntRef_.tries < 300)) {
+        ntRef_.have = true; ntRef_.tries++; ntRef_.fromLevel = false; ntRef_.refX = camX; ntRef_.refY = camY; ntRef_.s88 = ws;
+        std::string dm;
+        lua_getfield(L, env, "deviceModel"); if (lua_isstring(L, -1)) dm = lua_tostring(L, -1); lua_pop(L, 1);
+        lua_getfield(L, env, "objects");
+        if (lua_istable(L, -1)) {
+            int ob = lua_gettop(L);
+            auto readCam = [&](const char* tbl) {
+                lua_getfield(L, ob, tbl);
+                if (lua_istable(L, -1)) {
+                    int tt = lua_gettop(L);
+                    // the entry of this device; a level saved for other devices only (the retail exe has one for its own) takes the first one with a camera
+                    lua_getfield(L, tt, dm.c_str());
+                    if (!lua_istable(L, -1)) {
+                        lua_pop(L, 1);
+                        static const char* alt[] = {"windows", "pc", "PC", "mac", "ipad", "iphone"};
+                        bool found = false;
+                        for (const char* a : alt) { lua_getfield(L, tt, a); if (lua_istable(L, -1)) { found = true; break; } lua_pop(L, 1); }
+                        if (!found) {
+                            lua_pushnil(L);
+                            while (lua_next(L, tt)) { if (lua_istable(L, -1)) { found = true; break; } lua_pop(L, 1); }
+                            if (!found) lua_pushnil(L);
+                        }
+                    }
+                    if (lua_istable(L, -1)) {
+                        int ct = lua_gettop(L); float px, py, sx;
+                        if (GetNumber(L, ct, "px", px)) ntRef_.refX = px;
+                        if (GetNumber(L, ct, "py", py)) ntRef_.refY = py;
+                        if (GetNumber(L, ct, "sx", sx) && sx > 0) ntRef_.s88 = sx;
+                        ntRef_.fromLevel = true;
+                    }
+                    lua_pop(L, 1);
+                }
+                lua_pop(L, 1);
+            };
+            readCam("castleCameraData");
+            if (envBool("g_useLowerCameraAsThemeReferencePoint")) readCam("birdCameraData");
+        }
+        lua_pop(L, 1);
+        if (envBool("g_useZeroAsThemeReferencePointX")) ntRef_.refX = 0;
+        if (envBool("g_useZeroAsThemeReferencePointY")) ntRef_.refY = 0;
+        if (std::getenv("AB_DRAWDBG") && (ntRef_.fromLevel || ntRef_.tries == 1 || ntRef_.tries == 300)) std::fprintf(stderr, "NTREF dm=%s fromLevel=%d ref=%g,%g s88=%g cam=%g,%g ws=%g screen=%gx%g\n", dm.c_str(), (int)ntRef_.fromLevel, ntRef_.refX, ntRef_.refY, ntRef_.s88, camX, camY, ws, sw, sh);
+    }
+    const float S = ntRef_.s88 > 0 ? ntRef_.s88 : 1.0f;
+    // the level's limits (leftLimitWorld ...) widen the box the rocks are scattered over (0x44a0c0)
+    float left = camX, right = camX + sw / ws, topW = camY, bottom = camY + sh / ws, lim;
+    if (GetNumber(L, env, "leftLimitWorld", lim) && lim < left) left = lim;
+    if (GetNumber(L, env, "rightLimitWorld", lim) && lim > right) right = lim;
+    if (GetNumber(L, env, "topLimitWorld", lim) && lim < topW) topW = lim;
+    if (GetNumber(L, env, "bottomLimitWorld", lim) && lim > bottom) bottom = lim;
+    lua_settop(L, top);
+    const float f4 = ws / S;
+    const float stx = camX - ntRef_.refX, sty = camY - ntRef_.refY;
+    for (size_t i = 0; i < layers.size(); i++) {
+        BgLayer& layer = layers[i];
+        const float z = layer.zDist;
+        // 0x44a030: the on-screen size factor
+        const float f = z + f4 * (1.0f - z);
+        // one instance of a sprite whose pivot sits at (posX, posY) in the layer's own coordinates (0x44a1a0)
+        auto place = [&](float w, float h, float pivX, float pivY, float posX, float posY, int flags, float& cx, float& cy) {
+            float p5 = ((w * 0.5f - pivX) + posX) / S, p6 = ((h * 0.5f - pivY) + posY) / S;
+            float shX = stx * z + layer.xMult * stx, shY = sty * z;
+            if (flags & 0x40) shX = stx;
+            if (flags & 0x20) shY = sty;
+            float ox = shX + ntRef_.refX + z * (p5 / f4) + p5 * (1.0f - z);
+            float oy = shY + ntRef_.refY + p6 * (1.0f - z) + z * (p6 / f4);
+            cx = (ox - camX) * ws; cy = (oy - camY) * ws;
+        };
+        auto drawAt = [&](const std::string& name, float cx, float cy, float szx, float szy) {
+            state_ = RenderState();
+            state_.sx = szx; state_.sy = szy; state_.tx = cx / szx; state_.ty = cy / szy;
+            ResDrawSprite(name, 0, 0, 1, 1, false, 0, 0);
+        };
+        if (layer.spawnAmount > 0 && !layer.spawnList.empty()) {
+            // 0x44adb0 / 0x44a800: the rocks of a sprite-list layer are scattered once over the level's box (screen area plus the level limits)
+            const float boxW = std::max(1.0f, (right - left) * S * (1.0f + layer.spawnWW)), boxH = std::max(1.0f, (bottom - topW) * S * (1.0f + layer.spawnWH));
+            if (!layer.spawned) {
+                layer.spawned = true;
+                unsigned seed = 12345u + (unsigned)i * 7919u + (unsigned)layer.spawnAmount;
+                auto rnd = [&]() { seed = seed * 1664525u + 1013904223u; return (float)((seed >> 8) & 0xFFFFFF) / 16777216.0f; };
+                for (int n = 0; n < layer.spawnAmount && n < 2000; n++) {
+                    float x = (rnd() - 0.5f) * boxW, y = (rnd() - 0.5f) * boxH;
+                    layer.inst.push_back({x, y, (float)((int)(rnd() * layer.spawnList.size()) % (int)layer.spawnList.size())});
+                }
+            }
+            layer.lastW = 0; layer.lastH = 0;
+            for (const auto& in : layer.inst) {
+                const std::string& nm = layer.spawnList[(size_t)in[2]];
+                const Sprite* rs = sprites_.Find(nm);
+                if (!rs) continue;
+                float ix = std::fmod(in[0] + layer.posX + boxW * 0.5f, boxW); if (ix < 0) ix += boxW; ix -= boxW * 0.5f;
+                float iy = std::fmod(in[1] + layer.posY + boxH * 0.5f, boxH); if (iy < 0) iy += boxH; iy -= boxH * 0.5f;
+                float ex = 0, ey = 0;
+                place((float)rs->w, (float)rs->h, (float)rs->pivotX, (float)rs->pivotY, ix + layer.offX, iy + layer.offY, layer.flags, ex, ey);
+                if (ex < -rs->w * (f * layer.scaleX) || ex > sw + rs->w * (f * layer.scaleX)) continue;
+                drawAt(nm, ex, ey, f * layer.scaleX, f * layer.scaleY);
+            }
+            continue;
+        }
+        const Sprite* sp = layer.empty ? nullptr : sprites_.Find(layer.sprite);
+        const CompoSprite* compo = (!sp && !layer.empty) ? sprites_.FindCompo(layer.sprite) : nullptr;
+        int cw = 0, ch = 0, cox = 0, coy = 0;
+        if (compo) sprites_.CompoExtent(*compo, cw, ch, cox, coy);
+        const float w = sp ? (float)sp->w : (float)cw, h = sp ? (float)sp->h : (float)ch;
+        const float pivX = sp ? (float)sp->pivotX : (float)cox, pivY = sp ? (float)sp->pivotY : (float)coy;
+        const float szx = f * layer.scaleX, szy = f * layer.scaleY;
+        float cx = 0, cy = 0;
+        float posYeff = layer.posY;
+        // 0x44bc00: a layer with relativeY is put at (H * relativeY - H / 2) / (reference scale ratio)
+        if (layer.relY < 3.0e38f) posYeff = ((float)screenHeight_ * layer.relY - (float)screenHeight_ * 0.5f);
+        place(w, h, pivX, pivY, layer.posX + layer.offX, posYeff + layer.offY, layer.flags, cx, cy);
+        layer.lastOutX = camX + cx / ws; layer.lastOutY = camY + cy / ws; layer.lastW = w; layer.lastH = h;
+        if (std::getenv("AB_DRAWDBG")) { static int dn = 0; if (dn++ < 60) std::fprintf(stderr, "NTL %zu %s w=%g h=%g piv=%g,%g z=%g f=%g size=%g,%g pos=%g,%g flags=%x -> screen %g,%g cam=%g,%g ws=%g\n", i, layer.sprite.c_str(), w, h, pivX, pivY, z, f, szx, szy, layer.posX + layer.offX, layer.posY + layer.offY, layer.flags, cx, cy, camX, camY, ws); }
+        if ((sp || compo) && szx > 0 && szy > 0 && w > 0 && h > 0) {   // 0x44c1b0: the colour above / below the layer's edge (0x449ea0)
+            if (layer.upFill) DrawRect(layer.upR / 255.0f, layer.upG / 255.0f, layer.upB / 255.0f, 1, 0, 0, sw, cy - h * szy * 0.5f + 3.0f, false);
+            if (layer.downFill) { float y0 = cy + h * szy * 0.5f - 3.0f; DrawRect(layer.downR / 255.0f, layer.downG / 255.0f, layer.downB / 255.0f, 1, 0, y0, sw, sh + 1.0f, false); }
+            const float stepX = w * szx, stepY = h * szy;
+            auto drawVertical = [&](float x, float y) {      // 0x44bdf0: V_REPEAT
+                if (!(layer.flags & 2)) return;
+                float yy = y; for (int n = 0; n < 64 && 0.0f < yy + stepY * 0.5f; n++) { yy -= stepY; drawAt(layer.sprite, x, yy, szx, szy); }
+                yy = y; for (int n = 0; n < 64 && yy - stepY * 0.5f < sh; n++) { yy += stepY; drawAt(layer.sprite, x, yy, szx, szy); }
+            };
+            drawAt(layer.sprite, cx, cy, szx, szy);
+            // 0x44bfa0: H_REPEAT, REPEAT_LEFT_ONLY / REPEAT_RIGHT_ONLY
+            if ((layer.flags & 4) || (layer.flags & 0x300)) {
+                float x = cx;
+                if (!(layer.flags & 0x100)) for (int n = 0; n < 64 && x - stepX * 0.5f < sw; n++) { x += stepX; drawAt(layer.sprite, x, cy, szx, szy); drawVertical(x, cy); }
+                x = cx;
+                if (!(layer.flags & 0x200)) for (int n = 0; n < 64 && 0.0f < x + stepX * 0.5f; n++) { x -= stepX; drawAt(layer.sprite, x, cy, szx, szy); drawVertical(x, cy); }
+            }
+            drawVertical(cx, cy);
+        }
+        // the elements of the layer: placed in the layer's own coordinates around its origin
+        for (const ThemeSprite& t : themeSprites_) {
+            if (t.layer != (int)i + layerBase) continue;
+            const Sprite* ep = sprites_.Find(t.sprite);
+            if (!ep) continue;
+            float ex = 0, ey = 0;
+            place((float)ep->w, (float)ep->h, (float)ep->pivotX, (float)ep->pivotY, t.x * (t.flipped ? -1.0f : 1.0f) * 20.0f + layer.posX + layer.offX, t.y * 20.0f + layer.posY + layer.offY, layer.flags, ex, ey);
+            float ezx = f * layer.scaleX * t.scaleX, ezy = f * layer.scaleY * t.scaleY;
+            if (ezx <= 0 || ezy <= 0) continue;
+            drawAt(t.sprite, ex, ey, ezx, ezy);
+        }
+    }
+    state_ = RenderState();
+}
+
+void GamePlatform::DrawNewThemeBackground() { DrawNewThemeLayers(bgLayers_, 0); }
+
 // Angry Birds Space drawBackgroundNative (0x467f70). Sizes are in units of 1024x768 screens: nW = width / 1024, nH = height / 768. A
 // layer is scaled by its own scale times the larger screen unit (a looping layer: the larger of the first and the current height),
 // plus (zDistance + the zoom since the first frame) * scaleSpeed; the camera's move since the first frame, times zDistance and xMult / yMult,
 // shifts it, and the angle follows the horizontal move times angleMult.
 void GamePlatform::DrawSpaceBackground() {
+    if (newTheme_) { DrawNewThemeBackground(); return; }
     float sw = (float)screenWidth_, sh = (float)screenHeight_;
     float nW = sw / 1024.0f, nH = sh / 768.0f;
     float camX = 0, camY = 0;
@@ -1765,8 +2050,8 @@ void GamePlatform::DrawSpaceBackground() {
         float dxz = dx * layer.zDist, dyz = dy * layer.zDist;
         layer.angle = dxz * 0.05f * layer.angleMult;
         float ext = layer.looping ? std::max(bgRef_.nH0, nH) : std::max(nH, nW);
-        static const float swK = std::getenv("AB_BGK") ? (float)std::atof(std::getenv("AB_BGK")) : 0.5f;
-        float kk = swTheme_ ? swK : 1.0f;
+        static const float swK = std::getenv("AB_BGK") ? (float)std::atof(std::getenv("AB_BGK")) : 0.7f;
+        float kk = (swTheme_ || swBg_) ? swK : 1.0f;
         float E = layer.scale * ext * kk;
         float S = (layer.zDist + dws) * layer.scaleSpeed * kk;
         float At = S + E, X = 2 * S + E;
@@ -1779,6 +2064,7 @@ void GamePlatform::DrawSpaceBackground() {
         float w = sp ? (float)sp->w : compo ? (float)cw : 1024.0f / layer.scale, h = sp ? (float)sp->h : compo ? (float)ch : 1024.0f / layer.scale;
         float pivX = sp ? (float)sp->pivotX : compo ? (float)cox : 0, pivY = sp ? (float)sp->pivotY : compo ? (float)coy : 0;
         if (std::getenv("AB_DRAWDBG")) std::fprintf(stderr, "SPBG %zu %s w=%g h=%g piv=%g,%g E=%g S=%g At=%g loop=%d pos=%g,%g off=%g,%g xm=%g\n", i, layer.sprite.c_str(), w, h, pivX, pivY, E, S, At, (int)layer.looping, layer.posX, layer.posY, layer.offX, layer.offY, layer.xMult);
+        if (std::getenv("AB_DRAWDBG")) { static int dn = 0; if (dn++ < 40) std::fprintf(stderr, "SPBG2 %zu cam=%g,%g ref=%g,%g ws=%g refws=%g nW=%g nH=%g nH0=%g dxz=%g dyz=%g offY=%g baseOffY=%g compo=%d sw=%d\n", i, camX, camY, bgRef_.camX, bgRef_.camY, worldScale_, bgRef_.ws, nW, nH, bgRef_.nH0, dxz, dyz, layer.offY, layer.baseOffY, compo ? 1 : 0, swTheme_ ? 1 : 0); }
         if (drawable && At > 0) {
             state_ = RenderState();
             state_.pivotX = pivX; state_.pivotY = pivY;
@@ -1823,12 +2109,14 @@ void GamePlatform::DrawSpaceBackground() {
 
 // setThemeOffsetY (0x466e40): every layer of the theme moves to its own offsetY plus v; a layer without elements takes v scaled by 768 / screen height first
 void GamePlatform::SetThemeOffsetY(float v) {
+    if (std::getenv("AB_DRAWDBG")) std::fprintf(stderr, "SETTHEMEOFFSETY v=%g screen=%dx%d\n", v, screenWidth_, screenHeight_);
     for (size_t i = 0; i < bgLayers_.size(); i++) {
         BgLayer& layer = bgLayers_[i];
-        bool hasElements = false;
-        for (const ThemeSprite& t : themeSprites_) if (t.layer == (int)i) { hasElements = true; break; }
+        bool hasElements = layer.elemTable;
+        if (!newTheme_) for (const ThemeSprite& t : themeSprites_) if (t.layer == (int)i) { hasElements = true; break; }
         float add = hasElements || screenHeight_ <= 0 ? v : v * 768.0f / (float)screenHeight_;
         layer.offY = layer.baseOffY + add;
+        if (newTheme_) layer.posY = 0;     // 0x412760 writes the layer's +0x7c (posY) itself
     }
 }
 
@@ -1907,6 +2195,7 @@ void GamePlatform::DrawForeground() {
     TagScope tag(this, "foreground");
     // Angry Birds Space has no ground (its foreground layers use named fields and are not read here); Star Wars keeps the Seasons-style ones
     if (!backend_ || (scripts_ && scripts_->IsSpace() && fgLayers_.empty())) return;
+    if (newTheme_ && !ntFg_.empty()) { DrawNewThemeLayers(ntFg_, (int)bgLayers_.size()); return; }
     // a foreground layer is a sprite or a composite sprite (the Ham 'o' Ween menu draws its trees and pumpkins as composites)
     auto extent = [&](const std::string& name, float& w, float& pivotX, float& h, float& pivotY) {
         const Sprite* sp = sprites_.Find(name);
@@ -2134,7 +2423,7 @@ std::vector<std::string> GamePlatform::GameDrawOrder() {
 bool GamePlatform::BodyCommand(const std::string& n, int cmd, float a, float& result) {
     if (cmd < 20 || cmd > 24) return Physics().BodyCommand(n, cmd, a, result);
     if (cmd == 20) aimEnabled_ = a != 0;
-    else if (cmd == 21) aimSprite_ = n;
+    else if (cmd == 21) { aimSprite_ = n; aimScale_ = a > 0 ? a : 1; }
     else if (cmd == 23) { aimDots_.clear(); aimPts_.clear(); aimOn_ = false; }   // 0x45e230
     else if (cmd == 24) {
         std::vector<std::pair<float, float>> pts;
@@ -2159,6 +2448,22 @@ bool GamePlatform::BodyCommand(const std::string& n, int cmd, float a, float& re
         for (auto& p : pts) aimPts_.push_back({p.first, p.second});
         if (std::getenv("AB_DRAWDBG")) std::fprintf(stderr, "AIM %s pts=%d sprite=%s found=%d\n", n.c_str(), (int)aimPts_.size(), aimSprite_.c_str(), (int)(sprites_.Find(aimSprite_) != nullptr));
     }
+    return true;
+}
+
+// simulateAimingAid(bird, impulseX, impulseY [, points]): the aiming aid's arc for a launch with that impulse: the free flight of the bird, as in the retail trail (see PhysicsWorld::SimulateFlight).
+// The points are 1/30 s apart like the retail trail's (simulationTimeStepMultiplier 3 times 1/90); the first one is the bird's own position.
+bool GamePlatform::AimSimulate(const std::string& bird, float vx, float vy, int points, const float* start) {
+    PhysObject* o = Physics().Find(bird);
+    if (!o || !o->pbody) return false;
+    std::vector<std::pair<float, float>> pts;
+    float mass = o->pbody->Mass();
+    if (mass <= 0) return false;
+    if (!Physics().SimulateFlight(bird, vx / mass, vy / mass, points, 1, 1.0f / 30.0f, pts, start) || pts.empty()) return false;   // vx, vy are the impulse: the real launch is applyImpulse, and the world steps 1/30 s with 10 + 10 iterations
+    aimPts_.clear();
+    aimPts_.push_back(start ? TrajectoryPoint{start[0], start[1]} : TrajectoryPoint{o->pbody->PosX(), o->pbody->PosY()});
+    for (auto& p : pts) aimPts_.push_back({p.first, p.second});
+    if (std::getenv("AB_AIMDBG")) for (size_t i = 0; i < aimPts_.size() && i < 400; i++) std::fprintf(stderr, "AP %d %.3f %.3f\n", (int)i, aimPts_[i].x, aimPts_[i].y);
     return true;
 }
 
@@ -2260,7 +2565,7 @@ void GamePlatform::DrawGame() {
                 { TagScope t(this, "trajectory");
                   for (const AimDot& d : aimDots_) {
                       TrajectoryPoint p = AimSpline(d.x);
-                      DrawSpriteAt(*sheet, *sp, p.x * 20.0f - sp->pivotX * d.s, p.y * 20.0f - sp->pivotY * d.s, 0, 0, true, sp->w * d.s, sp->h * d.s);
+                      { float ds = d.s * aimScale_; DrawSpriteAt(*sheet, *sp, p.x * 20.0f - sp->pivotX * ds, p.y * 20.0f - sp->pivotY * ds, 0, 0, true, sp->w * ds, sp->h * ds); }
                   } }
                 state_ = keep;
             }
