@@ -3,6 +3,7 @@
 #include "lua/aes.h"
 
 #include <cstdio>
+#include <vector>
 
 extern "C" {
 #include "lauxlib.h"
@@ -97,8 +98,8 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
     lua_pop(L_, 1);
 
     SetString("scriptPath", config_.scriptPath);
-    if (!config_.commonScriptPath.empty()) {          // Angry Birds Space
-        SetString("commonScriptPath", config_.commonScriptPath);
+    if (IsSpaceDataFolder()) {          // Angry Birds Space (the PC game, or a single-folder build such as the v1.0.0 prototype)
+        if (!config_.commonScriptPath.empty()) SetString("commonScriptPath", config_.commonScriptPath);
         lua_getfield(L_, LUA_REGISTRYINDEX, "ab.env");
         if (luaL_loadbuffer(L_, (const char*)kSpaceNativesLua, kSpaceNativesLuaSize, "space_natives.lua") == 0) {
             lua_pushvalue(L_, -2);
@@ -217,7 +218,11 @@ void ScriptHost::NewGlobalTable(const char* name) {
 // settings.lua / highscores.lua: either `tableName = {...}` (written by this engine) or, in the original
 // (encrypted) files, one assignment per entry (`Level27 = {...}`). The file runs in a table of its own and
 // that table, or the table inside it, becomes the global. A missing file means an empty table.
-bool ScriptHost::IsSpaceDataFolder() const { return !config_.commonScriptPath.empty(); }
+bool ScriptHost::IsSpaceDataFolder() const {
+    if (!config_.commonScriptPath.empty()) return true;
+    std::vector<uint8_t> bytes;            // a Space build that keeps everything in one scripts folder still has blocks_planets.lua
+    return ab::ReadLuaFile(config_.scriptPath + "/blocks_planets.lua", bytes) && !bytes.empty();
+}
 
 void ScriptHost::LoadPersisted(const char* tableName, const char* fileName, bool onlyIfExists) {
     std::string path = platform_.ResolveUserFile(fileName, true), text;

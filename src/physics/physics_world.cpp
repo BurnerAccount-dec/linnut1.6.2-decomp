@@ -673,6 +673,48 @@ void PhysicsWorld::SetSpriteLook(const std::string& n, int what, float a, float 
     } else if (what == 1) { o->pivotOffX = a; o->pivotOffY = b; }
     else o->textureScale = a;
 }
+void PhysicsWorld::SetObjectScale(const std::string& n, float sx, float sy) {
+    PhysObject* o = Find(n);
+    if (!o) return;
+    o->scaled = true; o->scaleX = sx; o->scaleY = sy; o->wobDX = o->wobDY = 0;
+}
+bool PhysicsWorld::GetObjectScale(const std::string& n, float& sx, float& sy) const {
+    PhysObject* o = Find(n);
+    if (!o) return false;
+    sx = o->scaleX; sy = o->scaleY;
+    return true;
+}
+void PhysicsWorld::SetSpeedCap(const std::string& n, float speed, float vx, float vy) {
+    PhysObject* o = Find(n);
+    if (!o) return;
+    if (o->pbody) o->pbody->SetMaxSpeed(speed > 0 ? speed : 0);   // the solver uses it instead of setMaxTranslation for this body
+    o->capSpeed = speed > 0 ? speed : 0; o->capVx = vx > 0 ? vx : 0; o->capVy = vy > 0 ? vy : 0;
+}
+bool PhysicsWorld::GetSpeedCap(const std::string& n, float& speed, float& vx, float& vy) const {
+    PhysObject* o = Find(n);
+    if (!o) return false;
+    speed = o->capSpeed; vx = o->capVx; vy = o->capVy;
+    return true;
+}
+void PhysicsWorld::ApplySpeedCaps() {
+    for (const auto& o : objects_) {
+        if (!o->pbody || (o->capSpeed <= 0 && o->capVx <= 0 && o->capVy <= 0) || o->pbody->IsStatic() || !o->pbody->IsAwake()) continue;
+        float vx = o->pbody->VelX(), vy = o->pbody->VelY(), nx = vx, ny = vy;
+        if (o->capVx > 0) nx = std::max(-o->capVx, std::min(o->capVx, nx));
+        if (o->capVy > 0) ny = std::max(-o->capVy, std::min(o->capVy, ny));
+        if (o->capSpeed > 0) { float sp = std::sqrt(nx * nx + ny * ny); if (sp > o->capSpeed) { float q = o->capSpeed / sp; nx *= q; ny *= q; } }
+        if (nx != vx || ny != vy) o->pbody->SetLinearVelocity(nx, ny);
+    }
+}
+std::vector<std::string> PhysicsWorld::TouchingObjects(const std::string& n) const {
+    std::vector<std::string> names;
+    PhysObject* o = Find(n);
+    if (!o || !o->pbody) return names;
+    std::vector<PhysObject*> list;
+    o->pbody->Touching(list);
+    for (PhysObject* p : list) if (p && p != o && std::find(names.begin(), names.end(), p->name) == names.end()) names.push_back(p->name);
+    return names;
+}
 void PhysicsWorld::SetObjectAlpha(const std::string& n, float a) {
     PhysObject* o = Find(n);
     if (o) o->alpha = a < 0 ? 0 : (a > 1 ? 1 : a);

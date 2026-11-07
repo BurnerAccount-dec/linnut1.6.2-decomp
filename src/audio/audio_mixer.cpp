@@ -222,6 +222,8 @@ int AudioMixer::Play(const std::string& name, float volume, bool loop, int track
     Voice v;
     v.clip = clip; v.name = name; v.volume = volume; v.loop = loop; v.track = track;
     v.id = nextId_++;
+    auto fx = fx_.find(name);
+    if (fx != fx_.end()) { v.pitch = fx->second.pitch; v.tempo = fx->second.tempo; v.pan = fx->second.pan; }
     waiting_.push_back(v);
     return v.id;
 }
@@ -288,6 +290,113 @@ void AudioMixer::SetClipSpeed(const std::string& name, float speed) {
     for (Voice& v : waiting_) if (v.name == name) v.speed = speed;
 }
 
+template <class F> void AudioMixer::EachVoice(const std::string& name, F f) {
+    for (Voice& v : active_) if (v.name == name) f(v);
+    for (Voice& v : waiting_) if (v.name == name) f(v);
+}
+void AudioMixer::SetClipPitch(const std::string& name, float p) {
+    std::lock_guard<std::mutex> l(m_);
+    p = std::min(8.0f, std::max(0.05f, p));
+    fx_[name].pitch = p; EachVoice(name, [&](Voice& v) { v.pitch = p; });
+}
+void AudioMixer::SetClipTempo(const std::string& name, float t) {
+    std::lock_guard<std::mutex> l(m_);
+    t = std::min(8.0f, std::max(0.05f, t));
+    fx_[name].tempo = t; EachVoice(name, [&](Voice& v) { v.tempo = t; });
+}
+void AudioMixer::SetClipPan(const std::string& name, float p) {
+    std::lock_guard<std::mutex> l(m_);
+    p = std::min(1.0f, std::max(-1.0f, p));
+    fx_[name].pan = p; EachVoice(name, [&](Voice& v) { v.pan = p; });
+}
+void AudioMixer::ResetClipEffects(const std::string& name) {
+    std::lock_guard<std::mutex> l(m_);
+    fx_.erase(name); EachVoice(name, [&](Voice& v) { v.pitch = 1; v.tempo = 1; v.pan = 0; });
+}
+bool AudioMixer::SeekClip(const std::string& name, double seconds) {
+    std::lock_guard<std::mutex> l(m_);
+    bool any = false;
+    EachVoice(name, [&](Voice& v) {
+        double frame = std::max(0.0, seconds * v.clip->rate);
+        int cc = std::max(1, v.clip->channels);
+        size_t frames = v.clip->samples.size() / cc;
+        if (frame >= (double)frames) frame = frames ? (double)frames - 1 : 0;
+        v.pos = (size_t)frame * cc; v.frac = 0; v.posD = v.base = frame; v.outCount = 0; any = true;
+    });
+    return any;
+}
+double AudioMixer::ClipTime(const std::string& name) {
+    std::lock_guard<std::mutex> l(m_);
+    double t = -1;
+    EachVoice(name, [&](Voice& v) {
+        if (t >= 0) return;
+        int cc = std::max(1, v.clip->channels);
+        double frame = v.inFx ? (v.lastTf != 0 ? v.base + (double)v.outCount * v.lastTf : v.posD) : (double)(v.pos / cc) + v.frac;
+        t = frame / std::max(1, v.clip->rate);
+    });
+    return t;
+}
+double AudioMixer::ClipLength(const std::string& name) {
+    std::lock_guard<std::mutex> l(m_);
+    double t = -1;
+    EachVoice(name, [&](Voice& v) { if (t < 0) t = (double)(v.clip->samples.size() / std::max(1, v.clip->channels)) / std::max(1, v.clip->rate); });
+    if (t >= 0) return t;
+    auto it = clips_.find(name);
+    if (it != clips_.end() && it->second.clip) return (double)(it->second.clip->samples.size() / std::max(1, it->second.clip->channels)) / std::max(1, it->second.clip->rate);
+    return -1;
+}
+
+
+// v2.3: the voice with a pitch, tempo or pan set. Same pitch and tempo: plain resampling. Different: two overlapping Hann grains (overlap-add), which
+// changes the length without changing the pitch.
+void AudioMixer::MixFx(Voice& v, int frames, float speed) {
+    const int ch = channels_;
+    const int cc = std::max(1, v.clip->channels);
+    const std::vector<int16_t>& s = v.clip->samples;
+    const long long clipFrames = (long long)(s.size() / cc);
+    if (clipFrames == 0) { v.stopped = true; return; }
+    if (!v.inFx) { v.posD = (double)(v.pos / cc) + v.frac; v.base = v.posD; v.outCount = 0; v.inFx = true; }
+    const double pf = speed * v.pitch, tf = speed * v.tempo;
+    const bool stretch = std::fabs(pf - tf) > 1e-4;
+    const float gain = trackVolume_[v.track] * v.volume * masterVolume_;
+    const float gl = v.pan > 0 ? 1.0f - v.pan : 1.0f, gr = v.pan < 0 ? 1.0f + v.pan : 1.0f;
+    auto at = [&](double p, int c) -> float {
+        if (p < 0) return 0;
+        if (v.loop) p = std::fmod(p, (double)clipFrames);
+        long long i0 = (long long)p;
+        if (i0 >= clipFrames) return 0;
+        long long i1 = i0 + 1; if (i1 >= clipFrames) i1 = v.loop ? 0 : i0;
+        float t = (float)(p - (double)i0);
+        float a = s[(size_t)i0 * cc + (cc == 1 ? 0 : c)], b = s[(size_t)i1 * cc + (cc == 1 ? 0 : c)];
+        return a + (b - a) * t;
+    };
+    const int N = 2048, H = 1024;
+    v.lastTf = stretch ? tf : 0;
+    for (int i = 0; i < frames; i++) {
+        double anchor = stretch ? v.base + (double)v.outCount * tf : v.posD;
+        if (!v.loop && anchor >= (double)clipFrames) { v.stopped = true; break; }
+        for (int k = 0; k < ch; k++) {
+            int c = ch == 1 ? 0 : k;
+            float val;
+            if (!stretch) val = at(v.posD, c);
+            else {
+                long long g = (long long)(v.outCount / (unsigned long long)H);
+                val = 0;
+                for (long long gi = g - 1; gi <= g; gi++) {
+                    long long j = (long long)v.outCount - gi * H;
+                    float w = std::sin(3.14159265f * ((float)j + 0.5f) / (float)N); w *= w;
+                    val += w * at(v.base + (double)(gi * H) * tf + (double)j * pf, c);
+                }
+            }
+            float side = ch == 2 ? (k == 0 ? gl : gr) : 1.0f;
+            sum_[(size_t)i * ch + k] += (int)(val * gain * side);
+        }
+        v.outCount++;
+        v.posD += pf;
+        if (v.loop && v.posD >= (double)clipFrames) v.posD = std::fmod(v.posD, (double)clipFrames);
+    }
+}
+
 void AudioMixer::Mix(int16_t* out, int frames) {
     std::lock_guard<std::mutex> l(m_);
     int ch = channels_;
@@ -304,6 +413,12 @@ void AudioMixer::Mix(int16_t* out, int frames) {
         float speed = masterSpeed_ * trackSpeed_[v.track] * v.speed;
         bool paused = paused_ || trackPaused_[v.track];
         if (paused) continue;
+        if (v.pitch != 1.0f || v.tempo != 1.0f || v.pan != 0.0f) { MixFx(v, frames, speed); continue; }
+        if (v.inFx) {      // the effects were reset: hand the position back to the plain paths
+            int cc0 = std::max(1, v.clip->channels);
+            double p = v.lastTf != 0 ? v.base + (double)v.outCount * v.lastTf : v.posD;
+            v.pos = (size_t)p * cc0; v.frac = p - std::floor(p); v.inFx = false;
+        }
         if (speed != 1.0f || v.frac != 0) {
             // v2.2: resampled voice (linear interpolation), one output frame at a time
             int cc = v.clip->channels;

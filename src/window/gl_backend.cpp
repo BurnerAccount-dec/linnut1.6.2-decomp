@@ -145,7 +145,7 @@ void GlBackend::DrawMaskedQuad(int tileTexture, int maskTexture, const float xy[
     gl_->TexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
     gl_->TexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_TEXTURE);
     gl_->TexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
-    gl_->Color4f(alpha, alpha, alpha, alpha);   // premultiplied, like DrawQuad: the sprite alpha scales colour and alpha
+    gl_->Color4f(alpha * tileR_, alpha * tileG_, alpha * tileB_, alpha);   // premultiplied, like DrawQuad: the sprite alpha scales colour and alpha
     gl_->Begin(GL_QUADS);
     for (int i = 0; i < 4; i++) {
         gl_->MultiTexCoord2f(GL_TEXTURE0, tileUV[i * 2], tileUV[i * 2 + 1]);
@@ -156,6 +156,15 @@ void GlBackend::DrawMaskedQuad(int tileTexture, int maskTexture, const float xy[
     gl_->Disable(GL_TEXTURE_2D);
     gl_->ActiveTexture(GL_TEXTURE0);
     boundTexture_ = -2;
+}
+
+void GlBackend::SetBlend(int mode) {
+    switch (mode) {
+    case 1: gl_->BlendFunc(GL_ONE, GL_ONE); break;
+    case 2: gl_->BlendFunc(GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA); break;
+    case 3: gl_->BlendFunc(GL_ONE, GL_ONE_MINUS_SRC_COLOR); break;
+    default: gl_->BlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA); break;
+    }
 }
 
 void GlBackend::EndFrame() {}

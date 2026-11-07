@@ -22,6 +22,8 @@ public:
     void DrawQuad(int texture, const float xy[8], const float uv[8], float r, float g, float b, float a) override;
     void DrawMaskedQuad(int tileTexture, int maskTexture, const float xy[8], const float tileUV[8], const float maskUV[8], float alpha) override;
     void SetClip(bool enabled, float x, float y, float w, float h) override;
+    void SetBlend(int mode) override;
+    void SetTileTint(float r, float g, float b) override { tileR_ = r; tileG_ = g; tileB_ = b; }
     void EndFrame() override;
 
     // The last frame as RGBA, top row first (for screenshots).
@@ -32,6 +34,7 @@ private:
     Functions* gl_;
     std::vector<unsigned> textures_;
     int winW_ = 1, winH_ = 1;
+    float tileR_ = 1, tileG_ = 1, tileB_ = 1;
     int screenW_ = 1, screenH_ = 1;
     int viewX_ = 0, viewY_ = 0, viewW_ = 1, viewH_ = 1;
     int boundTexture_ = -2;

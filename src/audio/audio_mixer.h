@@ -74,6 +74,15 @@ public:
     float MasterVolume() const { return masterVolume_; }
     void SetClipVolume(const std::string& name, float volume);     // the voices of that clip playing now
     void SetClipSpeed(const std::string& name, float speed);
+    // v2.3: pitch (speed and pitch together, like a record), tempo (speed alone, pitch unchanged), pan (-1 left .. 1 right), seek and tell. They apply to the voices
+    // of that clip playing now and to every play of it afterwards (until ResetClipEffects), so they can be set before the clip is played.
+    void SetClipPitch(const std::string& name, float pitch);
+    void SetClipTempo(const std::string& name, float tempo);
+    void SetClipPan(const std::string& name, float pan);
+    void ResetClipEffects(const std::string& name);
+    bool SeekClip(const std::string& name, double seconds);
+    double ClipTime(const std::string& name);       // seconds into the oldest voice of that clip, -1 if none plays
+    double ClipLength(const std::string& name);     // seconds, -1 if the clip is unknown or not decoded yet
 
     // Fills `frames` frames of interleaved 16 bit samples (silence when nothing plays).
     void Mix(int16_t* out, int frames);
@@ -94,7 +103,15 @@ private:
         float volume = 1;
         int id = 0, track = 0;
         bool loop = false, stopped = false;
+        float pitch = 1, tempo = 1, pan = 0;     // v2.3
+        bool inFx = false;                       // the position lives in posD while the effect path mixes the voice
+        double posD = 0, base = 0, lastTf = 1;   // source frame; where the stretch started; tempo last mixed with
+        unsigned long long outCount = 0;
     };
+    struct ClipFx { float pitch = 1, tempo = 1, pan = 0; };
+    std::map<std::string, ClipFx> fx_;
+    template <class F> void EachVoice(const std::string& name, F f);
+    void MixFx(Voice& v, int frames, float speed);
     std::shared_ptr<AudioClip> ClipFor(Entry& e);
     std::shared_ptr<AudioClip> Decode(const std::string& path, int rate, std::string* error);
     void PreloadLoop();                  // decodes the WAV clips in the background so that the first play does not stall the frame

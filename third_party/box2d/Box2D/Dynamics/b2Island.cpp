@@ -241,7 +241,8 @@ void b2Island::Solve(const b2TimeStep& step, const b2Vec2& gravity, bool allowSl
 
 		// Check for large velocities.
 		b2Vec2 translation = step.dt * b->m_linearVelocity;
-		if (b2Dot(translation, translation) > b2_maxTranslationSquared)
+		float32 maxT = b->m_maxSpeed > 0.0f ? b->m_maxSpeed * step.dt : b2_maxTranslation;	// per-body speed cap overrides the global limit
+		if (b2Dot(translation, translation) > maxT * maxT)
 		{
 			// AngryBirds.exe: the translation is normalized (when its length is at least FLT_EPSILON) and the speed set to maxTranslation / dt
 			float32 length = translation.Length();
@@ -249,7 +250,7 @@ void b2Island::Solve(const b2TimeStep& step, const b2Vec2& gravity, bool allowSl
 			{
 				translation *= 1.0f / length;
 			}
-			b->m_linearVelocity = (step.inv_dt * b2_maxTranslation) * translation;
+			b->m_linearVelocity = (step.inv_dt * maxT) * translation;
 		}
 
 		float32 rotation = step.dt * b->m_angularVelocity;
@@ -374,7 +375,8 @@ void b2Island::SolveTOI(const b2TimeStep& subStep)
 
 		// Check for large velocities.
 		b2Vec2 translation = subStep.dt * b->m_linearVelocity;
-		if (b2Dot(translation, translation) > b2_maxTranslationSquared)
+		float32 maxT = b->m_maxSpeed > 0.0f ? b->m_maxSpeed * subStep.dt : b2_maxTranslation;	// per-body speed cap overrides the global limit
+		if (b2Dot(translation, translation) > maxT * maxT)
 		{
 			// AngryBirds.exe: the translation is normalized (when its length is at least FLT_EPSILON) and the speed set to maxTranslation / dt
 			float32 length = translation.Length();
@@ -382,7 +384,7 @@ void b2Island::SolveTOI(const b2TimeStep& subStep)
 			{
 				translation *= 1.0f / length;
 			}
-			b->m_linearVelocity = (subStep.inv_dt * b2_maxTranslation) * translation;
+			b->m_linearVelocity = (subStep.inv_dt * maxT) * translation;
 		}
 
 		float32 rotation = subStep.dt * b->m_angularVelocity;

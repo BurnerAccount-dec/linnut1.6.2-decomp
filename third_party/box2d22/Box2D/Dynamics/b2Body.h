@@ -369,6 +369,8 @@ public:
 	const b2Body* GetNext() const;
 
 	/// Get the user data pointer that was provided in the body definition.
+	void SetMaxSpeed(float32 s) { m_maxSpeed = s; }
+	float32 GetMaxSpeed() const { return m_maxSpeed; }
 	void* GetUserData() const;
 
 	/// Set the user data. Use this to store your application specific data.
@@ -456,6 +458,7 @@ private:
 	float32 m_gravityScale;
 
 	float32 m_sleepTime;
+	float32 m_maxSpeed;	// per-body speed limit (0: use the global b2_maxTranslation); set through SetMaxSpeed
 
 	void* m_userData;
 };
