@@ -27,7 +27,7 @@ public:
     void EndFrame() override;
 
     // The last frame as RGBA, top row first (for screenshots).
-    bool ReadPixels(std::vector<unsigned char>& out, int& width, int& height);
+    bool ReadPixels(std::vector<unsigned char>& out, int& width, int& height) override;
 
     struct Functions;                      // GL entry points, in the .cpp
 private:

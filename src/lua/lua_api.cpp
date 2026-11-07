@@ -112,6 +112,10 @@ bool HasNum(lua_State* L, int t, const char* k);
 bool BoolOr(lua_State* L, int t, const char* k, bool def);
 float NumOr(lua_State* L, int t, const char* k, float def);
 int l_createThemeSprite(lua_State* L) {
+    if (!RioMode(L) && IsSpaceData(L)) {
+        P(L)->CreateThemeSpriteSpace(S(L, 1), S(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), (int)N(L, 8), N(L, 9), B(L, 10), lua_isnumber(L, 11) ? (float)lua_tonumber(L, 11) : 0.0f, lua_isnumber(L, 12) ? (float)lua_tonumber(L, 12) : 0.0f);
+        return 0;
+    }
     if (RioMode(L) || IsSpaceData(L)) {      // Rio and Space: ..., angle, layer, angleVel (Space calls it scaleSpeed), flipped [, velX, velY in Space]
         P(L)->CreateThemeSpriteRio(S(L, 1), S(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), (int)N(L, 8), N(L, 9), B(L, 10));
         return 0;
@@ -619,6 +623,19 @@ int l_loadLevel(lua_State* L) {
     }
     if (!ok) { lua_pop(L, 1); lua_pushnil(L); }
     else {
+        // Space (0x486b00 / 0x486c50): the gravity force multiplier of the world is the level's own `gravityForceMultiplier` when the file has one
+        // (1 in some levels), otherwise the global `defaultGravityForceMultiplier` of worldAttributes.lua (4). Without this every level pulled with 4.
+        float gm = 0; bool haveGm = false;
+        lua_getfield(L, -1, "gravityForceMultiplier");
+        if (lua_isnumber(L, -1)) { gm = (float)lua_tonumber(L, -1); haveGm = true; }
+        lua_pop(L, 1);
+        if (!haveGm) {
+            PushEnv(L);
+            lua_getfield(L, -1, "defaultGravityForceMultiplier");
+            if (lua_isnumber(L, -1)) { gm = (float)lua_tonumber(L, -1); haveGm = true; }
+            lua_pop(L, 2);
+        }
+        if (haveGm) { float r = 0; P(L)->BodyCommand("", 8, gm, r); }
         // The scripts empty loadedObjects once they have taken what they use. The editor's saveLevel writes back what the file
         // held that no script keeps (trainCarts, weather...), so the top-level entries stay in the registry.
         lua_newtable(L);
@@ -651,6 +668,66 @@ int l_loadLevelEditor(lua_State* L) {
     return 1;
 }
 int l_saveLevel(lua_State* L) { P(L)->SaveLevel(S(L, 1)); return 0; }
+// saveLevelForReload(name) (Space, 0x46b850): the level as it is now (live positions and angles, what the player has destroyed) is saved under `name` and kept as
+// objects.previousLevel, the table loadLevelInternal takes as the level when the player comes back from an eggsteroid or a bonus level (it is `loadedObjects` then).
+int l_saveLevelForReload(lua_State* L) {
+    std::string name = S(L, 1);
+    P(L)->SaveLevel(name);
+    std::string file = name;
+    if (file.size() < 4 || file.compare(file.size() - 4, 4, ".lua") != 0) file += ".lua";
+    std::vector<uint8_t> bytes;
+    PushEnv(L);
+    lua_getfield(L, -1, "objects");
+    int objects = lua_gettop(L);
+    if (lua_istable(L, objects) && P(L)->FindSavedLevel(file, bytes) && !bytes.empty()) {
+        lua_newtable(L);                                    // the level's environment, as loadLevel makes it
+        if (luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), file.c_str()) == 0) {
+            lua_pushvalue(L, -2);
+            lua_setfenv(L, -2);
+            if (lua_pcall(L, 0, 0, 0) != 0) { P(L)->Print("saveLevelForReload: " + std::string(lua_tostring(L, -1))); lua_pop(L, 1); lua_newtable(L); lua_replace(L, -2); }
+        } else { P(L)->Print("saveLevelForReload: " + std::string(lua_tostring(L, -1))); lua_pop(L, 1); }
+        // The saved text holds what the physics knows (name, definition, position, angle). What the script keeps about an object (the radius, size and
+        // vertices it was created with, a planet's forces and filters) is put back from the live table, so the level loads again as it was made.
+        {
+            int prev = lua_gettop(L);
+            lua_getfield(L, prev, "world");
+            lua_getfield(L, objects, "world");
+            int live = lua_gettop(L), saved = live - 1;
+            static const char* keep[] = {"radius", "width", "height", "scaleX", "scaleY", "scale", "vertices", "gravitationMinForce", "gravitationMaxForce",
+                                         "forceAngle", "gravityCollisionMask", "gravityFilterCategory"};
+            if (lua_istable(L, saved) && lua_istable(L, live)) {
+                lua_pushnil(L);
+                while (lua_next(L, saved)) {
+                    if (lua_istable(L, -1) && lua_type(L, -2) == LUA_TSTRING) {
+                        int entry = lua_gettop(L);
+                        lua_pushvalue(L, entry - 1);
+                        lua_gettable(L, live);
+                        if (lua_istable(L, -1)) {
+                            int src = lua_gettop(L);
+                            for (const char* k : keep) {
+                                lua_getfield(L, entry, k);
+                                bool missing = lua_isnil(L, -1);
+                                lua_pop(L, 1);
+                                if (!missing) continue;
+                                lua_getfield(L, src, k);
+                                if (lua_isnumber(L, -1) || lua_istable(L, -1) || lua_isstring(L, -1)) lua_setfield(L, entry, k); else lua_pop(L, 1);
+                            }
+                        }
+                        lua_pop(L, 1);
+                    }
+                    lua_pop(L, 1);
+                }
+            }
+            lua_settop(L, prev);
+        }
+        lua_setfield(L, objects, "previousLevel");
+    } else if (lua_istable(L, objects)) {
+        lua_newtable(L);
+        lua_setfield(L, objects, "previousLevel");
+    }
+    lua_settop(L, 0);
+    return 0;
+}
 int l_createDirectory(lua_State* L) { P(L)->CreateDirectory(S(L, 1)); return 0; }
 int l_checkDirectory(lua_State* L) { lua_pushboolean(L, P(L)->CheckDirectory(S(L, 1))); return 1; }
 int l_checkForLuaFile(lua_State* L) { lua_pushboolean(L, P(L)->CheckForLuaFile(S(L, 1))); return 1; }
@@ -713,10 +790,17 @@ int SaveLuaFileImpl(lua_State* L, const std::string& file, const std::string& na
     bool encrypted = false;
     const char* saveKey = ab::kSaveKey;
     ab::ReadSaveFile(path, old, encrypted, &saveKey);   // 1.x, Seasons and Space saves have their own keys
-    static int isSpace = -1;
-    if (isSpace < 0) isSpace = IsSpaceData(L) ? 1 : 0;
-    // Angry Birds Space: every save is encrypted with its own key (0x496180); the table is written one entry per line, which for settings is `root = {...}`
-    if (isSpace) { encrypted = true; saveKey = ab::kSpaceSaveKey; }
+    static int isSpace = -1, isStarWars = -1;
+    if (isSpace < 0) {
+        isSpace = IsSpaceData(L) ? 1 : 0;
+        std::vector<uint8_t> probe;      // the Star Wars scripts have blocks_tatooine.lua; its save files have a key of their own
+        PushEnv(L); lua_getfield(L, -1, "scriptPath");
+        std::string sp = std::string(lua_isstring(L, -1) ? lua_tostring(L, -1) : "scripts") + "/blocks_tatooine.lua";
+        lua_pop(L, 2);
+        isStarWars = (ab::ReadLuaFile(sp, probe) && !probe.empty()) ? 1 : 0;
+    }
+    // Angry Birds Space and Star Wars: every save is encrypted with the game's own key (0x496180 in Space); the table is written one entry per line, which for settings is `root = {...}`
+    if (isSpace) { encrypted = true; saveKey = isStarWars ? ab::kStarWarsSaveKey : ab::kSpaceSaveKey; }
     size_t start = old.find_first_not_of(" \t\r\n");
     bool original = encrypted || (start != std::string::npos && old.compare(start, name.size() + 3, name + " = ") != 0);
     std::string text;
@@ -1653,6 +1737,7 @@ int l_fileExists(lua_State* L) {
     return 1;
 }
 int l_setPhysicsSimulationScale(lua_State* L) { P(L)->SetPhysicsSimulationScale(N(L, 1)); return 0; }
+int l_setThemeOffsetY(lua_State* L) { P(L)->SetThemeOffsetY(N(L, 2)); return 0; }
 int l_setPhysicsEnabled(lua_State* L) { P(L)->SetPhysicsEnabled(B(L, 1)); return 0; }
 int l_isPhysicsEnabled(lua_State* L) { lua_pushboolean(L, P(L)->IsPhysicsEnabled()); return 1; }
 int l_setLevelLimits(lua_State* L) { P(L)->SetLevelLimits(N(L, 1), N(L, 2), N(L, 3), N(L, 4)); return 0; }
@@ -1661,6 +1746,7 @@ int l_setLevelLimits(lua_State* L) { P(L)->SetLevelLimits(N(L, 1), N(L, 2), N(L,
 int l_setTopLeft(lua_State* L) { P(L)->SetTopLeft(N(L, 1), N(L, 2)); return 0; }
 int l_setWorldScale(lua_State* L) { P(L)->SetWorldScale(N(L, 1)); return 0; }
 int l_setMaxWorldScale(lua_State* L) { P(L)->SetMaxWorldScale(N(L, 1)); return 0; }
+int l_resetMouseWheelScale(lua_State* L) { P(L)->ResetMouseWheelScale(N(L, 1)); return 0; }
 int l_setMaxTranslation(lua_State* L) { P(L)->SetMaxTranslation(N(L, 1)); return 0; }
 
 // ---- drawing
@@ -1932,7 +2018,13 @@ int l_drawUITextNative(lua_State* L) {
     float ox = N(L, 2), oy = N(L, 3);
     float sx = argc >= 5 ? N(L, 4) : 1.0f, sy = argc >= 5 ? N(L, 5) : 1.0f;
     float angle = argc >= 6 ? N(L, 6) : 0.0f;
-    float scale = argc >= 7 ? N(L, 7) : 1.0f;
+    // Space and Star Wars (0x4167f0): the seventh argument is the text's alpha, not a scale (the retail scripts pass self.alpha); a scale there
+    // made every fading text grow and shift its pivot.
+    static int spaceData = -1;   // the scripts do not change during a run
+    if (spaceData < 0) spaceData = IsSpaceData(L) ? 1 : 0;
+    bool alphaArg = spaceData == 1;
+    float scale = (argc >= 7 && !alphaArg) ? N(L, 7) : 1.0f;
+    float argAlpha = (argc >= 7 && alphaArg) ? N(L, 7) : 1.0f;
     if (!flag("visible")) return 0;
     sx *= num("scaleX", 1) * scale;
     sy *= num("scaleY", 1) * scale;
@@ -1956,15 +2048,20 @@ int l_drawUITextNative(lua_State* L) {
     lua_getfield(L, 1, "rotationPivotX"); lua_getfield(L, 1, "rotationPivotY");
     if (lua_isnumber(L, -2) && lua_isnumber(L, -1)) { pivotX = (float)lua_tonumber(L, -2); pivotY = (float)lua_tonumber(L, -1); }
     lua_pop(L, 2);
-    float a[8] = {0, 0, sx, sy, angle, pivotX, pivotY, 1};
+    // Space and Star Wars (0x4167f0) only set the scale, angle and pivot of the render state: the translation the caller set stays,
+    // which is how a button or bubble puts its text onto itself
+    float keepX = 0, keepY = 0;
+    if (alphaArg) P(L)->GetRenderTranslation(keepX, keepY);
+    float a[8] = {keepX, keepY, sx, sy, angle, pivotX, pivotY, 1};
     lua_getfield(L, 1, "alpha");
     if (lua_isnumber(L, -1) && lua_tonumber(L, -1) < 1.0) a[7] = (float)lua_tonumber(L, -1);
     lua_pop(L, 1);
+    if (argAlpha < 1.0f) a[7] = argAlpha;
     P(L)->SetRenderState(8, a);
     x /= sx; y /= sy;
     if (flag("floorCoordinates")) { x = std::floor(x); y = std::floor(y); }
     P(L)->ResDrawString(str("group", ""), str("text", ""), x, y, str("hanchor", "LEFT"), str("vanchor", "TOP"));
-    float reset[8] = {0, 0, 1, 1, 0, 0, 0, 1};
+    float reset[8] = {keepX, keepY, 1, 1, 0, 0, 0, 1};
     P(L)->SetRenderState(8, reset);
     return 0;
 }
@@ -2057,6 +2154,14 @@ std::string DeviceId() {
     id = "ab-device-0";
 #endif
     return id;
+}
+// getHardwareModel(): the model string of the device (a PC build answers with its deviceModel, "windows" unless config.lua says otherwise)
+int l_getHardwareModel(lua_State* L) {
+    PushEnv(L);
+    lua_getfield(L, -1, "deviceModel");
+    if (lua_isstring(L, -1)) lua_pushstring(L, lua_tostring(L, -1)); else lua_pushstring(L, "windows");
+    lua_remove(L, -2); lua_remove(L, -2);
+    return 1;
 }
 int l_getDeviceID(lua_State* L) { lua_pushstring(L, DeviceId().c_str()); return 1; }
 int l_areDeviceIDsEqual(lua_State* L) {
@@ -2239,6 +2344,32 @@ int p_addParticlesWithProperties(lua_State* L) {       // (type, amount, x, y, w
     P(L)->AddParticlesOverride(S(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), ov);
     return 0;
 }
+// Star Wars: particles.native_addParticlesWithMode({definitionName, amount, x, y, w, h, angle, mode})
+int p_addParticlesWithMode(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    auto field = [L](const char* key) { lua_getfield(L, 1, key); float v = (float)lua_tonumber(L, -1); lua_pop(L, 1); return v; };
+    lua_getfield(L, 1, "definitionName");
+    std::string type = lua_isstring(L, -1) ? lua_tostring(L, -1) : "";
+    lua_pop(L, 1);
+    if (type.empty()) return 0;
+    P(L)->AddParticlesMode(type, field("amount"), field("x"), field("y"), field("w"), field("h"), field("angle"), (int)field("mode"));
+    return 0;
+}
+// readDataFile(path) -> the file as a string (decrypted and unpacked like the scripts), or nil: the Star Wars animation files are encrypted JSON
+int l_readDataFile(lua_State* L) {
+    std::string path = S(L, 1);
+    std::vector<uint8_t> bytes;
+    bool found = ab::ReadLuaFile(path, bytes);
+    if (!found) { std::string alt = P(L)->ResolveDataFile(path); found = alt != path && ab::ReadLuaFile(alt, bytes); }
+    if (!found || bytes.empty()) { lua_pushnil(L); return 1; }
+    lua_pushlstring(L, (const char*)bytes.data(), bytes.size());
+    return 1;
+}
+int l_drawParticlesFiltered(lua_State* L) { P(L)->DrawParticlesFiltered((int)N(L, 1)); return 0; }
+int l_setObjectDensity(lua_State* L) { P(L)->SetObjectDensity(S(L, 1), N(L, 2)); return 0; }
+int r_keepLastFrame(lua_State* L) { P(L)->ResKeepLastFrame(lua_toboolean(L, 1) != 0); return 0; }
+int r_spawnFGLayerParticles(lua_State* L) { P(L)->SpawnFGLayerParticles((int)lua_tonumber(L, 1)); return 0; }
+int r_captureSprite(lua_State* L) { P(L)->ResCaptureSprite(S(L, 1)); return 0; }
 int p_setSoftLimit(lua_State* L) { P(L)->SetParticleSoftLimit(N(L, 1), N(L, 2)); return 0; }
 int p_setHardLimit(lua_State* L) { P(L)->SetParticleHardLimit(N(L, 1)); return 0; }
 
@@ -2289,7 +2420,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"doesMouseClickSetsTouchCount", l_doesMouseClickSetsTouchCount},
         {"setEditing", l_setEditing}, {"setGameOn", l_setGameOn},
         {"loadLuaFileToObject", l_loadLuaFileToObject}, {"loadLuaFile", l_loadLuaFileToObject},   // 2.0.0: the same without an object
-        {"loadLevel", l_loadLevel}, {"loadLevelEditor", l_loadLevelEditor}, {"saveLevel", l_saveLevel}, {"saveLuaFile", l_saveLuaFile}, {"checkForPersistentFile", l_checkForPersistentFile}, {"loadPersistentFileWrapper", l_loadPersistentFileWrapper},
+        {"loadLevel", l_loadLevel}, {"loadLevelEditor", l_loadLevelEditor}, {"saveLevel", l_saveLevel}, {"saveLevelForReload", l_saveLevelForReload}, {"saveLuaFile", l_saveLuaFile}, {"checkForPersistentFile", l_checkForPersistentFile}, {"loadPersistentFileWrapper", l_loadPersistentFileWrapper},
         {"initializePainter", l_initializePainter}, {"clearCanvas", l_clearCanvas}, {"paintToCanvas", l_paintToCanvas}, {"drawCanvasWithMask", l_drawCanvasWithMask},
         {"getDominantCanvasColors", l_getDominantCanvasColors}, {"createSpriteFromCanvas", l_createSpriteFromCanvas}, {"loadCanvasSprite", l_loadCanvasSprite}, {"createSilhouette", l_createSilhouette}, {"predictCollision", l_predictCollision}, {"setObjectGravity", l_setObjectGravity}, {"setObjectGravityScale", l_setObjectGravityScale}, {"resetObjectGravity", l_resetObjectGravity}, {"getObjectGravity", l_getObjectGravity}, {"setupCompoObject", l_setupCompoObject},
         {"createDirectory", l_createDirectory}, {"checkDirectory", l_checkDirectory}, {"checkForLuaFile", l_checkForLuaFile},
@@ -2316,20 +2447,20 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"setFixedRotation", l_setFixedRotation}, {"setActive", l_setActive}, {"multiplyVelocity", l_multiplyVelocity}, {"setAsSensor", l_setAsSensor},
         {"getAngularVelocity", l_getAngularVelocity}, {"setSleeping", l_setSleeping},
         {"getAngle", l_getAngle}, {"getWorldPoint", l_getWorldPoint}, {"setObjectParameter", l_setObjectParameter}, {"setScale", l_setScale}, {"getScale", l_getScale}, {"setSpeedCap", l_setSpeedCap}, {"getSpeedCap", l_getSpeedCap}, {"clearSpeedCap", l_clearSpeedCap}, {"getTouchingObjects", l_getTouchingObjects}, {"rayCast", l_rayCast}, {"fileExists", l_fileExists},
-        {"setPhysicsSimulationScale", l_setPhysicsSimulationScale}, {"setPhysicsEnabled", l_setPhysicsEnabled},
+        {"setPhysicsSimulationScale", l_setPhysicsSimulationScale}, {"setPhysicsEnabled", l_setPhysicsEnabled}, {"setThemeOffsetY", l_setThemeOffsetY},
         {"isPhysicsEnabled", l_isPhysicsEnabled}, {"setLevelLimits", l_setLevelLimits},
-        {"setTopLeft", l_setTopLeft}, {"setWorldScale", l_setWorldScale}, {"setMaxWorldScale", l_setMaxWorldScale},
+        {"setTopLeft", l_setTopLeft}, {"setWorldScale", l_setWorldScale}, {"setMaxWorldScale", l_setMaxWorldScale}, {"resetMouseWheelScale", l_resetMouseWheelScale},
         {"setMaxTranslation", l_setMaxTranslation},
         {"setRenderState", l_setRenderState}, {"drawRect", l_drawRect}, {"drawLine2D", l_drawLine2D},
         {"drawTexturedRect", l_nothing}, {"drawSome", l_nothing},
         {"drawGameNative", l_drawGameNative}, {"drawBackgroundNative", l_drawBackgroundNative},
-        {"drawForegroundNative", l_drawForegroundNative}, {"drawParticlesNative", l_drawParticlesNative},
+        {"drawForegroundNative", l_drawForegroundNative}, {"drawParticlesFiltered", l_drawParticlesFiltered}, {"readDataFile", l_readDataFile}, {"setObjectDensity", l_setObjectDensity}, {"drawParticlesNative", l_drawParticlesNative},
         {"setSprite", l_setSprite}, {"setMaterial", l_setMaterial}, {"setTexture", l_setTexture}, {"setTheme", l_setTheme},
         {"clipText", l_clipText},
         {"startNewTrajectory", l_startNewTrajectory}, {"addToTrajectory", l_addToTrajectory},
         {"addPuffToTrajectory", l_addPuffToTrajectory}, {"setCustomTrajectorySprites", l_setCustomTrajectorySprites},
         // platform services
-        {"openRegistrationDialog", l_nothing}, {"registerKey", l_nothing}, {"getDeviceID", l_getDeviceID}, {"verifyDeviceID", l_verifyDeviceID}, {"areDeviceIDsEqual", l_areDeviceIDsEqual},
+        {"openRegistrationDialog", l_nothing}, {"registerKey", l_nothing}, {"getDeviceID", l_getDeviceID}, {"getHardwareModel", l_getHardwareModel}, {"verifyDeviceID", l_verifyDeviceID}, {"areDeviceIDsEqual", l_areDeviceIDsEqual},
         {"requestLatestVersionNumber", l_nothing}, {"checkForUpdates", l_nothing}, {"callVersionUpdater", l_nothing},
         {"goToTaskSwitcherLua", l_nothing}, {"activateCrystalUI", l_nothing}, {"activateCrystalUIAtProfile", l_nothing},
         {"deactivateCrystalUI", l_nothing}, {"showCrystalSplash", l_nothing}, {"isCrystalSplashShowing", l_false},
@@ -2397,17 +2528,18 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"getStringWidth", r_getStringWidth}, {"getFontHeight", r_getFontHeight}, {"getFontLeading", r_getFontLeading}, {"getFontTracking", r_getFontTracking},
         {"getFontMaxAscending", r_getFontMaxAscending}, {"getFontMaxDescending", r_getFontMaxDescending},
         {"createAudioOutput", r_createAudioOutput}, {"startAudioOutput", r_startAudioOutput},
-        {"stopAudioOutput", r_stopAudioOutput}, {"createAudio", r_createAudio}, {"playAudio", r_playAudio},
+        {"stopAudioOutput", r_stopAudioOutput}, {"createAudio", r_createAudio}, {"captureSprite", r_captureSprite}, {"keepLastFrame", r_keepLastFrame}, {"playAudio", r_playAudio},
         {"stopAudio", r_stopAudio}, {"stopAllAudio", r_stopAllAudio}, {"isAudioPlaying", r_isAudioPlaying},
         {"setTrackVolume", r_setTrackVolume}, {"getTrackVolume", r_getTrackVolume}, {"setAudioSpeed", r_setAudioSpeed}, {"getAudioSpeed", r_getAudioSpeed}, {"pauseAudio", r_pauseAudio}, {"resumeAudio", r_resumeAudio}, {"isAudioPaused", r_isAudioPaused}, {"setMasterVolume", r_setMasterVolume}, {"getMasterVolume", r_getMasterVolume}, {"setAudioClipVolume", r_setAudioClipVolume}, {"setAudioClipSpeed", r_setAudioClipSpeed}, {"setString", r_setString}, {"setAudioClipPitch", r_setAudioClipPitch}, {"setAudioClipTempo", r_setAudioClipTempo}, {"setAudioClipPan", r_setAudioClipPan}, {"resetAudioClipEffects", r_resetAudioClipEffects}, {"seekAudioClip", r_seekAudioClip}, {"getAudioClipTime", r_getAudioClipTime}, {"getAudioClipLength", r_getAudioClipLength}, {"openURL", r_openURL},
     };
     lua_newtable(L);
     Register(L, p, lua_gettop(L), res, sizeof(res) / sizeof(res[0]));
-    lua_setglobal(L, "res");   // real global table, reached by scripts as _G.res
+    lua_setglobal(L, "res");
+    lua_newtable(L); lua_pushcfunction(L, r_spawnFGLayerParticles); lua_setfield(L, -2, "spawnFGLayerParticles"); lua_setglobal(L, "themeSystem");   // native table of the Star Wars exe   // real global table, reached by scripts as _G.res
 
     static const Entry particles[] = {
         {"addParticles", p_addParticles}, {"addLevelParticles", p_addLevelParticles}, {"setSoftLimit", p_setSoftLimit}, {"setHardLimit", p_setHardLimit},
-        {"addParticlesWithScale", p_addParticlesWithScale}, {"addParticlesWithProperties", p_addParticlesWithProperties},
+        {"native_addParticlesWithMode", p_addParticlesWithMode}, {"addParticlesWithScale", p_addParticlesWithScale}, {"addParticlesWithProperties", p_addParticlesWithProperties},
     };
     lua_newtable(L);
     Register(L, p, lua_gettop(L), particles, sizeof(particles) / sizeof(particles[0]));

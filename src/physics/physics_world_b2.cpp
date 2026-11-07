@@ -73,6 +73,10 @@ public:
     }
     void ApplyImpulse(float ix, float iy, float px, float py) override { Wake("ApplyImpulse"); b_->ApplyLinearImpulse(b2Vec2(ix, iy), b2Vec2(px, py)); }
     void ApplyForce(float fx, float fy, float px, float py) override { Wake("ApplyForce"); b_->ApplyForce(b2Vec2(fx, fy), b2Vec2(px, py)); }
+    void SetDensity(float d) override {
+        for (b2Fixture* f = b_->GetFixtureList(); f; f = f->GetNext()) f->SetDensity(d);
+        b_->ResetMassData();
+    }
     void SetSensor(bool on) override {
         for (b2Fixture* f = b_->GetFixtureList(); f; f = f->GetNext()) f->SetSensor(on);
     }

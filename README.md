@@ -10,7 +10,7 @@ Version 2.4. What works, per game:
 | Angry Birds 1.6.2 / 1.6.3.1 (PC) | Playable | Works (tested in 1.6.3.1, 1.6.2 uses the same script) | 1.6.3.1 has no editor in its scripts, the engine brings Rovio's 1.6.2 one |
 | Angry Birds 2.0.0 (PC) | Playable, a few known visual gaps (below) | Works, "Editor" button on the main menu | |
 | Angry Birds Seasons 1.0.0 (PC) | Playable | Works, "Editor" button on the main menu | |
-| Angry Birds Space (PC) | Levels load and play (first theme tested) | Not tried | Planet gravity, aiming aid and the camera work; see "Angry Birds Space (PC)" |
+| Angry Birds Space (PC) | Levels load and play (first theme tested) | Yes (F2, see "New in 2.5") | Planet gravity, aiming aid and the camera work; see "Angry Birds Space (PC)" |
 | Angry Birds Seasons 2.2.0, Year of the Dragon (PC) | Playable | The level name, status line and block palette draw (checked with Year of the Dragon files) | |
 | Angry Birds Rio 1.4.2 (PC) | Playable | Works | Ice blocks (called light blocks inside the game's scripts and glass in later games and versions) are stable (Mauro's level, Smuggler's Plane 12-8 and 12-15 tested against Box2D 2.1) |
 
@@ -27,21 +27,80 @@ Version 2.4. What works, per game:
 - Saves that are shared with the original game (both the encrypted and the plain format). The save folder is `%APPDATA%\<publisher>\<product>` from the game's `config.lua`.
 - The window is DPI-aware like the original exes, resizing it re-lays the game out (the scripts' `resolutionChanged`), and frame times are smoothed to avoid stutter.
 
-## New in 2.3
+## New in 2.5
 
-**Angry Birds Space compatibility update.** Space's physics now follows its own exe instead of Rio's: its Box2D is a mix of 2.2 collision with 2.3 broad phase, island, sleep and solver rules (rotating dynamic tree, position-solved sleeping, 2.3 position-solver constants, a larger time-of-impact island, `setStatic` through `SetType`). The planets' pull, the aiming aid and the per-object gravity functions share one code path that follows the exe's gravity function. See "Engine-added script functions: full reference" for the new script functions.
+* **Space graphics:** planets (and any decoration) now draw at the retail size: a decoration's scale is multiplied by its object's scale, so the craters of `PLANET_BASE_SLICE_*` line up. Space backgrounds that are composites (several layers, drawn with the composite's extent) draw like the retail `drawBackgroundNative`.
+* **Space level editor:** press **F2** in a running Space level. Left drag moves an object, **N** places the chosen block at the cursor, **D** copies the selected object, **Q / E** turn it (Shift = fine), **Delete** removes it, **PageUp / PageDown** (or Shift + wheel) choose the block, arrows pan, the wheel zooms, **Ctrl+S** saves the level, **F2** again plays on.
+* **Angry Birds Star Wars (work in progress):** its scripts are now readable. They are AES-256-CBC encrypted with the Star Wars key (Star Wars II has its own key too, both are tried after the older keys) and the decrypted data is a 7-Zip (LZMA) archive holding the compiled script, which the engine unpacks itself. The game uses the Space layout (`scripts_common`); `options.lua` is run when the game logic does not define `releaseBuild`, and the `ResourceManager.native_*` functions the scripts call are mapped onto the engine's own natives (unknown ones are harmless no-ops). The game now boots through its splash, the initial loading and into the main menu. `res.createCompositeAudio` (a sound made of other sounds that play one after another, such as the title theme followed by the menu music) is implemented; before, `startInitialLoading` failed half way and started again every frame, so the log repeated "Start initial loading" forever. The cutscene natives are implemented: `cutsceneLoad`, `cutsceneStart`, `updateCutscene`, `drawCutscene`, `cutsceneSetTranslation / Scale / Rotation` and `cutsceneClose` play the game's animation files (encrypted JSON: a tree of targets with translation, scale, rotation and sprite tracks, layer 0 on top). `captureSprite` makes the last frame a sprite (the screen transitions), `particles.native_addParticlesWithMode` and the three particle layers (background, foreground, notifications) work, `setMass` changes the density of a body, and the device-only calls (font and UI scale, window state, social checks) answer like a full-screen PC window. Levels now load and run with their sprites. Slow-motion birds (Obi-Wan, the Force powers) now work: the delta-time multiplier set by `setDeltaTimeMultiplier` scales the time step of each frame, as in the exe. The mouse wheel zoom is kept apart from the world scale in Space and Star Wars (`setWorldScale` only stores the scale, `resetMouseWheelScale` sets the wheel zoom), and the 0.01-100 limits the exe does not have are gone. `drawUITextNative` takes the text's alpha as its seventh argument in these games (it was read as a scale, which made fading texts such as the quit prompt grow and drift off their pivot). Tatooine's foreground layers are drawn by the engine (the exe draws them itself, the scripts never ask), the cheat menu (`QAPage`) now loads in Star Wars and Space even when `cheatsEnabled` is set after start-up, the credits crawl of Star Wars is drawn by `drawString3D` (text laid on a tilted plane that fades into the distance), and `drawUITextNative` keeps the caller's translation so Space's credits text follows its parent object. Star Wars saves (settings, highscores, bi_data, episodepurchases) are written with the game's own save key, so the retail game reads what the engine writes and the other way round; the highscores keep the retail layout of one top-level table per level. A composite sprite that is drawn turned (the menu's TIE fighters) now turns as one piece: each part's pivot is moved by where the part sits in the composite, so every part rotates about the composite's origin instead of its own corner. `AB_THEME=<theme name>` draws that theme's background in any level (a test aid for checking themes whose sheets are not in the level's own load list). Princess Leia's gravity ray (a tall sprite drawn along the beam, one segment per phase) now runs from the bird along the beam direction via `drawTexturedLine2D`. Cloud City's foreground uses the new named layer format (`sprite`, `zDistance`, `scale`, `velX`, `offsetY`, `downFillColor`): the cloud band scrolls by itself and everything below it is filled with the layer's fill colour. Space's non-looping theme animations (the shooting stars of Red Planet) are removed when they reach their last frame, so `rePopulateWithRandomThemeSprites` can spawn the next one instead of the first staying forever. `AB_NOSCREENWIPE=1` switches the Classic wipe below off. Endor's level selection no longer stops with `themeSystem` nil: the native `themeSystem.spawnFGLayerParticles(id)` the scripts call (the ewoks particle layers of the foreground, found by `spawnerId`) exists now. The backgrounds of Star Wars' new theme system (`NEW_THEME_SYSTEM_FOREGROUND`, Cloud City and the others) are drawn at half the Space scale, which makes the sky, the domes and the clouds the size of the retail picture; `AB_BGK=<factor>` changes that factor for testing.
 
-**Space natives that used to do nothing.** `setRecordVelocity(name, on)` (publishes `xVel`, `yVel` and `angle` into `objects.world[name]` for that object), `applyForceNative(name, fx, fy, px, py)` (the same force as `applyForce`) and `setRevoluteJointSpeed(jointName, speed)` (sets the motor speed of the joints with that name, as the exe does), `setSpriteRotation(name, angle)` (the sprite turns by this much on top of the body's angle), `setPivotOffset(name, x, y)` (moves the point the sprite turns about), `setTextureScale(name, scale)` (stored; the tile draw does not use it yet) and `drawTexturedLine2D(sprite, x1, y1, x2, y2, width [, r, g, b, a])` (the sprite stretched along a line, used for the slingshot's rubber bands), `setNormalTrailSprite(name)` / `setSpecialTrailSprite(name)` (the dot and puff sprites of the trajectory the next shot draws) and `setDecorationObjects(name)` (the copies of a block definition's `decorations` sprite drawn about the object, as on the huge planets) now work.
+* **Star Wars screen wipe for Classic 1.6.2:** `extras/screenwipe_classic.lua` rebuilds the wipe Star Wars shows when a level is clicked: the picture on screen is kept with `res.captureSprite` and drawn over the new level while `res.setClipRect` shrinks the visible part to the bottom right for one second. Copy it to `data/scripts/screenwipe_classic.lua` (the engine loads it by itself in Classic 1.6.2) or add `loadLuaFile(scriptPath .. "/screenwipe_classic.lua", "", false, false)` to the end of `gamelogic.lua`. It wraps `loadLevel`, `update` and `drawMenu` only. New native `res.keepLastFrame(true)` makes `captureSprite` take the last finished frame, so a capture asked for in the middle of a frame is not blank.
 
-**More Space natives.** `createThemeAnimation(table)` (a theme sprite whose picture cycles through the `animation` list every `animDelay` seconds; fixes the Red Planet crash), `getLinearVelocity(name)` (`vx, vy`), `getBGColor()` (`r, g, b`, 0 to 255), `getRayCastedObjects({x1=, y1=, x2=, y2=})` (a flat list, six entries per non-sensor object the segment crosses: name, hit x, hit y, normal x, normal y, fraction) and `createCompoundBodyFromTable(t)` (a compound built from a table with `name`, `x`, `y`, `material` and `children`, each child with `x`, `y`, `angle` and a `blockData` of type box, circle or polygon). `addParticlesWithScale` and `addParticlesWithProperties` now apply their extra arguments, and Space particle definitions honour `useAngleFromSpawner`, `minAngle` / `maxAngle`, `emitAreaScaleX/Y` and their own `ignoreLimits`.
+Still open in Star Wars: water, trajectory preview of the power-ups, and the collision rules of `setBlockCollisionEnabled`.
+* **Saves written by another build of a game:** a settings or highscores file the engine cannot decrypt is kept as `<name>.original` and the game starts with an empty one, instead of failing with a Lua syntax error.
+* **Space splash:** the splash screen is always drawn on a black full-screen rectangle.
+* **Invisible Space markers:** sensor sprites (`GRAVITY_SENSOR_*`) and objects of scale 0 are editor markers and no longer draw (this was the blue dot where a level's pig spawns).
+* **`getHardwareModel`:** implemented (returns the `deviceModel` of `config.lua`, `windows` by default), which scripts for tablet builds call at start-up.
+* **Save folder:** two games with the same `product` in `config.lua` share one save folder and read each other's save format. Give a game its own `product` if it has a different save format.
+* **Space natives:** `getAimingTime`, `removeBreakableJointsFromObject`, `addGravitySensor` and `setThemeOffsetY` are implemented. Still stubs: `linkSensor`, `createLineShape`, `drawString3D`, `renderMaskedImageNative`, `drawSelectedTexturizedObject`, `drawRubberband`.
+* **Space moving backgrounds:** the elements a theme lists in `bgLayers[...].elements` (planets, clouds, asteroids) are created and drift every frame like the retail exe's layer update (`velX`/`velY`, and `scaleSpeed` for comets), so the backgrounds are no longer still. Scripts that scatter their own elements (`populateWithRandomThemeSprites*`) keep doing so.
+* **Incomplete Space builds:** an error in `update` or `draw` is now printed once ("script error (skipped...)") and the frame is skipped instead of closing the game, so builds with missing scene scripts or block files keep running. Set the environment variable `AB_STRICT=1` to get the old behaviour (the first script error ends the run).
+* **Space builds that never load their block files:** when the scripts have no `loadBlockData` and `blockTable` does not exist, the engine loads the block, material, damage-factor, group, theme, texture, world-attribute and particle files itself, in the retail order, before the first scene. Without this `blockTable` stayed nil and nothing in a level could draw. `setCurrentLevelPack` / `getCurrentLevelPack` are provided for scripts that call them.
+* **config.lua globals:** `deviceModel`, `isLiteVersion`, `isBetaVersion`, `audioPath`, `localizationPath` and `levelPath` are now read from the game's `config.lua` and given to the scripts, which is how Space builds choose their asset folder (for example `deviceModel = "meego"` with `isLiteVersion = true` loads `images/864x480_lite`). Without this such builds start but draw nothing.
+* **Sensor contacts for every game:** `enterCollision` and `exitCollision` are called for sensor contacts in any game whose scripts define them (see below).
 
-**Space planet gravity.** The pull follows the exe's contact list: one entry per touching fixture pair (an object made of several fixtures is pulled once per pair), applied last entry first and only to objects that are awake; a gravity sensor with parameter 19 sets the linear damping of objects flagged with parameter 1 or 34 to 100 when they leave it.
+### `enterCollision` and `exitCollision` (for modders)
+
+A sensor (an object made with `setAsSensor`, or one of Space's gravity fields) collides with nothing: other bodies pass through it, but Box2D still reports when a body starts and stops overlapping it. The engine turns those reports into two optional global Lua functions. Define them in your gamelogic (or any script) and they are called; leave them out and nothing happens. The format below follows the comment style of the 1.6.2 `gamelogic.lua`.
+
+```lua
+-- enterCollision / exitCollision
+--
+-- Called by the engine, once per contact, when a body begins or ends touching a SENSOR.
+-- Both receive the two object names, as keys of objects.world.
+--
+-- IMPORTANT: the order of nameA and nameB is Box2D's fixture order, not "sensor first".
+-- Always test both names. Sensors never block anything and never cause damage by themselves.
+--
+-- Solid-vs-solid contacts do NOT come here; those still go through blockCollision.
+-- (In Angry Birds Space the gravity fields are handled by the engine itself first; your
+-- function is called in addition.)
+
+function enterCollision(nameA, nameB)
+	-- a small helper so the order does not matter
+	local zone, other
+	if string.find(nameA, "^zone_") then zone, other = nameA, nameB
+	elseif string.find(nameB, "^zone_") then zone, other = nameB, nameA
+	else return end
+
+	local obj = objects.world[other]
+	if obj == nil then return end   -- it may already be destroyed
+
+	-- e.g. a trigger zone that pops pigs
+	if string.find(other, "^pig_") then
+		destroyObject(other, true)
+	end
+end
+
+function exitCollision(nameA, nameB)
+	-- the mirror of enterCollision: the body has left the sensor
+		-- check objects.world[...] before using a name: the body may be gone
+end
+```
+
+Tips for getting the most out of them:
+
+* **Count what is inside.** Keep a table, `inside[zone] = (inside[zone] or 0) + 1` in `enterCollision` and `- 1` in `exitCollision`, and act only when it goes 0 → 1 or 1 → 0. A body that touches the sensor with two fixtures reports once per fixture pair, so counting is safer than a flag.
+* **Test names with patterns.** Names are plain strings, so give your zones a prefix (`zone_`, `wind_`, `warp_`) and match with `string.find(name, "^wind_")`.
+* **Do work, then return.** Both functions run inside the physics step. Moving, scaling, tinting, playing sounds, changing gravity (`setObjectGravity`) and `destroyObject` are fine; do not loop or wait.
+* **Read the other object.** `objects.world[other]` has `x`, `y`, `angle`, `definition`; `getLinearVelocity(other)` gives the speed, which is useful for "only fast things trigger".
+* **Build effects out of existing natives.** Wind zone: in `enterCollision` call `setObjectGravity(other, 0, -5)`, in `exitCollision` call `resetObjectGravity(other)`. Teleporter: `setPosition(other, tx, ty)` on enter. Score pad: add to the score table and play a sound on enter.
+* **Compare with the retail chain.** Space's own gamelogic only defines `blockCollision(...)`, which fires the object's `onCollisionEnter` actions with `{name, obj, other, force, wasDamageDone, dot, resultDamage}` and stops when an action sets `continueExec = false`; `onCollisionExit` exists on objects too. `enterCollision` / `exitCollision` are the lower-level, engine-wide version of the same idea and work in Classic, Seasons, Rio and Space alike.
 
 ## New in 2.4
 
 Version 2.4 adds the Angry Birds Space fixes that followed 2.3 and a set of new script functions for modding. In short:
 
-* **Space:** the level limits and the draw order now follow the retail exe (the Utopia 4-30 crash and Red Planet 5-30 are fixed), and the folder of the Space prototype build (`AngryBirdsSpace_v1.0.0_proto_Windows`) loads.
+* **Space:** the level limits and the draw order now follow the retail exe (the Utopia 4-30 crash and Red Planet 5-30 are fixed), and single-folder Space builds load.
 * **Objects and physics:** `setScale` / `getScale`, `setSpeedCap` (a speed limit for one object that replaces `setMaxTranslation` for it), `getTouchingObjects`, `rayCast` (nearest hit or every hit along the ray) and `fileExists`.
 * **Audio:** pitch, tempo and stereo pan per clip (settable before the clip plays), seeking inside a playing clip, reading its position and length.
 * **Graphics:** blend modes, built-in shader presets (grayscale, sepia, invert, chromatic aberration, glow), single tint channels, a visual-only rotation, a pixel colour lookup, a composite sprite part list, and a **target** argument that lets the graphics settings apply to one object, sprite, composite sprite or to the background, foreground, trajectory dots and particles. All of it also works on tiled texture blocks.
@@ -99,9 +158,19 @@ Already there, nothing new needed:
 
 New commands (also listed in "The console" below): `text <group> <key> <text>`, `texts [group]`, `gravity [x y]`, `maxtranslation <t>`, `scale <object> <sx> [sy]`, `speedcap <object> <speed>`, `blend <object> <mode>`, `shader <object> <name>`. Anything else typed is still run as Lua (`lua getTouchingObjects("pig_3")`), and since every native is a Lua function, anything the engine does can be changed from there.
 
-### Prototype build and window
+### Single-folder builds and window
 
-The folder of the Angry Birds Space prototype (`AngryBirdsSpace_v1.0.0_proto_Windows`) is accepted: its `SettingsWrapper` global and the bit functions its scripts call are provided. The command prompt closes with the game when the game is closed normally; after a crash it stays open so the message can be read.
+Space builds that keep everything in one folder are accepted: their `SettingsWrapper` global and the bit functions their scripts call are provided. The command prompt closes with the game when the game is closed normally; after a crash it stays open so the message can be read.
+
+## New in 2.3
+
+**Angry Birds Space compatibility update.** Space's physics now follows its own exe instead of Rio's: its Box2D is a mix of 2.2 collision with 2.3 broad phase, island, sleep and solver rules (rotating dynamic tree, position-solved sleeping, 2.3 position-solver constants, a larger time-of-impact island, `setStatic` through `SetType`). The planets' pull, the aiming aid and the per-object gravity functions share one code path that follows the exe's gravity function. See "Engine-added script functions: full reference" for the new script functions.
+
+**Space natives that used to do nothing.** `setRecordVelocity(name, on)` (publishes `xVel`, `yVel` and `angle` into `objects.world[name]` for that object), `applyForceNative(name, fx, fy, px, py)` (the same force as `applyForce`) and `setRevoluteJointSpeed(jointName, speed)` (sets the motor speed of the joints with that name, as the exe does), `setSpriteRotation(name, angle)` (the sprite turns by this much on top of the body's angle), `setPivotOffset(name, x, y)` (moves the point the sprite turns about), `setTextureScale(name, scale)` (stored; the tile draw does not use it yet) and `drawTexturedLine2D(sprite, x1, y1, x2, y2, width [, r, g, b, a])` (the sprite stretched along a line, used for the slingshot's rubber bands), `setNormalTrailSprite(name)` / `setSpecialTrailSprite(name)` (the dot and puff sprites of the trajectory the next shot draws) and `setDecorationObjects(name)` (the copies of a block definition's `decorations` sprite drawn about the object, as on the huge planets) now work.
+
+**More Space natives.** `createThemeAnimation(table)` (a theme sprite whose picture cycles through the `animation` list every `animDelay` seconds; fixes the Red Planet crash), `getLinearVelocity(name)` (`vx, vy`), `getBGColor()` (`r, g, b`, 0 to 255), `getRayCastedObjects({x1=, y1=, x2=, y2=})` (a flat list, six entries per non-sensor object the segment crosses: name, hit x, hit y, normal x, normal y, fraction) and `createCompoundBodyFromTable(t)` (a compound built from a table with `name`, `x`, `y`, `material` and `children`, each child with `x`, `y`, `angle` and a `blockData` of type box, circle or polygon). `addParticlesWithScale` and `addParticlesWithProperties` now apply their extra arguments, and Space particle definitions honour `useAngleFromSpawner`, `minAngle` / `maxAngle`, `emitAreaScaleX/Y` and their own `ignoreLimits`.
+
+**Space planet gravity.** The pull follows the exe's contact list: one entry per touching fixture pair (an object made of several fixtures is pulled once per pair), applied last entry first and only to objects that are awake; a gravity sensor with parameter 19 sets the linear damping of objects flagged with parameter 1 or 34 to 100 when they leave it.
 
 ## New in 2.2.4
 
@@ -499,6 +568,18 @@ This writes `dec` next to the exe (or give a folder: `--decrypt C:\somewhere\dec
 - A file you put into `dec` that the game does not have is ignored; a file that is missing from `dec` is read from the game as usual.
 - The extra commands above (alpha, collider types, polygon skin) work in plain-text scripts of any game.
 
+## Fixes after the 2.4 notes
+
+- **Space aiming aid** now follows the retail AimingAid (0x45dd00/0x45dea0/0x45dfd0/0x45d570): dots are born every `simulationAimSpawnTime`, travel along a Catmull-Rom spline of the trajectory at `simulationAimSpeed` points per second, shrink from 1.2x to 0.2x and vanish at the end of the path.
+- **Space natives checked against the exe**: `renderGravityVisualsNative` (0x46a5d0) is called by the script with only three arguments but reads a fourth (the ring scale); the exe's number reader returns 0 for a missing argument, so the retail rings are scaled to nothing and nothing is drawn. The empty stub is therefore correct. `drawForeground` (0x467330) only draws the foreground layer list, which no Space script fills. `setMenuParticlesScale` is only called for the iPhone 4 resolution switch. `createLineShape` is only used by the `STREAM_1` editor block.
+- **Space background (`drawBackgroundNative`, 0x467f70)**: rewritten from the exe. Every layer (also the empty ones that only carry scattered elements) is placed with the camera snapshot taken at the first draw, the layer's `zDistance`, `scaleSpeed`, `xMult`, `yMult`, `angleMult` and `offsetX/offsetY`; looping layers are a row of copies, `createThemeSprite` elements are drawn on the layer index they name. Layers whose sprite is a composite (`THEME_1_BG_1` with its stars, `THEME_1_PARALLAX_3_LONG_VERSION_PC`) are drawn as composites; before, they were skipped, which left the flat blue screen.
+
+- **Rio:** the bird pulled back in the slingshot no longer shows only its yell sprite; it blinks and squawks by the same timers as the waiting birds.
+- **Rio and Space:** the trajectory dots, puffs and the aiming aid are drawn right before the first bird, so birds are in front of them (they used to be drawn over everything). The earlier games already drew them before the birds.
+- **Space:** a level's own `gravityForceMultiplier` (1 in levels such as 1-19) is now used for the world; the engine always used the default of 4, so every planet pulled four times too hard in those levels (this was the gravity misread: the aim trail and the real flight bent down much too fast).
+- **Space:** returning from an eggsteroid restores each object's radius, size and planet forces from the live level, which fixes the `radius` (a nil value) crash when the level draws again.
+- **Space:** the aim trail now honours a planet's gravity filter (`gravityCollisionMask` against the bird's category), as the exe's gravity function does; `saveLevelForReload` really saves the level, which fixes the crash when entering an eggsteroid.
+
 ## Known gaps
 
 - 2.0.0: a faint flash of the pause page after the tutorials.
@@ -506,7 +587,7 @@ This writes `dec` next to the exe (or give a folder: `--decrypt C:\somewhere\dec
 - Rio: Smuggler's Plane 11-10 and the rest of Rio's physics were checked by the author against the retail game and behave the same. The physics was matched against the decompiled code, not retail recordings (see "Physics: how closely it follows the exes").
 - Angry Birds Space: levels of the first theme load and play; the other themes, bosses and compound bodies are untested.
 - 2.2: Mauro's early score points and Golden Beachball 5 were not reproduced in the test harness. Ham 'em High 12-1 creeps slightly after a first load and settles fully after a restart (Box2D contact order, not fixed).
-- Not done yet in Space: the credits level's text placement and hitboxes, the particle limits, the level-select scrolling force, the level editor, 1:1 graphics functions and the planet level-file parameters are still being compared with the retail exe. The Rio bird that stays on its yelling sprite when the rubber band is pulled is still to be fixed.
+- Not done yet in Space: the credits level's text placement and hitboxes, the particle limits, the level-select scrolling force, 1:1 graphics functions and the planet level-file parameters are still being compared with the retail exe.
 - Shader programs you write yourself (GLSL) are not possible with the OpenGL 1.x renderer; `setShader` has built-in presets. The natively drawn backgrounds, foregrounds, trajectory dots and aiming aid can be styled through the targets `"background"`, `"foreground"`, `"trajectory"` and `"particles"`, but their layout is not yet editable from Lua.
 - A few natives are not implemented (for example the colour table behind `drawBoxNative` and `setupCompoObject`).
 - Windows only so far; the code is plain SDL2 and should port, but only Windows is tested.

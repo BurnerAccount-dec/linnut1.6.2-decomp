@@ -110,6 +110,9 @@ struct WindowConfig {
     std::string publisher = "Rovio";
     int width = 1280, height = 720;
     bool fullscreen = false, showCursor = true;
+    std::string deviceModel = "windows";            // v2.5: config.lua deviceModel / isLiteVersion pick the asset folder in the scripts (for example "meego" + lite = 864x480_lite)
+    bool isLiteVersion = false, isBetaVersion = false;
+    std::string audioPath = "audio", localizationPath = "localization", levelPath = "levels";
     int box2d = 0;                                  // v2.2.1: config.lua box2d = 21 or 22 forces the physics library (0 = the game's own)
 };
 
@@ -119,6 +122,12 @@ static void ReadConfigLua(const std::string& path, WindowConfig& out) {
         lua_getglobal(L, "name"); if (lua_isstring(L, -1)) out.name = lua_tostring(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "imagePath"); if (lua_isstring(L, -1)) out.imagePath = lua_tostring(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "fontPath"); if (lua_isstring(L, -1)) out.fontPath = lua_tostring(L, -1); lua_pop(L, 1);
+        lua_getglobal(L, "deviceModel"); if (lua_isstring(L, -1)) out.deviceModel = lua_tostring(L, -1); lua_pop(L, 1);
+        lua_getglobal(L, "audioPath"); if (lua_isstring(L, -1)) out.audioPath = lua_tostring(L, -1); lua_pop(L, 1);
+        lua_getglobal(L, "localizationPath"); if (lua_isstring(L, -1)) out.localizationPath = lua_tostring(L, -1); lua_pop(L, 1);
+        lua_getglobal(L, "levelPath"); if (lua_isstring(L, -1)) out.levelPath = lua_tostring(L, -1); lua_pop(L, 1);
+        lua_getglobal(L, "isLiteVersion"); if (lua_isboolean(L, -1)) out.isLiteVersion = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
+        lua_getglobal(L, "isBetaVersion"); if (lua_isboolean(L, -1)) out.isBetaVersion = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
         lua_getglobal(L, "datapath"); if (lua_isstring(L, -1)) out.dataPath = lua_tostring(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "videoPath"); if (lua_isstring(L, -1)) out.videoPath = lua_tostring(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "product"); if (lua_isstring(L, -1)) out.product = lua_tostring(L, -1); lua_pop(L, 1);
@@ -338,13 +347,15 @@ static int GameMain(int argc, char** argv) {
         if (f) { std::fclose(f); configPath = beside; } else configPath = "config.lua";
     }
     ReadConfigLua(configPath, wc);
-    if (shotFrames) { WindowConfig keep = wc; wc = WindowConfig(); if (testW > 0) { wc.width = testW; wc.height = testH; } wc.imagePath = keep.imagePath; wc.fontPath = keep.fontPath; wc.showCursor = keep.showCursor; wc.box2d = keep.box2d; }   // test runs use the default window
+    if (shotFrames) { WindowConfig keep = wc; wc = WindowConfig(); if (testW > 0) { wc.width = testW; wc.height = testH; } wc.imagePath = keep.imagePath; wc.fontPath = keep.fontPath; wc.deviceModel = keep.deviceModel; wc.isLiteVersion = keep.isLiteVersion; wc.isBetaVersion = keep.isBetaVersion; wc.audioPath = keep.audioPath; wc.localizationPath = keep.localizationPath; wc.levelPath = keep.levelPath; wc.showCursor = keep.showCursor; wc.box2d = keep.box2d; }   // test runs use the default window
 
     BootConfig cfg;
     cfg.scriptPath = scripts;
     cfg.commonScriptPath = commonScripts;
     cfg.imagePath = wc.imagePath;
     cfg.fontPath = wc.fontPath;
+    cfg.deviceModel = wc.deviceModel; cfg.isLiteVersion = wc.isLiteVersion; cfg.isBetaVersion = wc.isBetaVersion;
+    cfg.audioPath = wc.audioPath; cfg.localizationPath = wc.localizationPath; cfg.levelPath = wc.levelPath;
     cfg.showCursor = wc.showCursor;
 
 #ifdef _WIN32

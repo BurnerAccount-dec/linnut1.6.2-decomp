@@ -1,4 +1,5 @@
 #include "lua/aes.h"
+#include "lua/sevenzip.h"
 #include "lua/dec_folder.h"
 #include <fstream>
 #include <iterator>
@@ -10,6 +11,9 @@ const char kSeasonsKey[33] = "zePhest5faQuX2S2Apre@4reChAtEvUt";   // Game+0x31c
 const char kSpaceKey[33] = "RmgdZ0JenLFgWwkYvCL2lSahFbEhFec4";   // Angry Birds Space scripts (found by the community; every Space .lua decrypts to Lua 5.1 bytecode)
 const char kSaveKey[33] = "44iUY5aTrlaYoet9lapRlaK1Ehlec5i0";
 const char kSpaceSaveKey[33] = "TpeczKQL07HVdPbVUhAr6FjUsmRctyc5";     // Space save files (the exe builds it byte by byte at 0x496180)
+const char kStarWarsKey[33] = "An8t3mn8U6spiQ0zHHr3a1loDrRa3mtE";   // Angry Birds Star Wars scripts: AES, then a 7z archive (LZMA) holding the compiled script
+const char kStarWars2Key[33] = "B0pm3TAlzkN9ghzoe2NizEllPdN0hQni";  // Angry Birds Star Wars II scripts, same container
+const char kStarWarsSaveKey[33] = "e83Tph0R3aZ2jGK6eS91uLvQpL33vzNi";   // Star Wars save files (built byte by byte in the exe, like Space's)
 const char kSeasonsSaveKey[33] = "brU4u=EbR4s_A3APu6U#7B!axAm*We#5";   // Seasons settings.lua / highscores.lua
 
 namespace {
@@ -141,8 +145,8 @@ bool ReadSaveFile(const std::string& path, std::string& text, bool& encrypted, c
     std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>()), plain;
     encrypted = false;
     if (keyUsed) *keyUsed = kSaveKey;
-    const char* keys[] = {kSaveKey, kSeasonsSaveKey, kSpaceSaveKey};
-    for (size_t k = 0; k < 3 && !encrypted; k++) {
+    const char* keys[] = {kSaveKey, kSeasonsSaveKey, kSpaceSaveKey, kStarWarsSaveKey};
+    for (size_t k = 0; k < 4 && !encrypted; k++) {
         if (!AesDecryptCbc((const uint8_t*)keys[k], bytes, plain)) continue;
         encrypted = true;
         for (size_t i = 0; i < plain.size() && i < 64; i++)
@@ -150,6 +154,18 @@ bool ReadSaveFile(const std::string& path, std::string& text, bool& encrypted, c
         if (encrypted && keyUsed) *keyUsed = keys[k];
     }
     if (encrypted) bytes = plain;
+    else if (!bytes.empty() && bytes.size() % 16 == 0) {
+        // not text and no known save key opens it (a game whose save key is not known yet): it is somebody's real save, so it is
+        // kept as <file>.original and the game starts with empty saves instead of choking on the cipher text
+        bool binary = false;
+        for (size_t i = 0; i < bytes.size() && i < 64; i++)
+            if (bytes[i] < 0x20 && bytes[i] != '\t' && bytes[i] != '\n' && bytes[i] != '\r') binary = true;
+        if (binary) {
+            std::ifstream probe((path + ".original").c_str(), std::ios::binary);
+            if (!probe) { std::ofstream keep((path + ".original").c_str(), std::ios::binary); keep.write((const char*)bytes.data(), (std::streamsize)bytes.size()); }
+            bytes.clear();
+        }
+    }
     text.assign(bytes.begin(), bytes.end());
     return true;
 }
@@ -160,16 +176,22 @@ bool ReadLuaFile(const std::string& path, std::vector<uint8_t>& bytes) {
     if (!f) return false;
     bytes.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
     std::vector<uint8_t> plain;
-    const char* keys[] = {kLevelKey, kSeasonsKey, kSpaceKey};
+    const char* keys[] = {kLevelKey, kSeasonsKey, kSpaceKey, kStarWarsKey, kStarWars2Key};
+    const size_t kKeys = 5;
     static size_t firstKey = 0;                  // the key that worked last time goes first: a wrong key costs a whole file
-    for (size_t n = 0; n < 3; n++) {
-        size_t k = (n + firstKey) % 3;
+    for (size_t n = 0; n < kKeys; n++) {
+        size_t k = (n + firstKey) % kKeys;
         if (!AesDecryptCbc((const uint8_t*)keys[k], bytes, plain) || plain.size() <= 4) continue;
         // the decrypted file is either bytecode (starts with 0x1b) or plain Lua text; a file that was
         // not encrypted at all (or a wrong key) turns into noise, which has control characters near the start
         bool text = true;
         for (size_t i = 0; i < plain.size() && i < 64; i++)
             if (plain[i] < 0x20 && plain[i] != '\t' && plain[i] != '\n' && plain[i] != '\r') text = false;
+        if (plain.size() > 6 && plain[0] == '7' && plain[1] == 'z' && plain[2] == 0xBC && plain[3] == 0xAF) {   // Star Wars: a 7z archive with the script inside
+            std::vector<uint8_t> unpacked;
+            if (SevenZipExtractFirst(plain, unpacked)) { bytes = unpacked; firstKey = k; break; }
+            continue;
+        }
         if (plain[0] == 0x1b || text) { bytes = plain; firstKey = k; break; }
     }
     return true;

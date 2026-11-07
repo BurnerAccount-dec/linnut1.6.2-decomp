@@ -513,6 +513,7 @@ void PhysicsWorld::SimulateTrajectory(const std::string& n, int steps, int every
     float damp = o->pbody->LinearDamping(), mass = o->pbody->Mass(), invMass = mass > 0 ? 1.0f / mass : 0.0f, r = o->pbody->ShapeRadius();
     float wgx = 0, wgy = 0; GetGravity(wgx, wgy);
     float timer = o->birdGravReduce;
+    if (std::getenv("AB_TRAJDBG")) std::fprintf(stderr, "TRAJ0 x=%.3f y=%.3f v=%.3f,%.3f h=%g steps=%d every=%d m=%g isBird=%d cat=%d mult=%g\n", x, y, vx, vy, h, steps, every, mass, (int)o->isBird, o->gravCat, gravityForceMultiplier);
     for (int i = 0; i < steps; i++) {
         float fx = 0, fy = 0;
         for (const auto& so : objects_) {                                // 0x479bf0: the sensors in their list order
@@ -520,6 +521,7 @@ void PhysicsWorld::SimulateTrajectory(const std::string& n, int steps, int every
             if (s.sensorKind != 2 || !s.pbody || &s == o) continue;
             int hit = o->pbody->OverlapAt(*s.pbody, x, y);               // 0x479c05: b2TestOverlap of the two first fixtures' shapes
             if (hit == 0) continue;
+            if (s.gravMask > -1 && o->gravCat > -1 && (s.gravMask & o->gravCat) == 0) continue;   // 0x46f720 starts with this filter, so the aim trail honours it too
             if (hit < 0) {                                               // a build that cannot ask (Box2D 2.1): the radius / box approximation
                 float x0, y0, x1, y1;
                 if (s.gravRadius > -1) {
