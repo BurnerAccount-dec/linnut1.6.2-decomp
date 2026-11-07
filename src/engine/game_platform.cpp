@@ -2270,7 +2270,7 @@ void GamePlatform::DrawGame() {
         for (PhysObject* o : DrawGroup(which)) {
             // with one pass over the z layers the dots and puffs would end up above the birds; they are drawn right before the first bird instead
             if (oneGroup && !trajDone && o->isBird) drawTrajectory();
-            if (!fgDone && o->zOrder > 2) { fgDone = true; RenderState keepS = state_; DrawForeground(); state_ = keepS; }
+            if (!fgDone && o->zOrder > 9999) { fgDone = true; RenderState keepS = state_; DrawForeground(); state_ = keepS; }
             drawingNative_ = true;                          // v2.2.1: the object's quads are sorted against render state z sprites by its z_order
             nativeKey_ = (rio || o->zSet) ? o->zOrder : 0;
             DrawPhysObject(*o);
