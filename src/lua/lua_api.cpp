@@ -2535,7 +2535,12 @@ void RegisterApi(lua_State* L, Platform* p) {
     lua_newtable(L);
     Register(L, p, lua_gettop(L), res, sizeof(res) / sizeof(res[0]));
     lua_setglobal(L, "res");
-    lua_newtable(L); lua_pushcfunction(L, r_spawnFGLayerParticles); lua_setfield(L, -2, "spawnFGLayerParticles"); lua_setglobal(L, "themeSystem");   // native table of the Star Wars exe   // real global table, reached by scripts as _G.res
+    {   // native table of the Star Wars exe
+        static const Entry themeSystem[] = {{"spawnFGLayerParticles", r_spawnFGLayerParticles}};
+        lua_newtable(L);
+        Register(L, p, lua_gettop(L), themeSystem, 1);
+        lua_setglobal(L, "themeSystem");
+    }
 
     static const Entry particles[] = {
         {"addParticles", p_addParticles}, {"addLevelParticles", p_addLevelParticles}, {"setSoftLimit", p_setSoftLimit}, {"setHardLimit", p_setHardLimit},
