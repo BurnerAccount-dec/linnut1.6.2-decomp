@@ -58,6 +58,7 @@ public:
     virtual void SetAngularDamping(float d) = 0;
     virtual void SetLinearDamping(float d) = 0;
     virtual void SetFixedRotation(bool on) = 0;
+    virtual void SetDensity(float d) { (void)d; }          // v2.5: every fixture, then the mass is worked out again
     virtual void SetActive(bool on) = 0;
     virtual float ShapeRadius() const = 0;               // the first fixture's skin radius (polygons) or radius (circles)
     // The collision prediction's view of a body (predictCollision). Defaults describe a body that cannot be asked.

@@ -2,6 +2,7 @@
 #include "lua/script_host.h"
 #include "lua/aes.h"
 
+#include <cstring>
 #include <cstdio>
 #include <vector>
 
@@ -20,6 +21,8 @@ extern const unsigned char kHatcheryNativesLua[];
 extern const unsigned int kHatcheryNativesLuaSize;
 extern const unsigned char kSpaceNativesLua[];
 extern const unsigned int kSpaceNativesLuaSize;
+extern const unsigned char kSpaceEditorLua[];
+extern const unsigned int kSpaceEditorLuaSize;
 
 namespace {
 // Angry Birds 1.6.3.1 ships its level editor with updateEditor emptied out (the menus, saving and every helper are still there);
@@ -98,7 +101,7 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
     lua_pop(L_, 1);
 
     SetString("scriptPath", config_.scriptPath);
-    if (IsSpaceDataFolder()) {          // Angry Birds Space (the PC game, or a single-folder build such as the v1.0.0 prototype)
+    if (IsSpaceDataFolder()) {          // Angry Birds Space (the PC game, or a single-folder build)
         if (!config_.commonScriptPath.empty()) SetString("commonScriptPath", config_.commonScriptPath);
         lua_getfield(L_, LUA_REGISTRYINDEX, "ab.env");
         if (luaL_loadbuffer(L_, (const char*)kSpaceNativesLua, kSpaceNativesLuaSize, "space_natives.lua") == 0) {
@@ -261,10 +264,28 @@ bool ScriptHost::RunFile(const std::string& path) {
 }
 
 bool ScriptHost::LoadScripts() {
+    auto installSpaceEditor = [&]() {   // v2.5: Angry Birds Space has no editor scripts, the engine brings one (F2 in a level, space_editor.lua)
+        lua_getfield(L_, LUA_REGISTRYINDEX, "ab.env");
+        if (luaL_loadbuffer(L_, (const char*)kSpaceEditorLua, kSpaceEditorLuaSize, "space_editor.lua") == 0) {
+            lua_pushvalue(L_, -2);
+            if (lua_pcall(L_, 1, 0, 0) != 0) { std::fprintf(stderr, "space editor: %s\n", lua_tostring(L_, -1)); lua_pop(L_, 1); }
+        } else { std::fprintf(stderr, "space editor: %s\n", lua_tostring(L_, -1)); lua_pop(L_, 1); }
+        lua_pop(L_, 1);
+    };
     if (!config_.commonScriptPath.empty()) {
         space_ = true;
         if (!LoadTableFile(L_, "starTable", config_.scriptPath + "/starLimits.lua", &error_)) return false;   // the star limits per level
-        return RunFile(config_.commonScriptPath + "/gamelogic.lua");
+        bool ok = RunFile(config_.commonScriptPath + "/gamelogic.lua");
+        if (ok) {   // Star Wars: the exe runs options.lua (releaseBuild, customerString, gameVersionNumber ...) itself, before the first callback
+            GetEnvField("releaseBuild");
+            bool haveOptions = !lua_isnil(L_, -1);
+            lua_pop(L_, 1);
+            std::vector<uint8_t> probe;
+            if (!haveOptions && ab::ReadLuaFile(config_.scriptPath + "/options.lua", probe) && !probe.empty())
+                ok = RunFile(config_.scriptPath + "/options.lua");
+        }
+        if (ok) installSpaceEditor();
+        return ok;
     }   // Space: its gamelogic.lua loads the rest
     const char* files[] = {"/loadlist.lua", "/gamelogic.lua"};
     for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
@@ -279,6 +300,32 @@ bool ScriptHost::LoadScripts() {
     } else if (ReadLuaFile(config_.scriptPath + "/blocks_planets.lua", blocksBytes) && !blocksBytes.empty()) {
         // Angry Birds Space: loadBlockData in the scripts loads the block files
         space_ = true;
+        // Builds whose scripts never load the block files (the exe does it itself there: loadBlockData is not called) get the same
+        // load here, in the order of the retail loadBlockData, so blockTable, the themes, materials and particles exist before the first scene.
+        GetEnvField("loadBlockData");
+        bool hasLoader = lua_isfunction(L_, -1);
+        lua_pop(L_, 1);
+        GetEnvField("blockTable");
+        bool hasTable = lua_istable(L_, -1);
+        lua_pop(L_, 1);
+        if (!hasLoader && !hasTable) {
+            struct F { const char* file; const char* name; };
+            static const F list[] = {
+                {"materials", "materials"}, {"damagefactors", "damageFactors"}, {"blocks_levelgoals", "blockTable"}, {"birds", "blockTable"},
+                {"blocks_hazard", "blockTable"}, {"blocks_wood", "blockTable"}, {"blocks_menu", "blockTable"}, {"blocks_comic", "blockTable"},
+                {"blocks_bonusLevels", "blockTable"}, {"blocks_bosses", "blockTable"}, {"blocks_stone", "blockTable"}, {"blocks_glass", "blockTable"},
+                {"blocks_gameElements", "blockTable"}, {"blocks_static", "blockTable"}, {"blocks_planets", "blockTable"}, {"blocks_asteroids", "blockTable"},
+                {"blocks_decorations", "blockTable"}, {"blocks_sensors", "blockTable"}, {"blocks_items", "blockTable"}, {"blocks_scoreobjects", "blockTable"},
+                {"blocks_themeObjects", "blockTable"}, {"blocks_compound", "blockTable"}, {"blocks_metal", "blockTable"},
+                {"groups", "groups"}, {"themes", "themes"}, {"textures", "textures"}, {"worldAttributes", "worldAttributes"}, {"particles", "particleTable"}};
+            std::string code;
+            for (const F& f : list) {
+                std::vector<uint8_t> probe;
+                if (ReadLuaFile(config_.scriptPath + "/" + f.file + ".lua", probe) && !probe.empty())
+                    code += std::string("loadLuaFile(scriptPath .. \"/") + f.file + ".lua\", \"" + f.name + "\", true, true)\n";
+            }
+            RunString(code.c_str());
+        }
     } else { rio_ = true; if (!LoadRioTables(L_)) { error_ = "Rio data files could not be loaded"; return false; }
         // the game scene draws with objects.theme before a level has told it which theme it uses
         lua_pushboolean(L_, 1);
@@ -348,6 +395,7 @@ bool ScriptHost::LoadScripts() {
             "end\n");
     }
     EnsureClassicEditor(L_);
+    if (IsSpaceDataFolder()) installSpaceEditor();
     // A level played from the editor (Shift+P) leaves through returnToEditor when the pause key is pressed, but the pause button of the
     // game opened the pause menu, whose exit button then went to a menu page that does not exist while editing (updateMenuPage: field 'page' is nil).
     // The pause button now does what the pause key does.
@@ -405,8 +453,17 @@ bool ScriptHost::CallWithArgs(const char* name, int nargs) {
     lua_remove(L_, -2);
     lua_insert(L_, base + 1);
     if (lua_pcall(L_, nargs, 0, base + 1) != 0) {
-        error_ = std::string(name) + ": " + lua_tostring(L_, -1);
+        std::string msg = std::string(name) + ": " + lua_tostring(L_, -1);
         lua_pop(L_, 2);
+        // Space builds can be incomplete (scene scripts or block files missing) or draw a scene before its tables exist:
+        // an error in a frame's update or draw is printed once and the frame is skipped instead of ending the game.
+        // AB_STRICT=1 restores the old behaviour (the first script error ends the run).
+        static const bool strict = std::getenv("AB_STRICT") != nullptr;
+        if (!strict && IsSpaceDataFolder() && (std::strcmp(name, "update") == 0 || std::strcmp(name, "draw") == 0)) {
+            if (reportedErrors_.insert(msg).second) std::fprintf(stderr, "script error (skipped, the game goes on): %s\n", msg.c_str());
+            return true;
+        }
+        error_ = msg;
         return false;
     }
     lua_pop(L_, 1);

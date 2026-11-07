@@ -162,6 +162,7 @@ public:
     virtual void SetWorldGravity(float x, float y) { (void)x; (void)y; }
     virtual void ClearParticles() {}
     virtual void SetPhysicsEnabled(bool on) { physicsEnabled_ = on; }
+    virtual void SetThemeOffsetY(float) {}   // Space setThemeOffsetY(theme, v) (0x466e40)
     virtual bool IsPhysicsEnabled() { return physicsEnabled_; }
     virtual void SetLevelLimits(float minX, float minY, float maxX, float maxY) { (void)minX; (void)minY; (void)maxX; (void)maxY; }
     virtual void ClearVertices() { vertices_.clear(); }
@@ -172,6 +173,7 @@ public:
     virtual void SetTopLeft(float x, float y) { (void)x; (void)y; }
     virtual void SetWorldScale(float s) { (void)s; }
     virtual void SetMaxWorldScale(float s) { (void)s; }
+    virtual void ResetMouseWheelScale(float s) { (void)s; }   // Space / Star Wars: sets the wheel zoom on its own (the exe's 0x40d160)
     virtual void SetMaxTranslation(float t) { (void)t; }
 
     // ---- drawing
@@ -179,6 +181,7 @@ public:
     // writes translation when it got at least 2 values, scale with 4, angle with 5, pivot with 7. Values
     // that were not passed keep their previous setting. argc is the number of Lua arguments.
     virtual void SetRenderState(int argc, const float* args) { (void)argc; (void)args; }
+    virtual void GetRenderTranslation(float& tx, float& ty) { tx = ty = 0; }   // where the scripts last moved the render state (drawUITextNative keeps it, as the exe does)
     virtual void SetAlpha(float a) { (void)a; }
     // v2.2: the colour that sprites are multiplied by (1, 1, 1: no tint), setRenderState arguments 15 to 17 and setTint
     virtual void SetTint(float r, float g, float b) { (void)r; (void)g; (void)b; }
@@ -225,6 +228,12 @@ public:
     virtual void ResSetPath(const std::string& p) { (void)p; }
     virtual void ResCreateSpriteSheet(const std::string& path) { (void)path; }
     virtual void ResReleaseSpriteSheet(const std::string& path) { (void)path; }
+    virtual void SpawnFGLayerParticles(int id) { (void)id; }
+    virtual void ResKeepLastFrame(bool on) { (void)on; }                                    // Classic screenwipe: captureSprite before anything is drawn this frame takes the last finished frame
+    virtual void ResCaptureSprite(const std::string& name) { (void)name; }                  // v2.5 (Star Wars): the last frame becomes a sprite of that name
+    virtual void SetObjectDensity(const std::string& n, float density) { (void)n; (void)density; }   // v2.5 (Star Wars setMass)
+    virtual void AddParticlesMode(const std::string& type, float amount, float x, float y, float w, float h, float angle, int mode) { AddParticles(type, amount, x, y, w, h, angle); (void)mode; }
+    virtual void DrawParticlesFiltered(int filter) { (void)filter; }                         // 1 background, 2 foreground, 3 notification
     virtual void ResCreateCompoSpriteSet(const std::string& path) { (void)path; }
     virtual void ResReleaseCompoSpriteSet(const std::string& path) { (void)path; }
     virtual void ResCreateBitmapFont(const std::string& path) { (void)path; }
@@ -246,6 +255,7 @@ public:
     virtual void UpdateThemeSprites(float dt) { (void)dt; }
     // Angry Birds Rio: createThemeSprite(name, sprite, x, y, scaleX, scaleY, angle, layer, angleVel, flipped), setThemeSprite,
     // rotateThemeSprites(dt) and updateBackgroundAndForegroundScrollingNative(dt, force)
+    virtual void CreateThemeSpriteSpace(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, int layer, float scaleSpeed, bool flipped, float velX, float velY) { CreateThemeSpriteRio(name, sprite, x, y, scaleX, scaleY, angle, layer, scaleSpeed, flipped); }
     virtual void CreateThemeSpriteRio(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, int layer, float angleVel, bool flipped) {
         (void)name; (void)sprite; (void)x; (void)y; (void)scaleX; (void)scaleY; (void)angle; (void)layer; (void)angleVel; (void)flipped; }
     // Angry Birds Space: createThemeAnimation(table) (0x484cc0), a theme sprite whose picture changes through `frames` every animDelay seconds

@@ -152,6 +152,12 @@ public:
     void ResReleaseCompoSpriteSet(const std::string& path) override { sprites_.ReleaseCompoSet(path); }
     void ResGetCompoSpriteBounds(const std::string& sheet, const std::string& sprite, float& x1, float& y1, float& x2, float& y2) override;
     void ResReleaseSpriteSheet(const std::string& path) override;
+    void ResCaptureSprite(const std::string& name) override;
+    void ResKeepLastFrame(bool on) override { keepLast_ = on; if (!on) lastFrame_.clear(); }
+    bool keepLast_ = false; int quadsThisFrame_ = 0; std::vector<unsigned char> lastFrame_; int lastW_ = 0, lastH_ = 0;
+    void SetObjectDensity(const std::string& n, float density) override;
+    void AddParticlesMode(const std::string& type, float amount, float x, float y, float w, float h, float angle, int mode) override;
+    void DrawParticlesFiltered(int filter) override;
     void ResGetSpriteBounds(const std::string& sheet, const std::string& sprite, float& w, float& h) override;
     void ResGetSpritePivot(const std::string& sheet, const std::string& sprite, float& px, float& py) override;
 
@@ -220,6 +226,7 @@ public:
     void RequestExit() override { exitRequested_ = true; }
     void SetFullScreen(bool on) override { Platform::SetFullScreen(on); fullScreenReq_ = true; }
     void SetRenderState(int argc, const float* args) override;
+    void GetRenderTranslation(float& tx, float& ty) override { tx = state_.tx; ty = state_.ty; }
     bool levelParticlesByScript_ = false;
     bool pauseGuard_ = false;
     bool editing_ = false;
@@ -239,10 +246,12 @@ public:
     void ModifyThemeSprite(const std::string& name, float x, float y, float scaleX, float scaleY, float angle, int layer) override;
     void RemoveThemeSprite(const std::string& name, int layer) override;
     void UpdateThemeSprites(float dt) override;
+    void CreateThemeSpriteSpace(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, int layer, float scaleSpeed, bool flipped, float velX, float velY) override;
     void CreateThemeSpriteRio(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, int layer, float angleVel, bool flipped) override;
     void SetThemeSprite(const std::string& name, const std::string& sprite, int layer) override;
     void CreateThemeAnimation(const ThemeAnimation& a) override;
     void RotateThemeSprites(float dt) override;
+    void StepThemeAnimations(float dt);
     void ScrollThemeLayers(float dt, bool force) override;
     bool IsSeasonsScripts();
     void ResSetClipRect(float x, float y, float w, float h) override;
@@ -261,7 +270,9 @@ public:
     // ---- the main game's picture (drawBackgroundNative / drawForegroundNative / drawGameNative)
     void SetTopLeft(float x, float y) override { camX_ = x; camY_ = y; }
     // 0x40c6b0: the scripts' world scale also resets the exe's zoom animation state
-    void SetWorldScale(float s) override { worldScale_ = s; zoom_ = zoomPrev_ = s; }
+    // Space / Star Wars keep the wheel zoom apart from the world scale (setWorldScale 0x40d100 only stores the scale; resetMouseWheelScale 0x40d160 sets the zoom)
+    void SetWorldScale(float s) override { worldScale_ = s; if (!(scripts_ && scripts_->IsSpace())) zoom_ = zoomPrev_ = s; }
+    void ResetMouseWheelScale(float s) override { zoom_ = zoomPrev_ = s; }
     void SetMaxWorldScale(float s) override { zoomMax_ = s; }
     // 0x403b00: one mouse-wheel step (notches, positive = away from the user)
     void Wheel(int notches);
@@ -376,13 +387,29 @@ private:
     struct BirdFace { float wait = 1.0f + 4.0f * (std::rand() % 1000) / 1000.0f, blink = 0.0f; };
     std::map<std::string, BirdFace> birdFaces_;
 
-    struct BgLayer { std::string sprite; float speed = 1, scale = 1; bool looping = true; float autoScroll = 0, offset = 0; bool space = false; float offX = 0, offY = 0; };
+    struct BgLayer { std::string sprite; float speed = 1, scale = 1; bool looping = true; float autoScroll = 0, offset = 0; bool space = false; float offX = 0, offY = 0, baseOffY = 0;
+                     // Space (0x48bdd0 / 0x467f70): the layer's own numbers
+                     bool empty = false; float zDist = 0, xMult = 1, yMult = 1, angleMult = 0, posX = 0, posY = 0, scaleSpeed = 1, angle = 0; };
+    struct { bool have = false; float camX = 0, camY = 0, ws = 1, nH0 = 0; } bgRef_;   // 0x467f70: the camera and screen the parallax is measured from
+    void DrawSpaceBackground();
+    void SetThemeOffsetY(float v) override;
     struct TrajectoryPoint { float x, y; };
     void CallCollisionPair(const char* fn, const std::string& a, const std::string& b);
+    bool HasScriptFunction(const char* fn);
     void SpaceSensorTouch(PhysObject& pa, PhysObject& pb, bool enter);
     bool aimEnabled_ = false;                      // enableAimingAid
     std::string aimSprite_;                        // setAimingAidSprite
-    std::vector<TrajectoryPoint> aimDots_;         // updateBirdTrajectoryTable, in world pixels
+    // The retail AimingAid (0x45dd00 constructor, 0x45dea0 populate, 0x45dfd0 update, 0x45d570 draw)
+    struct AimDot { float x, y, s; };              // x: distance along the path in points, y: its spin, s: scale
+    std::vector<TrajectoryPoint> aimPts_;          // the trajectory table in metres (updateBirdTrajectoryTable)
+    std::vector<AimDot> aimDots_;
+    bool aimOn_ = false;                           // AimingAid +0x38
+    float aimTimer_ = 0;                           // +0x2c
+    void AimParams(float& speed, float& spawn);    // simulationAimSpeed / simulationAimSpawnTime
+    void AimPopulate();
+    void AimSetEnabled(bool on);
+    void UpdateAimingAid(float dt);
+    TrajectoryPoint AimSpline(float x) const;
     // What particleTable.particles[type] says (read once per type).
     struct ParticleDef {
         float gravityX = 0, gravityY = 0, minVelX = 0, maxVelX = 0, minVelY = 0, maxVelY = 0, minAngleVel = 0, maxAngleVel = 0;
@@ -410,7 +437,9 @@ private:
         bool second = false;                    // the menu list (0x24)
         bool level = false;                     // the level list (0x30), drawn by drawLevelParticlesNative(layer)
         int layer = 1;
+        int mode = -1;                          // Star Wars addParticlesWithMode: 3 is the notification layer
     };
+    int particleFilter_ = 0;                    // DrawParticlesFiltered: 1 background, 2 foreground, 3 notification, 0 all
     const ParticleDef* ParticleDefFor(const std::string& type);
     void UpdateParticles(float dt, bool removeBelowGround = true, int which = -1);   // which: -1 all, 0 world+level lists, 1 menu list
     std::map<std::string, ParticleDef> particleDefs_;
@@ -423,13 +452,18 @@ private:
     float zoom_ = 1, zoomPrev_ = 1, zoomMax_ = 1, zoomStart_ = 1, zoomTarget_ = 1, zoomT_ = -1, zoomDur_ = 0.5f;
     bool exitRequested_ = false, fullScreenReq_ = false;
     std::vector<BgLayer> bgLayers_;
-    struct ThemeSprite { std::string name, sprite; float x, y, scaleX, scaleY, angle, speedX; int layer; float angleVel = 0; bool flipped = false;
-                        std::vector<std::string> frames; int frame = 0; float animTimer = 0, animDelay = 0, startDelay = 0; bool loop = false; };   // frames: createThemeAnimation
+    struct ThemeSprite { std::string name, sprite; float x, y, scaleX, scaleY, angle, speedX; int layer; float angleVel = 0; bool flipped = false; float velX = 0, velY = 0, scaleSpeed = 0;
+                        std::vector<std::string> frames; int frame = 0; float animTimer = 0, animDelay = 0, startDelay = 0; bool loop = false, finished = false; float wrapW = 0, wrapH = 0; };   // frames: createThemeAnimation
     std::vector<ThemeSprite> themeSprites_;
     std::map<std::string, std::string> savedLevels_;   // v2.2: levels saved by the editor this session, by path (see FindSavedLevel)
     void DrawThemeSprites(int layer);
     float themeShift_ = 0;
     std::vector<std::string> fgLayers_;
+    struct FgNamed { bool named = false, fill = false; float offY = 0, r = 0, g = 0, b = 0; };
+    std::vector<FgNamed> fgNamed_;
+    std::map<int, std::string> fgParticles_;
+    bool swTheme_ = false;
+    void SpawnFGLayerParticles(int id) override;      // Star Wars' foreground layers with named fields (offsetY, downFillColor)
     std::vector<float> fgSpeed_, fgScale_, fgAuto_, fgOffset_;      // per foreground layer: parallax speed and scale (entries 3 and 4; 1 and 1.5 when absent)
     float groundR_ = 0, groundG_ = 0, groundB_ = 0;
     std::string themeTexture_;

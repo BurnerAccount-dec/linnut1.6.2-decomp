@@ -32,6 +32,8 @@ public:
     // v2.4: the colour a masked (tiled) quad is multiplied by, 0..n per channel; DrawQuad has its own colour arguments
     virtual void SetTileTint(float r, float g, float b) { (void)r; (void)g; (void)b; }
     virtual void EndFrame() = 0;
+    // v2.5: the last frame as RGBA, top row first (captureSprite); false: the backend cannot
+    virtual bool ReadPixels(std::vector<unsigned char>& out, int& width, int& height) { (void)out; (void)width; (void)height; return false; }
 };
 
 // Draws on the CPU into an RGBA buffer. Slow, but needs nothing, and gives the same picture every time.
@@ -46,6 +48,7 @@ public:
     void SetBlend(int mode) override { blend_ = mode; }
     void SetTileTint(float r, float g, float b) override { tileR_ = r; tileG_ = g; tileB_ = b; }
     void EndFrame() override {}
+    bool ReadPixels(std::vector<unsigned char>& out, int& width, int& height) override { out.assign(pixels_.begin(), pixels_.end()); width = width_; height = height_; return true; }
 
     int Width() const { return width_; }
     int Height() const { return height_; }

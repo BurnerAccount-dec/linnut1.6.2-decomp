@@ -1,6 +1,7 @@
 // Owns the Lua state: sets up the globals and tables the scripts expect, loads the scripts in the
 // order the exe does, and calls the engine-to-script callbacks (ENGINE_SPEC.md section 3).
 #pragma once
+#include <set>
 #include <string>
 #include <vector>
 
@@ -61,6 +62,7 @@ public:
     const std::string& LastError() const { return error_; }
 
 private:
+    std::set<std::string> reportedErrors_;      // frame errors already printed (Space builds go on after them)
     bool rio_ = false;
     bool space_ = false;
     bool Call(const char* name);

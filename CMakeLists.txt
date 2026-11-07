@@ -71,10 +71,11 @@ endfunction()
 embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/editor_classic.lua kEditorClassicLua ${CMAKE_CURRENT_BINARY_DIR}/generated/editor_classic_lua.cpp)
 embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/hatchery_natives.lua kHatcheryNativesLua ${CMAKE_CURRENT_BINARY_DIR}/generated/hatchery_natives_lua.cpp)
 embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/space_natives.lua kSpaceNativesLua ${CMAKE_CURRENT_BINARY_DIR}/generated/space_natives_lua.cpp)
+embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/space_editor.lua kSpaceEditorLua ${CMAKE_CURRENT_BINARY_DIR}/generated/space_editor_lua.cpp)
 embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/fallback/CompoImage.lua kCompoImageLua ${CMAKE_CURRENT_BINARY_DIR}/generated/compo_image_lua.cpp)
 embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/fallback/InvisibleButton.lua kInvisibleButtonLua ${CMAKE_CURRENT_BINARY_DIR}/generated/invisible_button_lua.cpp)
 
-add_library(ab_lua src/lua/aes.cpp src/lua/dec_folder.cpp src/lua/lua_api.cpp src/lua/script_host.cpp src/lua/lua_frame_host.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/editor_classic_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/hatchery_natives_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/space_natives_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/compo_image_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/invisible_button_lua.cpp)
+add_library(ab_lua src/lua/aes.cpp src/lua/sevenzip.cpp src/lua/dec_folder.cpp src/lua/lua_api.cpp src/lua/script_host.cpp src/lua/lua_frame_host.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/editor_classic_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/hatchery_natives_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/space_natives_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/space_editor_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/compo_image_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/invisible_button_lua.cpp)
 target_include_directories(ab_lua PUBLIC src)
 target_link_libraries(ab_lua PUBLIC lua51 ab_game)
 

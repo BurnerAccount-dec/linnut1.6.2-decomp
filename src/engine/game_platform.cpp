@@ -1,3 +1,4 @@
+#include <random>
 #include <type_traits>
 #include <algorithm>
 #include <cstring>
@@ -168,7 +169,12 @@ PhysicsWorld& GamePlatform::Physics() {
     physics_->startAsleep = std::getenv("AB_ASLEEPSTART") != nullptr;   // v2.2: the exe creates every body awake (b2BodyDef.awake = 1 at 0x411590 and the other creators); AB_ASLEEPSTART=1 starts blocks asleep for testing
     if (std::getenv("AB_PHYSDBG")) std::fprintf(stderr, "PHYS Box2D %s\n", physics_->Version() == Box2DVersion::V22 ? "2.2.0" : "2.1.1");
     physics_->onBeginContact = [this](PhysObject& a, PhysObject& b, ContactHandle& c) { OnContact(a, b, c); };
-    physics_->onEndContact = [this](PhysObject& a, PhysObject& b) { if (scripts_ && scripts_->IsSpace() && (a.isSensor || b.isSensor)) { SpaceSensorTouch(a, b, false); CallCollisionPair("exitCollision", a.name, b.name); } };
+    physics_->onEndContact = [this](PhysObject& a, PhysObject& b) {
+        if (!scripts_ || !(a.isSensor || b.isSensor)) return;
+        bool space = scripts_->IsSpace();
+        if (space) SpaceSensorTouch(a, b, false);
+        if (space || HasScriptFunction("enterCollision") || HasScriptFunction("exitCollision")) CallCollisionPair("exitCollision", a.name, b.name);
+    };
     // the contact filter reads objects.world[name].material live
     physics_->materialOf = [this](const PhysObject& o) {
         std::string material;
@@ -213,11 +219,23 @@ void GamePlatform::RunFrame(float dt) {
         lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
         lua_getfield(L, -1, "gameSpeedFactor");
         if (lua_isnumber(L, -1) && lua_tonumber(L, -1) > 0) dt *= (float)lua_tonumber(L, -1);
+        // Angry Birds Star Wars bullet time (Obi-Wan, the Force powers): the exe's delta-time multiplier set by
+        // setDeltaTimeMultiplier scales the time step of the whole frame; updateBulletTime divides it back out for its own timers.
+        lua_getfield(L, -2, "g_deltaTimeMultiplier");
+        if (lua_isnumber(L, -1) && lua_tonumber(L, -1) > 0) dt *= (float)lua_tonumber(L, -1);
+        lua_pop(L, 1);
         lua_getfield(L, -2, "physicsSpeedFactor");
         if (lua_isnumber(L, -1) && lua_tonumber(L, -1) > 0) physicsScale = (float)lua_tonumber(L, -1);
         lua_settop(L, top);
     }
     Physics().Frame().physicsScale = physicsScale;
+    // Angry Birds Space (the exe's 0x482990): every frame each background element moves by its velocity and its scale grows by its scaleSpeed
+    if (scripts_ && scripts_->IsSpace()) for (ThemeSprite& t : themeSprites_) {
+        t.x += t.velX * dt; t.y += t.velY * dt;
+        if (t.wrapW > 0) { if (t.x > t.wrapW) t.x -= 2 * t.wrapW; else if (t.x < -t.wrapW) t.x += 2 * t.wrapW; }
+        if (t.wrapH > 0) { if (t.y > t.wrapH) t.y -= 2 * t.wrapH; else if (t.y < -t.wrapH) t.y += 2 * t.wrapH; }
+        if (t.scaleSpeed != 0 && t.scaleX + t.scaleSpeed * dt > 0) { t.scaleX += t.scaleSpeed * dt; t.scaleY += t.scaleSpeed * dt; }
+    }
     Physics().Frame().stepOnEqual = scripts_ && scripts_->IsSpace();
     std::string audioError = audio_.TakeError();
     if (!audioError.empty()) Print("audio: " + audioError);
@@ -278,6 +296,14 @@ void GamePlatform::RunFrame(float dt) {
         if (scripts_ && at2 && execFrame == std::atoi(at2) && std::getenv("AB_EXEC2")) scripts_->RunString(std::getenv("AB_EXEC2"));
         if (scripts_ && at3 && execFrame == std::atoi(at3) && std::getenv("AB_EXEC3")) scripts_->RunString(std::getenv("AB_EXEC3"));
     }
+    // Classic 1.6.2: a screenwipe_classic.lua next to gamelogic.lua (Star Wars' screen wipe between scenes, see extras/) is loaded once the scripts are up
+    if (scripts_ && execFrame == 3 && !scripts_->IsSpace() && !IsSeasonsScripts() && !std::getenv("AB_NOSCREENWIPE"))
+        scripts_->RunString(
+            "local env = _G.getfenv(1)\n"
+            "if env.screenwipe == nil and _G.type(env.loadLuaFile) == 'function' and env.scriptPath and _G.io then\n"
+            "  local f = _G.io.open(env.scriptPath .. '/screenwipe_classic.lua', 'rb')\n"
+            "  if f then f:close(); _G.pcall(env.loadLuaFile, env.scriptPath .. '/screenwipe_classic.lua', '', false, false) end\n"
+            "end\n");
     // Space: the scripts' debug keys (fps, background, hit boxes, level skip, ...) sit behind `not releaseBuild`, and options.lua sets releaseBuild
     // (so the retail game has none). They are switched on the way the other games' are: cheats on, and the functions that read the keys run in a
     // view where releaseBuild reads false (the real flag stays true: false would unlock every level). AB_NODEBUGKEYS=1 turns this off.
@@ -288,6 +314,7 @@ void GamePlatform::RunFrame(float dt) {
             "local view = env.__abview\n"
             "if not view then view = _G.setmetatable({releaseBuild = false}, {__index = env, __newindex = env}); env.__abview = view; env.__abwrapped = _G.setmetatable({}, {__mode = 'k'}) end\n"
             "local function wrap(f) if _G.type(f) == 'function' and not env.__abwrapped[f] then env.__abwrapped[f] = true; _G.setfenv(f, view) end end\n"
+            "if env.QAPage == nil and _G.type(env.loadLuaFile) == 'function' and env.scriptPath then if not _G.pcall(env.loadLuaFile, env.scriptPath .. '/menus/QAPage.lua', '', false, false) or env.QAPage == nil then _G.pcall(env.loadLuaFile, env.scriptPath .. '/menus_space/QAPage.lua', '', false, false) end end\n"   // the cheat page: the scripts only load it when cheatsEnabled is already true at start-up
             "wrap(env.update) wrap(env.updateGame) wrap(env.updateMenu)\n"
             "local gs = env.GameScene\n"
             "if _G.type(gs) == 'table' then wrap(gs.update) wrap(gs.onEntry) end\n");
@@ -296,6 +323,7 @@ void GamePlatform::RunFrame(float dt) {
         scripts_->RunString("local e=_G.getfenv(1); local W=e.SettingsWrapper; if W and not W.__abUnlocked then W.__abUnlocked=true; "
                             "W.getLevelProgress=function() return 99999 end; W.isComicWatched=function() return true end; "
                             "W.isEpisodePurchased=function() return true end; W.isEggsteroidLevelUnlocked=function() return true end end");
+    if (scripts_ && scripts_->IsSpace() && dt > 0) { UpdateAimingAid(dt); StepThemeAnimations(dt); }
     if (scripts_ && scripts_->IsRio() && dt > 0) {
         if (Physics().Frame().running) UpdateRioGettingUp(dt);
         SelectRioAnimations(dt);
@@ -371,6 +399,7 @@ void GamePlatform::CreateThemeAnimation(const ThemeAnimation& a) {
     ThemeSprite t{a.name, a.sprite, a.x, a.y, a.scaleX, a.scaleY, a.angle, 0, a.layer};
     t.frames = a.frames; t.animTimer = a.animTimer; t.animDelay = a.animDelay; t.startDelay = a.startingDelay; t.loop = a.loop;
     if (t.sprite.empty() && !t.frames.empty()) t.sprite = t.frames[0];
+    if (std::getenv("AB_ANIMDBG")) std::fprintf(stderr, "THEMEANIM create %s sprite=%s frames=%zu delay=%g start=%g loop=%d layer=%d n=%zu\n", t.name.c_str(), t.sprite.c_str(), t.frames.size(), t.animDelay, t.startDelay, (int)t.loop, t.layer, themeSprites_.size());
     themeSprites_.push_back(t);
 }
 
@@ -379,20 +408,29 @@ void GamePlatform::SetThemeSprite(const std::string& name, const std::string& sp
         if (t.name == name && t.layer == layer) { t.sprite = sprite; break; }
 }
 
-void GamePlatform::RotateThemeSprites(float dt) {
-    const float twoPi = 6.2831855f;
+// Space and Star Wars: updateThemeSprite(dt) steps the frame animations of createThemeAnimation (their scripts never call rotateThemeSprites)
+void GamePlatform::StepThemeAnimations(float dt) {
     for (ThemeSprite& t : themeSprites_) {
-        if (t.frames.size() > 1 && t.animDelay > 0) {          // an animation: the next frame every animDelay seconds, after the starting delay
+        if (t.frames.size() > 1 && t.animDelay > 0) {          // the next frame every animDelay seconds, after the starting delay
             if (t.startDelay > 0) t.startDelay -= dt;
             else {
                 t.animTimer += dt;
                 while (t.animTimer >= t.animDelay) {
                     t.animTimer -= t.animDelay;
-                    if (t.frame + 1 < (int)t.frames.size()) t.frame++; else if (t.loop) t.frame = 0;
+                    if (t.frame + 1 < (int)t.frames.size()) t.frame++;
+                    else if (t.loop) t.frame = 0;
+                    else { t.finished = true; break; }      // an animation that does not loop (the shooting stars) ends and is taken away; the layer's repopulation makes the next one
                     t.sprite = t.frames[t.frame];
                 }
             }
         }
+    }
+    themeSprites_.erase(std::remove_if(themeSprites_.begin(), themeSprites_.end(), [](const ThemeSprite& t) { return t.finished; }), themeSprites_.end());
+}
+
+void GamePlatform::RotateThemeSprites(float dt) {
+    const float twoPi = 6.2831855f;
+    for (ThemeSprite& t : themeSprites_) {
         if (t.angleVel == 0) continue;
         t.angle = std::fmod(t.angle + t.angleVel * dt, twoPi);
         if (t.angle < 0) t.angle += twoPi;
@@ -464,6 +502,7 @@ bool GamePlatform::IsSeasonsScripts() {
 
 void GamePlatform::UpdateThemeSprites(float dt) {
     for (ThemeSprite& t : themeSprites_) {
+        if (t.velX != 0 || t.velY != 0) { t.x += t.velX * dt; t.y += t.velY * dt; }
         if (t.speedX == 0 || t.layer >= (int)bgLayers_.size()) continue;
         const Sprite* sp = sprites_.Find(t.sprite);
         if (!sp) continue;
@@ -566,6 +605,16 @@ void GamePlatform::SelectRioAnimations(float dt) {
 // this reads the Lua fields it needs, applies the result and calls birdCollision / blockCollision.
 // (The two skip flags at Game+0x1e9 / 0x1ea are only ever set to 0 in the exe, so they are left out.)
 // Angry Birds Space: a contact with a sensor goes to the global enterCollision(a, b) / exitCollision(a, b) (the trigger actions), not to blockCollision
+bool GamePlatform::HasScriptFunction(const char* fn) {
+    lua_State* L = scripts_->State();
+    int top = lua_gettop(L);
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    lua_getfield(L, -1, fn);
+    bool has = lua_isfunction(L, -1);
+    lua_settop(L, top);
+    return has;
+}
+
 void GamePlatform::CallCollisionPair(const char* fn, const std::string& a, const std::string& b) {
     lua_State* L = scripts_->State();
     int top = lua_gettop(L);
@@ -616,7 +665,12 @@ void GamePlatform::SpaceSensorTouch(PhysObject& pa, PhysObject& pb, bool enter) 
 }
 
 void GamePlatform::OnContact(PhysObject& pa, PhysObject& pb, ContactHandle& contact) {
-    if (scripts_ && scripts_->IsSpace() && (pa.isSensor || pb.isSensor)) { SpaceSensorTouch(pa, pb, true); CallCollisionPair("enterCollision", pa.name, pb.name); return; }
+    // v2.5: a contact with a sensor goes to the global enterCollision(a, b) / exitCollision(a, b) in every game whose script defines one of them (Space always)
+    if (scripts_ && (pa.isSensor || pb.isSensor) && (scripts_->IsSpace() || HasScriptFunction("enterCollision") || HasScriptFunction("exitCollision"))) {
+        if (scripts_->IsSpace()) SpaceSensorTouch(pa, pb, true);
+        CallCollisionPair("enterCollision", pa.name, pb.name);
+        return;
+    }
     if (scripts_ && scripts_->IsRio()) {         // Rio (0x40daa6): a hit starts the scale wobble of both objects that have a bounce multiplier
         float dpx = pa.pbody->Mass() * pa.pbody->VelX() - pb.pbody->Mass() * pb.pbody->VelX();
         float dpy = pa.pbody->Mass() * pa.pbody->VelY() - pb.pbody->Mass() * pb.pbody->VelY();
@@ -765,6 +819,8 @@ void GamePlatform::EndFrame() {
         state_ = keep;
         FlushZ();
     }
+    if (keepLast_ && backend_) { lastFrame_.clear(); backend_->ReadPixels(lastFrame_, lastW_, lastH_); }
+    quadsThisFrame_ = 0;
     if (backend_) backend_->EndFrame();
 }
 
@@ -806,6 +862,7 @@ GamePlatform::QueuedQuad GamePlatform::MakeQuad(int tex, float alpha, float r, f
 // already in the list after the last object: then it goes below that sprite. A sprite (kind 2) goes right after the last object or
 // sprite whose z is not higher than its own; with none, before the first one that is higher; with no objects or sprites, at the end.
 void GamePlatform::EmitQuad(QueuedQuad& q) {
+    quadsThisFrame_++;
     static bool inEffect = false;
     if (!inEffect && (state_.effect == 4 || state_.effect == 5) && q.tex >= 0 && q.mask < 0 && !drawingCursor_) {
         // v2.4 chromatic aberration (red and blue copies pulled apart) and glow (soft additive copies around it); the fixed-function renderer has no shaders
@@ -909,6 +966,16 @@ void GamePlatform::DrawTexturedLine2D(const std::string& name, float x1, float y
     float dx = x2 - x1, dy = y2 - y1, len = std::sqrt(dx * dx + dy * dy);
     if (len <= 0) return;
     RenderState keep = state_;
+    if (sp->h > sp->w * 2 && sp->pivotY < 0) {
+        // Star Wars' beams (the pink birds' gravity rays) are tall sprites: the picture runs along its height, from the top centre (its pivot) to the far end
+        state_.angle = keep.angle + std::atan2(dy, dx) - 1.5707963f;
+        state_.pivotX = width * 0.5f; state_.pivotY = 0;
+        state_.tintR = keep.tintR * r / 255.0f; state_.tintG = keep.tintG * g / 255.0f; state_.tintB = keep.tintB * b / 255.0f;
+        state_.alpha = keep.alpha * a / 255.0f;
+        DrawSpriteAt(*sheet, *sp, x1 - width * 0.5f, y1, 0, 0, true, width, len);
+        state_ = keep;
+        return;
+    }
     state_.angle = keep.angle + std::atan2(dy, dx);
     state_.pivotX = 0; state_.pivotY = width * 0.5f;
     state_.tintR = keep.tintR * r / 255.0f; state_.tintG = keep.tintG * g / 255.0f; state_.tintB = keep.tintB * b / 255.0f;
@@ -919,6 +986,13 @@ void GamePlatform::DrawTexturedLine2D(const std::string& name, float x1, float y
 
 void GamePlatform::ResDrawSprite(const std::string& name, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height) {
     if (!backend_) return;
+    // v2.5: the Angry Birds Space splash always sits on a black rectangle over the whole screen (the Rovio logo before it has a white one)
+    if (scripts_ && scripts_->IsSpace() && name.compare(0, 12, "SPLASH_SPACE") == 0) {
+        RenderState keepState = state_;
+        state_ = RenderState();
+        DrawRect(0, 0, 0, 1, 0, 0, (float)screenWidth_, (float)screenHeight_, false);
+        state_ = keepState;
+    }
     if (!drawingCursor_ && name.compare(0, 7, "CURSOR_") == 0) {
         // v2.2: the hand cursor is drawn last and on top: the draw order (z), blur, pixelation and transparency of what was drawn before it do not apply to it
         // (an editor that fades its panels left the cursor invisible). Only a cursor sprite that exists counts as drawn, otherwise the system cursor stays.
@@ -956,7 +1030,13 @@ void GamePlatform::ResDrawSprite(const std::string& name, float x, float y, int 
     for (const CompoPart& part : compo->parts) {
         const SpriteSheet* partSheet = nullptr;
         const Sprite* ps = sprites_.Find(part.sprite, &partSheet);
-        if (ps) DrawSpriteAt(*partSheet, *ps, x + (float)part.x, y + (float)part.y, 4, 3, false, 0, 0);
+        if (!ps) continue;
+        // the pivot is measured from the composite's top left corner: a part turns about that same point, so its own pivot is moved by where it sits in the composite
+        const float keepPX = state_.pivotX, keepPY = state_.pivotY;
+        state_.pivotX = keepPX - ((float)(part.x - ps->pivotX) + (float)ox);
+        state_.pivotY = keepPY - ((float)(part.y - ps->pivotY) + (float)oy);
+        DrawSpriteAt(*partSheet, *ps, x + (float)part.x, y + (float)part.y, 4, 3, false, 0, 0);
+        state_.pivotX = keepPX; state_.pivotY = keepPY;
     }
     compoTag_ = oldCompo;
 }
@@ -1251,7 +1331,52 @@ void GamePlatform::ResCreateSpriteSheet(const std::string& path) {
     Print("createSpriteSheet " + path + ": " + error);
 }
 
-void GamePlatform::ResReleaseSpriteSheet(const std::string& path) { sprites_.Release(path); }
+static void AddRuntimeSprite(SpriteLibrary& lib, const std::string& name, int w, int h, int pivotX, int pivotY);
+
+void GamePlatform::ResReleaseSpriteSheet(const std::string& path) {
+    sprites_.Release(path);
+    sprites_.Release("canvas:" + path);          // a sprite made at run time (captureSprite)
+    textures_.erase("canvas:/" + path);
+}
+
+// captureSprite(name) (Star Wars, the screen transitions): the last frame drawn becomes a sprite of that name
+void GamePlatform::ResCaptureSprite(const std::string& name) {
+    if (!backend_) return;
+    std::vector<unsigned char> raw;
+    int w = 0, h = 0;
+    if (keepLast_ && !lastFrame_.empty()) { raw = lastFrame_; w = lastW_; h = lastH_; }   // Classic screenwipe: the picture is the last finished frame (this frame is only half drawn)
+    else if (!backend_->ReadPixels(raw, w, h)) return;
+    if (std::getenv("AB_DRAWDBG")) std::fprintf(stderr, "captureSprite %s keep=%d quads=%d last=%zu w=%d h=%d\n", name.c_str(), (int)keepLast_, quadsThisFrame_, lastFrame_.size(), w, h);
+    if (w <= 0 || h <= 0) return;
+    Image picture;
+    picture.width = w; picture.height = h;
+    picture.rgba.assign(raw.begin(), raw.end());
+    sprites_.Release("canvas:" + name);
+    TextureInfo info; info.handle = backend_->CreateTexture(picture); info.width = w; info.height = h;
+    textures_["canvas:/" + name] = info;
+    AddRuntimeSprite(sprites_, name, w, h, 0, 0);
+}
+
+// setMass(name, density) (Star Wars): every fixture of the body takes the density and the mass is worked out again
+void GamePlatform::SetObjectDensity(const std::string& n, float density) {
+    if (PhysObject* o = Physics().Find(n)) o->pbody->SetDensity(density);
+}
+
+// addParticlesWithMode: a notification particle (mode 3) lives in the menu list and is drawn over everything in screen space
+void GamePlatform::AddParticlesMode(const std::string& type, float amount, float x, float y, float w, float h, float angle, int mode) {
+    size_t before = particles_.size();
+    AddParticles(type, amount, x, y, w, h, angle, false, mode == 3);
+    for (size_t i = before; i < particles_.size(); i++) particles_[i].mode = mode;
+}
+
+// the three particle layers of the Star Wars scenes: behind the blocks, in front of the birds, and the notifications over the menus
+void GamePlatform::DrawParticlesFiltered(int filter) {
+    menuParticlesByScript_ = true;
+    levelParticlesByScript_ = true;
+    particleFilter_ = filter;
+    DrawParticlesOf(filter != 3, -1);
+    particleFilter_ = 0;
+}
 
 void GamePlatform::ResGetSpriteBounds(const std::string&, const std::string& sprite, float& w, float& h) {
     const Sprite* s = sprites_.Find(sprite);
@@ -1414,8 +1539,11 @@ namespace ab {
 // ---- the main game's picture
 
 // setTheme (reads blockTable.themes[name]): colour, groundColor, bgLayers, fgLayers, texture.
-void GamePlatform::SetTheme(const std::string& theme) {
-    bgLayers_.clear(); fgLayers_.clear(); fgSpeed_.clear(); fgScale_.clear(); fgAuto_.clear(); fgOffset_.clear(); themeTexture_.clear();
+void GamePlatform::SetTheme(const std::string& themeArg) {
+    const char* themeEnv = std::getenv("AB_THEME");     // test aid: draw this theme in every level
+    const std::string theme = themeEnv ? std::string(themeEnv) : themeArg;
+    bgRef_.have = false;
+    swTheme_ = false; fgParticles_.clear(); bgLayers_.clear(); fgLayers_.clear(); fgSpeed_.clear(); fgScale_.clear(); fgAuto_.clear(); fgOffset_.clear(); fgNamed_.clear(); themeTexture_.clear();
     if (!scripts_) return;
     lua_State* L = scripts_->State();
     int top = lua_gettop(L);
@@ -1452,19 +1580,50 @@ void GamePlatform::SetTheme(const std::string& theme) {
                         if (lua_istable(L, -1)) {
                             BgLayer layer;
                             lua_getfield(L, -1, "sprite");
-                            if (lua_isstring(L, -1)) {      // Angry Birds Space: named fields (xMult is the parallax, bLoop false pins the picture at offsetX)
-                                if (lua_tostring(L, -1)[0]) {
-                                    layer.space = true;
-                                    layer.sprite = lua_tostring(L, -1);
-                                    int lt = lua_gettop(L) - 1;
-                                    layer.speed = number(lt, "xMult", number(lt, "zDistance", 1));
-                                    layer.scale = number(lt, "scale", 1);
-                                    layer.offX = number(lt, "offsetX", 0); layer.offY = number(lt, "offsetY", 0);
-                                    lua_getfield(L, lt, "bLoop");
-                                    layer.looping = !lua_isboolean(L, -1) || lua_toboolean(L, -1);
+                            if (lua_isstring(L, -1)) {      // Angry Birds Space: named fields; layers without a sprite only carry the scattered elements, but keep their place in the list
+                                layer.space = true;
+                                layer.sprite = lua_tostring(L, -1);
+                                layer.empty = layer.sprite.empty();
+                                int lt = lua_gettop(L) - 1;
+                                layer.zDist = number(lt, "zDistance", 0);
+                                layer.xMult = number(lt, "xMult", 1); layer.yMult = number(lt, "yMult", 1);
+                                layer.angleMult = number(lt, "angleMult", 0);
+                                layer.speed = number(lt, "parallaxSpeed", 1);
+                                layer.scale = number(lt, "scale", 1);
+                                layer.posX = number(lt, "posX", 0); layer.posY = number(lt, "posY", 0);
+                                layer.offX = number(lt, "offsetX", 0); layer.offY = number(lt, "offsetY", 0); layer.baseOffY = layer.offY;
+                                layer.scaleSpeed = number(lt, "scaleSpeed", 1);
+                                // The scattered elements of the layer (themes.lua "elements": amount, scale, variation, w, h, velX, velY, sprites). The retail exe
+                                // creates them itself; scripts that scatter their own (they define populateWithRandomThemeSprites*) are left alone.
+                                lua_getfield(L, lt, "elements");
+                                if (lua_istable(L, -1) && !HasScriptFunction("populateWithRandomThemeSpritesNew") && !HasScriptFunction("populateWithRandomThemeSprites")) {
+                                    int et = lua_gettop(L);
+                                    int amount = (int)number(et, "amount", 0);
+                                    std::vector<std::string> names;
+                                    lua_getfield(L, et, "sprites");
+                                    if (lua_istable(L, -1)) for (int k = 1; k <= (int)lua_objlen(L, -1); k++) { lua_rawgeti(L, -1, k); if (lua_isstring(L, -1)) names.push_back(lua_tostring(L, -1)); lua_pop(L, 1); }
                                     lua_pop(L, 1);
-                                    bgLayers_.push_back(layer);
+                                    if (amount > 0 && !names.empty()) {
+                                        static std::mt19937 rng(12345);
+                                        auto rnd = [&]() { return std::uniform_real_distribution<float>(0.0f, 1.0f)(rng); };
+                                        float ew = number(et, "w", 0.1f) * 768.0f, eh = number(et, "h", 0.1f) * 768.0f;
+                                        float esc = number(et, "scale", 1), var = number(et, "variation", 0), evx = number(et, "velX", 0), evy = number(et, "velY", 0);
+                                        bool rot = false;
+                                        lua_getfield(L, et, "randomRotation"); rot = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
+                                        for (int k = 0; k < amount; k++) {
+                                            float sc = layer.scale * esc + (0.5f - rnd()) * 2.0f * var;
+                                            const std::string& sn = names[(size_t)(rnd() * names.size()) % names.size()];
+                                            ThemeSprite t{sn + std::to_string(k + 1), sn, (rnd() * 2 - 1) * ew, (rnd() * 2 - 1) * eh, sc, sc, rot ? rnd() * 6.2831853f : 0.0f, 0, (int)bgLayers_.size()};
+                                            t.velX = evx; t.velY = evy; t.wrapW = ew; t.wrapH = eh;
+                                            themeSprites_.push_back(t);
+                                        }
+                                    }
                                 }
+                                lua_pop(L, 1);
+                                lua_getfield(L, lt, "bLoop");
+                                layer.looping = !lua_isboolean(L, -1) || lua_toboolean(L, -1);
+                                lua_pop(L, 1);
+                                bgLayers_.push_back(layer);
                                 lua_pop(L, 2);
                                 continue;
                             }
@@ -1488,12 +1647,35 @@ void GamePlatform::SetTheme(const std::string& theme) {
                     }
                 }
                 lua_pop(L, 1);
+                lua_getfield(L, t, "NEW_THEME_SYSTEM_FOREGROUND"); swTheme_ = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
                 lua_getfield(L, t, "fgLayers");
                 if (lua_istable(L, -1)) {
                     int n = (int)lua_objlen(L, -1);
                     for (int i = 1; i <= n; i++) {
                         lua_rawgeti(L, -1, i);
                         if (lua_istable(L, -1)) {
+                            // Star Wars' newer themes (Cloud City) name the fields: sprite, scale, zDistance, velX, offsetY, downFillColor
+                            lua_getfield(L, -1, "particles");
+                            if (lua_isstring(L, -1)) { std::string pn = lua_tostring(L, -1); lua_pop(L, 1); float idf = 0; GetNumber(L, lua_gettop(L), "spawnerId", idf); fgParticles_[(int)idf] = pn; lua_getfield(L, -1, "sprite"); }
+                            else { lua_pop(L, 1); lua_getfield(L, -1, "sprite"); }
+                            bool hasFill = false;
+                            if (lua_isstring(L, -1)) { lua_getfield(L, -2, "downFillColor"); hasFill = lua_istable(L, -1); lua_pop(L, 1); }   // Space's own named layers are not drawn
+                            if (lua_isstring(L, -1) && hasFill) {
+                                int ft = lua_gettop(L) - 1;
+                                fgLayers_.push_back(lua_tostring(L, -1));
+                                float sc = 1.5f, zd = 0, vx = 0, oy = 0;
+                                GetNumber(L, ft, "scale", sc); GetNumber(L, ft, "zDistance", zd); GetNumber(L, ft, "velX", vx); GetNumber(L, ft, "offsetY", oy);
+                                fgSpeed_.push_back(1.0f - zd);
+                                fgScale_.push_back(sc);
+                                fgAuto_.push_back(-vx / 60.0f);
+                                fgOffset_.push_back(0.0f);
+                                FgNamed nm; nm.named = true; nm.offY = oy;
+                                lua_getfield(L, ft, "downFillColor");
+                                if (lua_istable(L, -1)) { nm.fill = true; GetNumber(L, lua_gettop(L), "r", nm.r); GetNumber(L, lua_gettop(L), "g", nm.g); GetNumber(L, lua_gettop(L), "b", nm.b); }
+                                lua_pop(L, 1);
+                                fgNamed_.resize(fgLayers_.size() - 1); fgNamed_.push_back(nm);
+                            }
+                            lua_pop(L, 1);
                             lua_rawgeti(L, -1, 2);
                             if (lua_isstring(L, -1)) {
                                 fgLayers_.push_back(lua_tostring(L, -1));
@@ -1530,8 +1712,6 @@ void GamePlatform::UpdateZoom(float dt) {
         float u = zoomT_ / zoomDur_ - 1.0f;
         zoom_ = zoomStart_ + (zoomTarget_ - zoomStart_) * (u * u * u + 1.0f);
         if (zoomT_ > zoomDur_) { zoomT_ = -1.0f; zoom_ = zoomTarget_; }
-        if (zoom_ < 0.01f) zoom_ = 0.01f;
-        if (zoom_ > 100.0f) zoom_ = 100.0f;
     }
     if (zoom_ != zoomPrev_ && scripts_) {
         lua_State* L = scripts_->State();
@@ -1557,10 +1737,106 @@ void GamePlatform::Wheel(int notches) {
         zoomTarget_ = (float)notches * step + zoom_;
         zoomDur_ = 0.5f;
     }
-    if (zoomTarget_ < 0.01f) zoomTarget_ = 0.01f;
-    if (zoomTarget_ > 100.0f) zoomTarget_ = 100.0f;
     zoomStart_ = zoom_;
     zoomT_ = 0.0f;
+}
+
+// Angry Birds Space drawBackgroundNative (0x467f70). Sizes are in units of 1024x768 screens: nW = width / 1024, nH = height / 768. A
+// layer is scaled by its own scale times the larger screen unit (a looping layer: the larger of the first and the current height),
+// plus (zDistance + the zoom since the first frame) * scaleSpeed; the camera's move since the first frame, times zDistance and xMult / yMult,
+// shifts it, and the angle follows the horizontal move times angleMult.
+void GamePlatform::DrawSpaceBackground() {
+    float sw = (float)screenWidth_, sh = (float)screenHeight_;
+    float nW = sw / 1024.0f, nH = sh / 768.0f;
+    float camX = 0, camY = 0;
+    if (scripts_) {
+        lua_State* L = scripts_->State();
+        int top = lua_gettop(L);
+        lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+        lua_getfield(L, -1, "screen");
+        if (lua_istable(L, -1)) { GetNumber(L, lua_gettop(L), "x", camX); GetNumber(L, lua_gettop(L), "y", camY); }
+        lua_settop(L, top);
+    }
+    if (bgRef_.nH0 <= 0) bgRef_.nH0 = nH;
+    if (!bgRef_.have) { bgRef_.have = true; bgRef_.camX = camX; bgRef_.camY = camY; bgRef_.ws = worldScale_; }
+    float dx = camX - bgRef_.camX, dy = camY - bgRef_.camY, dws = worldScale_ - bgRef_.ws;
+    for (size_t i = 0; i < bgLayers_.size(); i++) {
+        BgLayer& layer = bgLayers_[i];
+        float dxz = dx * layer.zDist, dyz = dy * layer.zDist;
+        layer.angle = dxz * 0.05f * layer.angleMult;
+        float ext = layer.looping ? std::max(bgRef_.nH0, nH) : std::max(nH, nW);
+        static const float swK = std::getenv("AB_BGK") ? (float)std::atof(std::getenv("AB_BGK")) : 0.5f;
+        float kk = swTheme_ ? swK : 1.0f;
+        float E = layer.scale * ext * kk;
+        float S = (layer.zDist + dws) * layer.scaleSpeed * kk;
+        float At = S + E, X = 2 * S + E;
+        const Sprite* sp = layer.empty ? nullptr : sprites_.Find(layer.sprite);
+        // a layer can be a composite sprite (THEME_1_BG_1 is the base with its stars, the long hills are a stack of tiles): its extent and origin stand for size and pivot
+        const CompoSprite* compo = (!sp && !layer.empty) ? sprites_.FindCompo(layer.sprite) : nullptr;
+        int cw = 0, ch = 0, cox = 0, coy = 0;
+        if (compo) sprites_.CompoExtent(*compo, cw, ch, cox, coy);
+        bool drawable = sp || compo;
+        float w = sp ? (float)sp->w : compo ? (float)cw : 1024.0f / layer.scale, h = sp ? (float)sp->h : compo ? (float)ch : 1024.0f / layer.scale;
+        float pivX = sp ? (float)sp->pivotX : compo ? (float)cox : 0, pivY = sp ? (float)sp->pivotY : compo ? (float)coy : 0;
+        if (std::getenv("AB_DRAWDBG")) std::fprintf(stderr, "SPBG %zu %s w=%g h=%g piv=%g,%g E=%g S=%g At=%g loop=%d pos=%g,%g off=%g,%g xm=%g\n", i, layer.sprite.c_str(), w, h, pivX, pivY, E, S, At, (int)layer.looping, layer.posX, layer.posY, layer.offX, layer.offY, layer.xMult);
+        if (drawable && At > 0) {
+            state_ = RenderState();
+            state_.pivotX = pivX; state_.pivotY = pivY;
+            state_.angle = layer.angle;
+            state_.sx = state_.sy = At;
+            if (!layer.looping) {
+                float v68 = 2 * layer.posX * At - w * X, v64 = X * h + 2 * layer.posY * At;
+                state_.tx = 0.5f * (v68 - layer.xMult * dxz) / At;
+                state_.ty = 0.5f * (v64 - layer.yMult * dyz) / At;
+                ResDrawSprite(layer.sprite, layer.offX * nW / At, layer.offY * nH / At, 4, 3, false, 0, 0);
+            } else {
+                // a row of copies one sprite width apart (32 at most), starting 4.5 widths before the first
+                float v68 = 2 * layer.posX * At - w * X, v64 = X * h + 2 * layer.posY * At;
+                float x0 = 0.5f * (v68 - 8.0f * w * At - layer.xMult * dxz) / At;
+                state_.ty = 0.5f * (v64 - layer.yMult * dyz) / At;
+                float stopAt = 8.0f * w * At + sw / (layer.scale * worldScale_) + pivX;
+                float cur = v68 - 8.0f * w * At;
+                for (int n = 0; n < 32 && cur < stopAt; n++, cur += 2 * w * At) {
+                    state_.tx = x0 + n * w;
+                    ResDrawSprite(layer.sprite, layer.offX * nW / At, layer.offY * nH / At, 4, 3, false, 0, 0);
+                }
+            }
+        }
+        // the elements scattered on this layer (createThemeSprite)
+        for (const ThemeSprite& t : themeSprites_) {
+            if (t.layer != (int)i) continue;
+            const Sprite* ep = sprites_.Find(t.sprite);
+            if (!ep) continue;
+            float sxS = t.scaleX * E + S, syS = t.scaleY * E + S;
+            if (sxS <= 0 || syS <= 0) continue;
+            state_ = RenderState();
+            state_.pivotX = (float)ep->pivotX; state_.pivotY = (float)ep->pivotY;
+            state_.angle = t.angle + layer.angle;
+            state_.sx = sxS; state_.sy = syS;
+            state_.tx = 0.5f * (-w * E - layer.xMult * dxz) / sxS;
+            state_.ty = 0.5f * (h * E - layer.yMult * dyz) / syS;
+            ResDrawSprite(t.sprite, t.x * (t.flipped ? -1.0f : 1.0f) * 20.0f / sxS, t.y * 20.0f / syS, 4, 3, false, 0, 0);
+        }
+    }
+    state_ = RenderState();
+}
+
+// setThemeOffsetY (0x466e40): every layer of the theme moves to its own offsetY plus v; a layer without elements takes v scaled by 768 / screen height first
+void GamePlatform::SetThemeOffsetY(float v) {
+    for (size_t i = 0; i < bgLayers_.size(); i++) {
+        BgLayer& layer = bgLayers_[i];
+        bool hasElements = false;
+        for (const ThemeSprite& t : themeSprites_) if (t.layer == (int)i) { hasElements = true; break; }
+        float add = hasElements || screenHeight_ <= 0 ? v : v * 768.0f / (float)screenHeight_;
+        layer.offY = layer.baseOffY + add;
+    }
+}
+
+void GamePlatform::CreateThemeSpriteSpace(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, int layer, float scaleSpeed, bool flipped, float velX, float velY) {
+    ThemeSprite t{name, sprite, x, y, scaleX, scaleY, angle, 0, layer};
+    t.angleVel = 0; t.flipped = flipped; t.velX = velX; t.velY = velY;
+    t.scaleSpeed = scaleSpeed;
+    themeSprites_.push_back(t);
 }
 
 // drawBackgroundNative: every looping layer is a row of copies of its sprite, shifted by the camera
@@ -1569,6 +1845,7 @@ void GamePlatform::DrawBackground() {
     TagScope tag(this, "background");
     if (std::getenv("AB_DRAWDBG")) { static int n = 0; if (n++ < 3) std::fprintf(stderr, "DrawBackground layers=%d\n", (int)bgLayers_.size()); }
     if (!backend_) return;
+    if (scripts_ && scripts_->IsSpace()) { DrawSpaceBackground(); return; }
     // The non-looping layers (the cranes) are placed one after another: the first at episode4BGCranes.startX / 16
     // sprite widths, each next one half a sprite width further.
     float startX = 0;
@@ -1628,7 +1905,8 @@ void GamePlatform::DrawBackground() {
 // sprites repeated at 1.5 times the world scale.
 void GamePlatform::DrawForeground() {
     TagScope tag(this, "foreground");
-    if (!backend_ || (scripts_ && scripts_->IsSpace())) return;   // Space has no ground: drawForeground (a different routine there) is still to be decompiled
+    // Angry Birds Space has no ground (its foreground layers use named fields and are not read here); Star Wars keeps the Seasons-style ones
+    if (!backend_ || (scripts_ && scripts_->IsSpace() && fgLayers_.empty())) return;
     // a foreground layer is a sprite or a composite sprite (the Ham 'o' Ween menu draws its trees and pumpkins as composites)
     auto extent = [&](const std::string& name, float& w, float& pivotX, float& h, float& pivotY) {
         const Sprite* sp = sprites_.Find(name);
@@ -1645,18 +1923,26 @@ void GamePlatform::DrawForeground() {
         float w, px, h, py;
         if (extent(fgLayers_[0], w, px, h, py)) height = (h - py) * fgScale_[0] / 1.5f;
     }
-    DrawRect(groundR_ / 255.0f, groundG_ / 255.0f, groundB_ / 255.0f, 1, 0, -(camY_ - height * 1.5f) * worldScale_, (float)screenWidth_, (float)screenHeight_ + 1, false);
+    fgNamed_.resize(fgLayers_.size());
+    if (!fgNamed_.empty() && fgNamed_[0].named) height = 0;
+    else DrawRect(groundR_ / 255.0f, groundG_ / 255.0f, groundB_ / 255.0f, 1, 0, -(camY_ - height * 1.5f) * worldScale_, (float)screenWidth_, (float)screenHeight_ + 1, false);
     int fgIndex = -1;
     for (const std::string& name : fgLayers_) {
         fgIndex++;
         float w, px, h, py;
+        if (std::getenv("AB_DRAWDBG")) std::fprintf(stderr, "FGL %d %s found=%d scale=%g speed=%g\n", fgIndex, name.c_str(), (int)extent(name, w, px, h, py), fgScale_[fgIndex], fgSpeed_[fgIndex]);
         if (!extent(name, w, px, h, py) || w <= 0) continue;
+        const FgNamed& nm = fgNamed_[fgIndex];
         float c = fgScale_[fgIndex], baseShift = fgSpeed_[fgIndex] * camX_, shift = fgSpeed_[fgIndex] * (camX_ + fgOffset_[fgIndex]);
+        if (nm.named && nm.fill) {     // the colour below the layer's bottom edge
+            float bottom = (-camY_ + c * (nm.offY + (h - py))) * worldScale_;
+            DrawRect(nm.r / 255.0f, nm.g / 255.0f, nm.b / 255.0f, 1, 0, bottom - 1, (float)screenWidth_, (float)screenHeight_ + 1, false);
+        }
         float m = std::fmod(shift, c * w);
         float x0 = -(m + c * w) / c;
         state_ = RenderState();
         state_.tx = x0 - std::trunc(x0);
-        state_.ty = -camY_ / c;
+        state_.ty = -camY_ / c + nm.offY;
         state_.sx = state_.sy = worldScale_ * c;
         float right = screenWidth_ / (worldScale_ * c) + px;
         for (float x = std::trunc(x0); x <= right; x += w) ResDrawSprite(name, x, 0, 4, 3, false, 0, 0);
@@ -1699,8 +1985,11 @@ void GamePlatform::DrawPhysObject(PhysObject& o) {
                 RenderState keep = state_;
                 state_.angle = ang; state_.alpha = o.alpha;
                 state_.pivotX = (float)ds->pivotX; state_.pivotY = (float)ds->pivotY;
-                state_.sx *= o.decoScale; state_.sy *= o.decoScale;
-                state_.tx = (dx + keep.tx) / o.decoScale - dx; state_.ty = (dy + keep.ty) / o.decoScale - dy;
+                // 0x48d43b: the copies are drawn at the object's own scale times the decoration's (a planet of scale 1.6 draws its slices 1.6 times as long)
+                float dsx = o.decoScale * (Physics().spaceRules ? o.scaleX : 1.0f), dsy = o.decoScale * (Physics().spaceRules ? o.scaleY : 1.0f);
+                if (dsx == 0 || dsy == 0) { state_ = keep; continue; }
+                state_.sx *= dsx; state_.sy *= dsy;
+                state_.tx = (dx + keep.tx) / dsx - dx; state_.ty = (dy + keep.ty) / dsy - dy;
                 DrawSpriteAt(*dsheet, *ds, dx, dy, 4, 3, false, 0, 0);
                 state_ = keep;
                 ang = std::fmod(ang + o.decoIncrement * 3.14159265f / 180.0f, 6.2831853f);
@@ -1710,6 +1999,8 @@ void GamePlatform::DrawPhysObject(PhysObject& o) {
     }
     if (o.hidden) return;                      // Space: setObjectParameter(n, 33, 0)
     if (o.isSensor && o.sensorKind == 2 && Physics().spaceRules) return;   // the gravity area is invisible in retail (its sprite is the blue dot at the planet centre)
+    // the other sensors (pig, killing, trigger boxes) carry the same editor-only marker sprites: the blue and green dots are never drawn in a level
+    if (Physics().spaceRules && o.isSensor && o.sprite.compare(0, 15, "GRAVITY_SENSOR_") == 0) return;
     float x = o.interpX * 20.0f, y = o.interpY * 20.0f;
     state_.angle = o.interpAngle + o.spriteAngle;   // Space: 0x48d2a9 adds setSpriteRotation's angle
     if (!o.texture.empty() && sp) {
@@ -1723,6 +2014,9 @@ void GamePlatform::DrawPhysObject(PhysObject& o) {
     // the draw scale is the object's own scale plus the wobble after a hit (0x40b2xx: x gets +sin, y gets -sin of the same phase)
     bool useScale = o.scaled || Physics().spaceRules;       // Space always draws the scale (ids 5, 17, 18 and setScale)
     float drawSX = (useScale ? o.scaleX : 1.0f) + o.wobDX, drawSY = (useScale ? o.scaleY : 1.0f) + o.wobDY;
+    // Space draws the scale as it is: the sensors and trigger markers are defined with scale = 0 (BLOCK_SENSOR_PIG_A / _B ...), which draws nothing;
+    // an unscaled sprite here was the blue dot on the pig's spawn spot and on other sensor bodies
+    if (Physics().spaceRules && (drawSX == 0 || drawSY == 0)) { state_ = saved; return; }
     if ((useScale || o.wobDX != 0 || o.wobDY != 0) && drawSX != 0 && drawSY != 0) {
         state_.sx *= drawSX; state_.sy *= drawSY;
         state_.tx = (x + saved.tx) / drawSX - x;
@@ -1841,9 +2135,8 @@ bool GamePlatform::BodyCommand(const std::string& n, int cmd, float a, float& re
     if (cmd < 20 || cmd > 24) return Physics().BodyCommand(n, cmd, a, result);
     if (cmd == 20) aimEnabled_ = a != 0;
     else if (cmd == 21) aimSprite_ = n;
-    else if (cmd == 23) aimDots_.clear();
+    else if (cmd == 23) { aimDots_.clear(); aimPts_.clear(); aimOn_ = false; }   // 0x45e230
     else if (cmd == 24) {
-        aimDots_.clear();
         std::vector<std::pair<float, float>> pts;
         // 0x479ab0: simulationIterations (50) steps of objects.currentTimeStep * simulationTimeStepMultiplier (3) seconds, a point stored every simulationStorePointsSampler (1)
         // steps. currentTimeStep is 1/90 while a bird is aimed (gamescene.lua sets it), 1/30 otherwise; without it the exe uses 0.0285714 (0x50fb74).
@@ -1862,22 +2155,122 @@ bool GamePlatform::BodyCommand(const std::string& n, int cmd, float a, float& re
         if (sampler < 1) sampler = 1;
         Physics().SimulateTrajectory(n.empty() ? "BirdSimulation" : n, iterations, sampler, timeStep * mult, pts);
         if (std::getenv("AB_TRAJDBG")) for (auto& p : pts) std::fprintf(stderr, "TRAJ %.3f %.3f\n", p.first, p.second);
-        for (auto& p : pts) aimDots_.push_back({p.first * 20.0f, p.second * 20.0f});
-        if (std::getenv("AB_DRAWDBG")) std::fprintf(stderr, "AIM %s dots=%d first=%.0f,%.0f sprite=%s found=%d\n", n.c_str(), (int)aimDots_.size(), aimDots_.empty() ? 0.f : aimDots_[0].x, aimDots_.empty() ? 0.f : aimDots_[0].y, aimSprite_.c_str(), (int)(sprites_.Find(aimSprite_) != nullptr));
+        aimPts_.clear();
+        for (auto& p : pts) aimPts_.push_back({p.first, p.second});
+        if (std::getenv("AB_DRAWDBG")) std::fprintf(stderr, "AIM %s pts=%d sprite=%s found=%d\n", n.c_str(), (int)aimPts_.size(), aimSprite_.c_str(), (int)(sprites_.Find(aimSprite_) != nullptr));
     }
     return true;
+}
+
+void GamePlatform::AimParams(float& speed, float& spawn) {
+    speed = 4.0f; spawn = 0.6f;                      // 0x50f644, 0x50f648
+    if (!scripts_) return;
+    lua_State* L = scripts_->State();
+    int top = lua_gettop(L);
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    if (lua_istable(L, -1)) {
+        lua_getfield(L, -1, "simulationAimSpeed"); if (lua_isnumber(L, -1)) speed = (float)lua_tonumber(L, -1); lua_pop(L, 1);
+        lua_getfield(L, -1, "simulationAimSpawnTime"); if (lua_isnumber(L, -1)) spawn = (float)lua_tonumber(L, -1); lua_pop(L, 1);
+    }
+    lua_settop(L, top);
+}
+
+// 0x45dea0: the dots are laid out along the whole path at spacing speed*spawn; the first spawns after one period
+void GamePlatform::AimPopulate() {
+    aimDots_.clear();
+    float speed, spawn; AimParams(speed, spawn);
+    float len = (float)((int)aimPts_.size() - 3);
+    int count = (int)(len / (speed * spawn));
+    for (int i = 0; i < count; i++) { float x = i * speed * spawn; aimDots_.push_back({x, 0, 1.0f - x / len + 0.2f}); }
+    aimTimer_ = spawn;
+}
+
+void GamePlatform::AimSetEnabled(bool on) {       // 0x45df70
+    if (aimOn_ == on) return;
+    aimOn_ = on;
+    if (on) AimPopulate();
+}
+
+// 0x45dfd0: the dots move along the path and shrink; one is born every spawn time while the aid is on
+void GamePlatform::UpdateAimingAid(float dt) {
+    if (aimPts_.size() >= 4) AimSetEnabled(aimEnabled_);   // 0x48d757: every frame with a usable table
+    float speed, spawn; AimParams(speed, spawn);
+    float len = (float)((int)aimPts_.size() - 3);
+    for (size_t i = 0; i < aimDots_.size();) {
+        AimDot& d = aimDots_[i];
+        d.x += speed * dt; d.y += 0;
+        d.s = 1.0f - d.x / len + 0.2f;
+        if (d.x >= len) aimDots_.erase(aimDots_.begin() + i); else i++;
+    }
+    aimTimer_ -= dt;
+    if (!aimOn_ || aimTimer_ > 0 || len <= 0) return;
+    int guard = 0;
+    while (aimTimer_ <= 0 && guard++ < 8) { aimTimer_ += spawn; aimDots_.push_back({0, 0, 1.2f}); }
+}
+
+GamePlatform::TrajectoryPoint GamePlatform::AimSpline(float x) const {   // 0x45d380, Catmull-Rom between points idx+1 and idx+2
+    int n = (int)aimPts_.size();
+    int idx = (int)x; if (idx < 0) idx = 0; if (idx > n - 4) idx = n - 4;
+    float t = x - std::floor(x), t2 = t * t, t3 = t2 * t;
+    const TrajectoryPoint &p0 = aimPts_[idx], &p1 = aimPts_[idx + 1], &p2 = aimPts_[idx + 2], &p3 = aimPts_[idx + 3];
+    auto cr = [&](float a, float b, float c, float d) { return 0.5f * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3); };
+    return {cr(p0.x, p1.x, p2.x, p3.x), cr(p0.y, p1.y, p2.y, p3.y)};
 }
 
 void GamePlatform::DrawGame() {
     if (std::getenv("AB_DRAWDBG")) { static int n = 0; if (n++ < 3) std::fprintf(stderr, "DrawGame objects=%d backend=%d\n", (int)Physics().Objects().size(), (int)(backend_ != nullptr)); }
     gameDrawn_ = true;
     if (!backend_) return;
+    // Star Wars' scripts never call drawForegroundNative: the exe draws the ground colour and the foreground stones itself, behind the objects
+    // Hoth's ground blocks (z 1 and 2) are covered by the foreground (snow plane and rocks), everything above them is drawn over it
+    bool fgLate = scripts_ && scripts_->IsSpace() && !fgLayers_.empty() && !(fgNamed_.size() > 0 && fgNamed_[0].named) && !std::getenv("AB_FGEARLY");
+    bool fgDone = !fgLate;
+    if (scripts_ && scripts_->IsSpace() && !fgLayers_.empty() && !fgLate) DrawForeground();
     state_ = RenderState();
     state_.tx = -camX_; state_.ty = -camY_;
     state_.sx = state_.sy = worldScale_;
     bool rio = scripts_ && scripts_->IsRio();
+    bool oneGroup = rio || (scripts_ && scripts_->IsSpace());   // Rio and Space draw every object in one pass over the z layers
+    bool trajDone = false;
+    // each of the six lists: its dots go through TRAIL_WHITE_1, _2, _3 and start again, then its puffs (BIRD_SPECIAL); then Space's aiming aid
+    auto drawTrajectory = [&]() {
+        trajDone = true;
+        state_.angle = 0; state_.pivotX = state_.pivotY = 0;
+        for (int list = 0; list < 6; list++) {
+            const std::string* custom = trajCustom_[list / 3];
+            for (size_t i = 0; i < trajDots_[list].size(); i++) {
+                const SpriteSheet* sheet = nullptr;
+                const Sprite* sp = custom[i % 3].empty() ? nullptr : sprites_.Find(custom[i % 3], &sheet);
+                if (!sp) sp = sprites_.Find("TRAIL_WHITE_" + std::to_string(i % 3 + 1), &sheet);
+                if (sp) { TagScope t(this, "trajectory"); DrawSpriteAt(*sheet, *sp, trajDots_[list][i].x, trajDots_[list][i].y, 4, 3, false, 0, 0); }
+            }
+            for (const TrajectoryPoint& p : trajPuffs_[list]) {
+                const SpriteSheet* sheet = nullptr;
+                const Sprite* sp = custom[3].empty() ? nullptr : sprites_.Find(custom[3], &sheet);
+                if (!sp) sp = sprites_.Find("BIRD_SPECIAL", &sheet);
+                if (sp) { TagScope t(this, "trajectory"); DrawSpriteAt(*sheet, *sp, p.x, p.y, 4, 3, false, 0, 0); }
+            }
+        }
+        // 0x45d570: every dot goes through a Catmull-Rom spline of the table (0x45d380) and is drawn scaled by its own value
+        if (!aimSprite_.empty() && aimPts_.size() >= 4) {
+            const SpriteSheet* sheet = nullptr;
+            if (const Sprite* sp = sprites_.Find(aimSprite_, &sheet)) {
+                RenderState keep = state_;
+                state_.angle = 0; state_.pivotX = state_.pivotY = 0;
+                { TagScope t(this, "trajectory");
+                  for (const AimDot& d : aimDots_) {
+                      TrajectoryPoint p = AimSpline(d.x);
+                      DrawSpriteAt(*sheet, *sp, p.x * 20.0f - sp->pivotX * d.s, p.y * 20.0f - sp->pivotY * d.s, 0, 0, true, sp->w * d.s, sp->h * d.s);
+                  } }
+                state_ = keep;
+            }
+        }
+    };
     auto drawGroup = [&](int which) {
         for (PhysObject* o : DrawGroup(which)) {
+            // with one pass over the z layers the dots and puffs would end up above the birds; they are drawn right before the first bird instead
+            if (oneGroup && !trajDone && o->isBird) drawTrajectory();
+            if (!fgDone && o->zOrder > 2) { fgDone = true; RenderState keepS = state_; DrawForeground(); state_ = keepS; }
             drawingNative_ = true;                          // v2.2.1: the object's quads are sorted against render state z sprites by its z_order
             nativeKey_ = (rio || o->zSet) ? o->zOrder : 0;
             DrawPhysObject(*o);
@@ -1887,34 +2280,10 @@ void GamePlatform::DrawGame() {
     };
     drawGroup(0);
     drawGroup(1);
-    // each of the six lists: its dots go through TRAIL_WHITE_1, _2, _3 and start again, then its puffs (BIRD_SPECIAL)
-    state_.angle = 0; state_.pivotX = state_.pivotY = 0;
-    for (int list = 0; list < 6; list++) {
-        const std::string* custom = trajCustom_[list / 3];
-        for (size_t i = 0; i < trajDots_[list].size(); i++) {
-            const SpriteSheet* sheet = nullptr;
-            const Sprite* sp = custom[i % 3].empty() ? nullptr : sprites_.Find(custom[i % 3], &sheet);
-            if (!sp) sp = sprites_.Find("TRAIL_WHITE_" + std::to_string(i % 3 + 1), &sheet);
-            if (sp) { TagScope t(this, "trajectory"); DrawSpriteAt(*sheet, *sp, trajDots_[list][i].x, trajDots_[list][i].y, 4, 3, false, 0, 0); }
-        }
-        for (const TrajectoryPoint& p : trajPuffs_[list]) {
-            const SpriteSheet* sheet = nullptr;
-            const Sprite* sp = custom[3].empty() ? nullptr : sprites_.Find(custom[3], &sheet);
-            if (!sp) sp = sprites_.Find("BIRD_SPECIAL", &sheet);
-            if (sp) { TagScope t(this, "trajectory"); DrawSpriteAt(*sheet, *sp, p.x, p.y, 4, 3, false, 0, 0); }
-        }
-    }
-    if (aimEnabled_ && !aimSprite_.empty()) {
-        const SpriteSheet* sheet = nullptr;
-        if (const Sprite* sp = sprites_.Find(aimSprite_, &sheet)) {
-            RenderState keep = state_;
-            state_.angle = 0; state_.pivotX = state_.pivotY = 0;
-            { TagScope t(this, "trajectory"); for (const TrajectoryPoint& d : aimDots_) DrawSpriteAt(*sheet, *sp, d.x, d.y, 4, 3, false, 0, 0); }
-            state_ = keep;
-        }
-    }
+    if (!trajDone) drawTrajectory();               // the earlier games: after the blocks, before the birds
     drawGroup(2);
     drawGroup(3);
+    if (!fgDone) { fgDone = true; DrawForeground(); }
     if (IsSeasonsScripts()) { if (!levelParticlesByScript_) DrawParticles(); }
     else DrawParticlesOf(true, 0);
     state_ = RenderState();
@@ -2135,6 +2504,7 @@ void GamePlatform::DrawParticlesOf(bool world, int second, int levelLayer) {
     for (const Particle& p : particles_) {
         if (levelLayer > 0 ? (!p.level || p.layer != levelLayer) : p.level) continue;
         if (second >= 0 && p.second != (second == 1)) continue;
+        if (particleFilter_ == 3 ? p.mode != 3 : particleFilter_ > 0 && (p.mode == 3 || (particleFilter_ == 1) != (p.def && p.def->background))) continue;
         const SpriteSheet* sheet = nullptr;
         const Sprite* sp = sprites_.Find(p.sprite, &sheet);
         if (!sp) continue;
@@ -2159,7 +2529,7 @@ void GamePlatform::DrawParticlesOf(bool world, int second, int levelLayer) {
 
 
 // Rio: the exe swaps the bird sprites that the script does not (def.sprites.blink / yell).
-// A bird waiting on the ground blinks now and then; the bird the player has grabbed yells until it is launched.
+// A bird blinks and squawks by the script's own timers (the same for the bird in the slingshot); this only puts the default sprite back when they are done.
 void GamePlatform::UpdateRioBirdFaces(float dt) {
     lua_State* L = scripts_->State();
     int top = lua_gettop(L);
@@ -2168,13 +2538,6 @@ void GamePlatform::UpdateRioBirdFaces(float dt) {
     lua_getfield(L, env, "birds");
     lua_getfield(L, env, "getObjectDefinition");
     if (!lua_istable(L, top + 2) || !lua_isfunction(L, top + 3)) { lua_settop(L, top); return; }
-    std::string grabbed;
-    lua_getfield(L, env, "selectedBird");
-    if (lua_istable(L, -1)) { lua_getfield(L, -1, "name"); if (lua_isstring(L, -1)) grabbed = lua_tostring(L, -1); lua_pop(L, 1); }
-    lua_pop(L, 1);
-    lua_getfield(L, env, "flyingBird");
-    if (lua_istable(L, -1)) grabbed.clear();
-    lua_pop(L, 1);
     std::vector<std::string> names;
     lua_pushnil(L);
     while (lua_next(L, top + 2)) {
@@ -2220,10 +2583,9 @@ void GamePlatform::UpdateRioBirdFaces(float dt) {
                 if (lua_istable(L, -1)) { lua_getfield(L, -1, "animOn"); showing = lua_toboolean(L, -1) != 0; lua_pop(L, 1); }
                 lua_pop(L, 1);
                 if (!sp[0].empty() && (o->sprite == sp[0] || o->sprite == sp[1] || o->sprite == sp[2])) {
-                    // the bird being dragged in the slingshot shows its yell sprite
+                    // the script's own timers (blink, squawk) pick the face, the same for the bird in the slingshot as for a waiting one
                     std::string want = o->sprite;
-                    if (name == grabbed && !sp[2].empty()) want = sp[2];
-                    else if (!showing) want = sp[0];
+                    if (!showing) want = sp[0];
                     if (o->sprite != want) { if (std::getenv("AB_FACEDBG")) std::fprintf(stderr, "face %s: %s -> %s\n", name.c_str(), o->sprite.c_str(), want.c_str()); o->sprite = want; }
                 }
             }
@@ -2800,5 +3162,14 @@ namespace ab {
 void SyncWorldZ(lua_State* L, const std::string& name, float z);
 void GamePlatform::SyncObjectZ(const std::string& name) {
     if (scripts_) SyncWorldZ(scripts_->State(), name, Physics().ObjectZOrder(name));
+}
+}  // namespace ab
+
+namespace ab {
+// themeSystem.spawnFGLayerParticles(id): the foreground particle layer (Endor's ewoks) with that spawnerId puts its particles on the screen
+void GamePlatform::SpawnFGLayerParticles(int id) {
+    auto it = fgParticles_.find(id);
+    if (it == fgParticles_.end()) return;
+    AddParticles(it->second, 1.0f, camX_, camY_, 0.0f, 0.0f, 0.0f, false, false);
 }
 }  // namespace ab
