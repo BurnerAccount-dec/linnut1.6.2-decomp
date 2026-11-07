@@ -318,16 +318,18 @@ int l_loadLuaFileToObject(lua_State* L) {
             const std::string sw = "settingsWrapper.lua";
             if (!std::getenv("AB_NODEBUGKEYS") && path.size() >= sw.size() && path.compare(path.size() - sw.size(), sw.size(), sw) == 0) {
                 const char* wrapper =
-                    "if settingsWrapper.getAvailableStarCoins == nil then\n"
-                    "    function settingsWrapper:getAvailableStarCoins() return settings.starCoins or 1000 end\n"
-                    "    function settingsWrapper:setAvailableStarCoins(val) settings.starCoins = val end\n"
-                    "    function settingsWrapper:getAvailableStars() return settings.stars or 1000 end\n"
-                    "    function settingsWrapper:setAvailableStars(val) settings.stars = val end\n"
+                    "local sw = settingsWrapper or SettingsWrapper\n"
+                    "if sw == nil then return end\n"
+                    "if sw.getAvailableStarCoins == nil then\n"
+                    "    function sw:getAvailableStarCoins() return settings.starCoins or 1000 end\n"
+                    "    function sw:setAvailableStarCoins(val) settings.starCoins = val end\n"
+                    "    function sw:getAvailableStars() return settings.stars or 1000 end\n"
+                    "    function sw:setAvailableStars(val) settings.stars = val end\n"
                     "end\n"
                     "for _, name in _G.ipairs({\"setHatcheryLocalTime\", \"setHatcheryState\", \"setHatcheryLastSavedServerTime\"}) do\n"
-                    "    if settingsWrapper[name] == nil then\n"
+                    "    if sw[name] == nil then\n"
                     "        local key = \"hatchery\" .. _G.string.sub(name, 12)\n"
-                    "        settingsWrapper[name] = function(self, value) settings[key] = value end\n"
+                    "        sw[name] = function(self, value) settings[key] = value end\n"
                     "    end\n"
                     "end\n";
                 if (luaL_loadstring(L, wrapper) == 0) {
@@ -1581,6 +1583,75 @@ int l_setObjectParameter(lua_State* L) {
     if (rio && id == 5) P(L)->SetObjectParameter(S(L, 1), 6, value != 1.0f ? 1.0f : 0.0f);
     return 0;
 }
+// ---- v2.3 natives, every game
+// setScale(name, sx [, sy]) / getScale(name) -> sx, sy: the scale the sprite of an object is drawn with (what setObjectParameter(name, 5, v) sets; a missing sy
+// means sy = sx). Turns scaled drawing on in the games that need it. It scales the picture only: the shape stays as it is (resizeCircle changes the shape).
+int l_setScale(lua_State* L) {
+    float sx = N(L, 2), sy = lua_isnumber(L, 3) ? N(L, 3) : sx;
+    P(L)->SetObjectScale(S(L, 1), sx, sy);
+    return 0;
+}
+int l_getScale(lua_State* L) {
+    float sx = 1, sy = 1;
+    if (!P(L)->GetObjectScale(S(L, 1), sx, sy)) { lua_pushnil(L); return 1; }
+    lua_pushnumber(L, sx); lua_pushnumber(L, sy);
+    return 2;
+}
+// setSpeedCap(name, maxSpeed [, maxVx, maxVy]) / getSpeedCap(name) -> maxSpeed, maxVx, maxVy / clearSpeedCap(name): the object's velocity is brought back under the
+// limits after every physics step (0 or nil: no limit on that one). Only this object; the global setMaxTranslation is not touched.
+int l_setSpeedCap(lua_State* L) { P(L)->SetSpeedCap(S(L, 1), NOpt(L, 2, 0), NOpt(L, 3, 0), NOpt(L, 4, 0)); return 0; }
+int l_clearSpeedCap(lua_State* L) { P(L)->SetSpeedCap(S(L, 1), 0, 0, 0); return 0; }
+int l_getSpeedCap(lua_State* L) {
+    float a = 0, b = 0, c = 0;
+    if (!P(L)->GetSpeedCap(S(L, 1), a, b, c)) { lua_pushnil(L); return 1; }
+    lua_pushnumber(L, a); lua_pushnumber(L, b); lua_pushnumber(L, c);
+    return 3;
+}
+// getTouchingObjects(name) -> { names }: every object the body touches right now (its contact list, this very step; sensors and disabled contacts included)
+int l_getTouchingObjects(lua_State* L) {
+    std::vector<std::string> names = P(L)->TouchingObjects(S(L, 1));
+    lua_newtable(L);
+    for (size_t i = 0; i < names.size(); i++) { lua_pushlstring(L, names[i].data(), names[i].size()); lua_rawseti(L, -2, (int)i + 1); }
+    return 1;
+}
+// rayCast(x1, y1, x2, y2 [, all]) with Box2D's own ray cast. Without `all`: name, hitX, hitY, normalX, normalY, fraction of the nearest object (nil if none).
+// With all = true: a table of { name, x, y, nx, ny, fraction } for every object the segment crosses, nearest first.
+int l_rayCast(lua_State* L) {
+    std::vector<Platform::RayCastHit> hits;
+    P(L)->RayCastObjects(N(L, 1), N(L, 2), N(L, 3), N(L, 4), hits);
+    std::stable_sort(hits.begin(), hits.end(), [](const Platform::RayCastHit& a, const Platform::RayCastHit& b) { return a.fraction < b.fraction; });
+    if (lua_toboolean(L, 5)) {
+        lua_newtable(L);
+        int i = 1;
+        for (const auto& h : hits) {
+            lua_newtable(L);
+            lua_pushlstring(L, h.name.data(), h.name.size()); lua_setfield(L, -2, "name");
+            lua_pushnumber(L, h.px); lua_setfield(L, -2, "x");
+            lua_pushnumber(L, h.py); lua_setfield(L, -2, "y");
+            lua_pushnumber(L, h.nx); lua_setfield(L, -2, "nx");
+            lua_pushnumber(L, h.ny); lua_setfield(L, -2, "ny");
+            lua_pushnumber(L, h.fraction); lua_setfield(L, -2, "fraction");
+            lua_rawseti(L, -2, i++);
+        }
+        return 1;
+    }
+    if (hits.empty()) { lua_pushnil(L); return 1; }
+    const auto& h = hits[0];
+    lua_pushlstring(L, h.name.data(), h.name.size());
+    lua_pushnumber(L, h.px); lua_pushnumber(L, h.py); lua_pushnumber(L, h.nx); lua_pushnumber(L, h.ny); lua_pushnumber(L, h.fraction);
+    return 6;
+}
+// fileExists(path) -> bool: a file of the game folder (relative to where the game runs) or of the user data (saves), nothing is opened for reading by the game
+int l_fileExists(lua_State* L) {
+    std::string name = S(L, 1);
+    for (int pass = 0; pass < 3; pass++) {
+        std::string path = pass == 0 ? name : P(L)->ResolveUserFile(name, pass == 1);
+        if (path.empty()) continue;
+        if (FILE* f = std::fopen(path.c_str(), "rb")) { std::fclose(f); lua_pushboolean(L, 1); return 1; }
+    }
+    lua_pushboolean(L, 0);
+    return 1;
+}
 int l_setPhysicsSimulationScale(lua_State* L) { P(L)->SetPhysicsSimulationScale(N(L, 1)); return 0; }
 int l_setPhysicsEnabled(lua_State* L) { P(L)->SetPhysicsEnabled(B(L, 1)); return 0; }
 int l_isPhysicsEnabled(lua_State* L) { lua_pushboolean(L, P(L)->IsPhysicsEnabled()); return 1; }
@@ -1593,6 +1664,8 @@ int l_setMaxWorldScale(lua_State* L) { P(L)->SetMaxWorldScale(N(L, 1)); return 0
 int l_setMaxTranslation(lua_State* L) { P(L)->SetMaxTranslation(N(L, 1)); return 0; }
 
 // ---- drawing
+int BlendFrom(lua_State* L, int i);
+int ShaderFrom(lua_State* L, int i);
 int l_setRenderState(lua_State* L) {
     // tx, ty, sx, sy, angle, pivotX, pivotY, alpha, skewX, skewY, bendX, bendY, z, bendFunction (a tween function: f(t, 0, 1, 1) is the bend's shape)
     float a[22] = {0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0};
@@ -1613,6 +1686,8 @@ int l_setRenderState(lua_State* L) {
     if (argc >= 17) P(L)->SetTint(N(L, 15), N(L, 16), N(L, 17));      // v2.2: setRenderState(..., z, bendFunction, tintR, tintG, tintB)
     if (argc >= 18) P(L)->SetRenderExtras(3, N(L, 18), 0);     // ... tintR, tintG, tintB, blur, pixelate
     if (argc >= 19) P(L)->SetRenderExtras(4, N(L, 19), 0);
+    if (argc >= 20 && lua_type(L, 20) != LUA_TNIL) P(L)->SetBlendMode(BlendFrom(L, 20));      // v2.3: ... pixelate, blend mode, shader
+    if (argc >= 21 && lua_type(L, 21) != LUA_TNIL) P(L)->SetShaderEffect(ShaderFrom(L, 21));
     return 0;
 }
 int l_drawRect(lua_State* L) {
@@ -1723,18 +1798,128 @@ int l_getTimeDifference(lua_State* L) {
     set("minutes", total / 60 % 60); set("seconds", total % 60);
     return 1;
 }
-int l_setAlpha(lua_State* L) { P(L)->SetAlpha(N(L, 1)); return 0; }
+// ---- graphics settings. Every one takes a TARGET as its last argument (a string): an object's name, a sprite or composite sprite name, or "background" /
+// "foreground" / "trajectory" / "particles". Without a target it changes the render state, exactly as before (a convenience for one value of setRenderState).
+std::string TargetArg(lua_State* L, int i) { return lua_type(L, i) == LUA_TSTRING ? std::string(lua_tostring(L, i)) : std::string(); }
+int GfxNumbers(lua_State* L) { int n = lua_gettop(L); return (n > 0 && lua_type(L, n) == LUA_TSTRING) ? n - 1 : n; }   // how many arguments are not the target
+int l_setAlpha(lua_State* L) {
+    std::string t = TargetArg(L, 2);
+    if (t.empty()) P(L)->SetAlpha(N(L, 1));
+    else if (P(L)->HasObject(t)) P(L)->SetObjectAlpha(t, N(L, 1));       // an object: the same alpha setObjectAlpha sets
+    else P(L)->SetRenderOverride(t, 0, N(L, 1), 0, 0);
+    return 0;
+}
 // v2.2 dedicated functions for the single values of setRenderState, which then stay as they are
-int l_setTint(lua_State* L) { P(L)->SetTint(N(L, 1), lua_isnone(L, 2) ? N(L, 1) : N(L, 2), lua_isnone(L, 3) ? N(L, 1) : N(L, 3)); return 0; }   // setTint(grey) or setTint(r, g, b): 0..1, above 1 brightens
-int l_getTint(lua_State* L) { float r, g, b; P(L)->GetTint(r, g, b); lua_pushnumber(L, r); lua_pushnumber(L, g); lua_pushnumber(L, b); return 3; }
-int l_resetTint(lua_State* L) { (void)L; P(L)->SetTint(1, 1, 1); return 0; }
-int l_setSkew(lua_State* L) { P(L)->SetRenderExtras(0, N(L, 1), N(L, 2)); return 0; }
-int l_setBend(lua_State* L) { P(L)->SetRenderExtras(1, N(L, 1), N(L, 2)); return 0; }
-int l_setRenderZ(lua_State* L) { P(L)->SetRenderExtras(2, N(L, 1), 0); return 0; }
-int l_setBlur(lua_State* L) { P(L)->SetRenderExtras(3, N(L, 1), 0); return 0; }       // setBlur(pixels): sprites are smeared over this many pixels; 0 = sharp
-int l_setPixelate(lua_State* L) { P(L)->SetRenderExtras(4, N(L, 1), 0); return 0; }   // setPixelate(size): sprites are drawn in blocks of size x size sprite pixels; 0 = off
-int l_resetBlur(lua_State* L) { (void)L; P(L)->SetRenderExtras(3, 0, 0); return 0; }
-int l_resetPixelate(lua_State* L) { (void)L; P(L)->SetRenderExtras(4, 0, 0); return 0; }
+int l_setTint(lua_State* L) {   // setTint(grey [, target]) or setTint(r, g, b [, target]): 0..1, above 1 brightens
+    int n = GfxNumbers(L);
+    float r = N(L, 1), g = n >= 2 ? N(L, 2) : r, b = n >= 3 ? N(L, 3) : r;
+    std::string t = TargetArg(L, n + 1);
+    if (t.empty()) P(L)->SetTint(r, g, b); else P(L)->SetRenderOverride(t, 1, r, g, b);
+    return 0;
+}
+int l_getTint(lua_State* L) {
+    float r, g, b;
+    std::string t = TargetArg(L, 1);
+    if (t.empty() || !P(L)->GetRenderOverride(t, 1, r, g, b)) { if (t.empty()) P(L)->GetTint(r, g, b); else r = g = b = 1; }
+    lua_pushnumber(L, r); lua_pushnumber(L, g); lua_pushnumber(L, b);
+    return 3;
+}
+int l_resetTint(lua_State* L) { std::string t = TargetArg(L, 1); if (t.empty()) P(L)->SetTint(1, 1, 1); else P(L)->SetRenderOverride(t, 1, 1, 1, 1); return 0; }
+int l_setSkew(lua_State* L) { std::string t = TargetArg(L, 3); if (t.empty()) P(L)->SetRenderExtras(0, N(L, 1), N(L, 2)); else P(L)->SetRenderOverride(t, 2, N(L, 1), N(L, 2), 0); return 0; }
+int l_setBend(lua_State* L) { std::string t = TargetArg(L, 3); if (t.empty()) P(L)->SetRenderExtras(1, N(L, 1), N(L, 2)); else P(L)->SetRenderOverride(t, 3, N(L, 1), N(L, 2), 0); return 0; }
+int l_setRenderZ(lua_State* L) { std::string t = TargetArg(L, 2); if (t.empty()) P(L)->SetRenderExtras(2, N(L, 1), 0); else P(L)->SetRenderOverride(t, 4, N(L, 1), 0, 0); return 0; }
+int l_setBlur(lua_State* L) { std::string t = TargetArg(L, 2); if (t.empty()) P(L)->SetRenderExtras(3, N(L, 1), 0); else P(L)->SetRenderOverride(t, 5, N(L, 1), 0, 0); return 0; }       // setBlur(pixels): sprites are smeared over this many pixels; 0 = sharp
+int l_setPixelate(lua_State* L) { std::string t = TargetArg(L, 2); if (t.empty()) P(L)->SetRenderExtras(4, N(L, 1), 0); else P(L)->SetRenderOverride(t, 6, N(L, 1), 0, 0); return 0; }   // setPixelate(size): blocks of size x size sprite pixels; 0 = off
+int l_resetBlur(lua_State* L) { std::string t = TargetArg(L, 1); if (t.empty()) P(L)->SetRenderExtras(3, 0, 0); else P(L)->SetRenderOverride(t, 5, 0, 0, 0); return 0; }
+int l_resetPixelate(lua_State* L) { std::string t = TargetArg(L, 1); if (t.empty()) P(L)->SetRenderExtras(4, 0, 0); else P(L)->SetRenderOverride(t, 6, 0, 0, 0); return 0; }
+// v2.3: setBlendMode(mode [, target]): "normal", "add", "multiply" or "screen" (or 0..3). getBlendMode() is not kept; the mode stays until it is set again.
+int BlendFrom(lua_State* L, int i) {
+    if (lua_isnumber(L, i)) return (int)lua_tonumber(L, i);
+    std::string s = lua_type(L, i) == LUA_TSTRING ? lua_tostring(L, i) : "";
+    if (s == "add" || s == "additive") return 1;
+    if (s == "multiply") return 2;
+    if (s == "screen") return 3;
+    return 0;
+}
+int l_setBlendMode(lua_State* L) {
+    int m = BlendFrom(L, 1);
+    std::string t = TargetArg(L, 2);
+    if (t.empty()) P(L)->SetBlendMode(m); else P(L)->SetRenderOverride(t, 7, (float)m, 0, 0);
+    return 0;
+}
+// v2.3: setShader(name [, target]): "none", "grayscale", "sepia", "invert", "chromatic" (colour fringes) or "glow" (0..5). The renderer is fixed-function OpenGL 1.x,
+// so these are built in rather than programs you write.
+int ShaderFrom(lua_State* L, int i) {
+    if (lua_isnumber(L, i)) return (int)lua_tonumber(L, i);
+    std::string s = lua_type(L, i) == LUA_TSTRING ? lua_tostring(L, i) : "";
+    static const char* names[] = {"none", "grayscale", "sepia", "invert", "chromatic", "glow"};
+    for (int k = 0; k < 6; k++) if (s == names[k]) return k;
+    if (s == "greyscale" || s == "gray" || s == "grey") return 1;
+    return 0;
+}
+int l_setShader(lua_State* L) {
+    int m = ShaderFrom(L, 1);
+    std::string t = TargetArg(L, 2);
+    if (t.empty()) P(L)->SetShaderEffect(m); else P(L)->SetRenderOverride(t, 8, (float)m, 0, 0);
+    return 0;
+}
+// v2.3: setTintChannel("r" | "g" | "b" | "a", value [, target]): one channel of the tint (or the alpha) and nothing else. Values above 1 brighten.
+int l_setTintChannel(lua_State* L) {
+    std::string c = lua_type(L, 1) == LUA_TSTRING ? lua_tostring(L, 1) : "";
+    int ch = (c == "r" || c == "R" || c == "red") ? 0 : (c == "g" || c == "G" || c == "green") ? 1 : (c == "b" || c == "B" || c == "blue") ? 2 : 3;
+    float v = N(L, 2);
+    std::string t = TargetArg(L, 3);
+    if (!t.empty()) { if (ch == 3 && P(L)->HasObject(t)) P(L)->SetObjectAlpha(t, v); else P(L)->SetRenderOverride(t, 10, (float)ch, v, 0); return 0; }
+    float r, g, b;
+    P(L)->GetTint(r, g, b);
+    if (ch == 0) r = v; else if (ch == 1) g = v; else if (ch == 2) b = v;
+    if (ch == 3) P(L)->SetAlpha(v); else P(L)->SetTint(r, g, b);
+    return 0;
+}
+// v2.3: setVisualRotation(radians [, target]): turns what is drawn and nothing else. For an object it is setSpriteRotation (the body is not touched); for a
+// sprite or group it is added to the angle of what is drawn; without a target it is the render state's angle (setRenderState's fifth value).
+int l_setVisualRotation(lua_State* L) {
+    std::string t = TargetArg(L, 2);
+    if (t.empty()) P(L)->SetRenderExtras(5, N(L, 1), 0);
+    else if (P(L)->HasObject(t)) { P(L)->SetSpriteLook(t, 0, N(L, 1), 0); }
+    else P(L)->SetRenderOverride(t, 9, N(L, 1), 0, 0);
+    return 0;
+}
+// v2.3: resetRenderOverrides(target): forgets every graphics setting made for that target
+int l_resetRenderOverrides(lua_State* L) { P(L)->SetRenderOverride(S(L, 1), 11, 0, 0, 0); return 0; }
+// res.getSpritePixel(sprite, x, y) -> r, g, b, a (0..255) of the pixel x pixels right and y pixels down from the sprite's top left corner, or nil
+int r_getSpritePixel(lua_State* L) {
+    int r, g, b, a;
+    if (!P(L)->ResGetSpritePixel(S(L, 1), (int)N(L, 2), (int)N(L, 3), r, g, b, a)) { lua_pushnil(L); return 1; }
+    lua_pushnumber(L, r); lua_pushnumber(L, g); lua_pushnumber(L, b); lua_pushnumber(L, a);
+    return 4;
+}
+// res.getCompoSprites(name [, which]): "current" (default) -> { { sprite =, x =, y =, scale =, angle = }, ... } the parts the composite sprite (or the object drawn as one)
+// is made of now, in drawing order; "all" -> { names } every different sprite it uses. nil if there is no such composite.
+int r_getCompoSprites(lua_State* L) {
+    std::vector<Platform::CompoPartInfo> parts;
+    if (!P(L)->ResGetCompoParts(S(L, 1), parts)) { lua_pushnil(L); return 1; }
+    bool all = lua_type(L, 2) == LUA_TSTRING && std::string(lua_tostring(L, 2)) == "all";
+    lua_newtable(L);
+    int i = 1;
+    std::vector<std::string> seen;
+    for (const auto& p : parts) {
+        if (all) {
+            if (std::find(seen.begin(), seen.end(), p.sprite) != seen.end()) continue;
+            seen.push_back(p.sprite);
+            lua_pushlstring(L, p.sprite.data(), p.sprite.size());
+        } else {
+            lua_newtable(L);
+            lua_pushlstring(L, p.sprite.data(), p.sprite.size()); lua_setfield(L, -2, "sprite");
+            lua_pushnumber(L, p.x); lua_setfield(L, -2, "x");
+            lua_pushnumber(L, p.y); lua_setfield(L, -2, "y");
+            lua_pushnumber(L, p.scale); lua_setfield(L, -2, "scale");
+            lua_pushnumber(L, p.angle); lua_setfield(L, -2, "angle");
+        }
+        lua_rawseti(L, -2, i++);
+    }
+    return 1;
+}
 
 // drawUITextNative(text, x, y [, scaleX, scaleY [, angle [, scale]]]) is Text.draw (0x41adf0). A clipped text
 // calls draw on each of its lines; any other text sets the font and the render state and draws its string.
@@ -1997,6 +2182,18 @@ int r_setMasterVolume(lua_State* L) { P(L)->ResSetMasterVolume(N(L, 1)); return 
 int r_getMasterVolume(lua_State* L) { lua_pushnumber(L, P(L)->ResGetMasterVolume()); return 1; }
 int r_setAudioClipVolume(lua_State* L) { P(L)->ResSetAudioClipVolume(S(L, 1), N(L, 2)); return 0; }
 int r_setAudioClipSpeed(lua_State* L) { P(L)->ResSetAudioClipSpeed(S(L, 1), N(L, 2)); return 0; }
+// v2.3: setAudioClipPitch(name, p) (speed and pitch together), setAudioClipTempo(name, t) (speed alone), setAudioClipPan(name, -1..1), resetAudioClipEffects(name),
+// seekAudioClip(name, seconds) -> true if a voice of it plays, getAudioClipTime(name) -> seconds or -1, getAudioClipLength(name) -> seconds or -1.
+// All of them also work before the clip is played: the setting is kept for the name and every later play of it starts with it.
+// res.setString(group, key, text): sets one text of a text group (the group is made when it is new), so scripts and the console can inject wholly new text; res.getString reads it back
+int r_setString(lua_State* L) { P(L)->ResSetString(S(L, 1), S(L, 2), S(L, 3)); return 0; }
+int r_setAudioClipPitch(lua_State* L) { P(L)->ResSetAudioClipPitch(S(L, 1), N(L, 2)); return 0; }
+int r_setAudioClipTempo(lua_State* L) { P(L)->ResSetAudioClipTempo(S(L, 1), N(L, 2)); return 0; }
+int r_setAudioClipPan(lua_State* L) { P(L)->ResSetAudioClipPan(S(L, 1), N(L, 2)); return 0; }
+int r_resetAudioClipEffects(lua_State* L) { P(L)->ResResetAudioClipEffects(S(L, 1)); return 0; }
+int r_seekAudioClip(lua_State* L) { lua_pushboolean(L, P(L)->ResSeekAudioClip(S(L, 1), N(L, 2))); return 1; }
+int r_getAudioClipTime(lua_State* L) { lua_pushnumber(L, P(L)->ResAudioClipTime(S(L, 1))); return 1; }
+int r_getAudioClipLength(lua_State* L) { lua_pushnumber(L, P(L)->ResAudioClipLength(S(L, 1))); return 1; }
 int r_openURL(lua_State* L) { P(L)->ResOpenURL(S(L, 1)); return 0; }
 
 // ---- particles.*
@@ -2118,7 +2315,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"getGravityForceMultiplier", l_getGravityForceMultiplier}, {"setAngularDamping", l_setAngularDamping},
         {"setFixedRotation", l_setFixedRotation}, {"setActive", l_setActive}, {"multiplyVelocity", l_multiplyVelocity}, {"setAsSensor", l_setAsSensor},
         {"getAngularVelocity", l_getAngularVelocity}, {"setSleeping", l_setSleeping},
-        {"getAngle", l_getAngle}, {"getWorldPoint", l_getWorldPoint}, {"setObjectParameter", l_setObjectParameter},
+        {"getAngle", l_getAngle}, {"getWorldPoint", l_getWorldPoint}, {"setObjectParameter", l_setObjectParameter}, {"setScale", l_setScale}, {"getScale", l_getScale}, {"setSpeedCap", l_setSpeedCap}, {"getSpeedCap", l_getSpeedCap}, {"clearSpeedCap", l_clearSpeedCap}, {"getTouchingObjects", l_getTouchingObjects}, {"rayCast", l_rayCast}, {"fileExists", l_fileExists},
         {"setPhysicsSimulationScale", l_setPhysicsSimulationScale}, {"setPhysicsEnabled", l_setPhysicsEnabled},
         {"isPhysicsEnabled", l_isPhysicsEnabled}, {"setLevelLimits", l_setLevelLimits},
         {"setTopLeft", l_setTopLeft}, {"setWorldScale", l_setWorldScale}, {"setMaxWorldScale", l_setMaxWorldScale},
@@ -2150,7 +2347,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"updateThemeSprite", l_updateThemeSprite},
         {"drawLayer", l_nothing},
         {"drawRectLines", l_drawRectLines}, {"drawBoxNative", l_drawBoxNative}, {"getCurrentTime", l_getCurrentTime},
-        {"getTimeDifference", l_getTimeDifference}, {"setAlpha", l_setAlpha}, {"setTint", l_setTint}, {"getTint", l_getTint}, {"resetTint", l_resetTint}, {"setSkew", l_setSkew}, {"setBend", l_setBend}, {"setRenderZ", l_setRenderZ}, {"setBlur", l_setBlur}, {"setPixelate", l_setPixelate}, {"resetBlur", l_resetBlur}, {"resetPixelate", l_resetPixelate}, {"drawUITextNative", l_drawUITextNative},
+        {"getTimeDifference", l_getTimeDifference}, {"setAlpha", l_setAlpha}, {"setBlendMode", l_setBlendMode}, {"setShader", l_setShader}, {"setTintChannel", l_setTintChannel}, {"setVisualRotation", l_setVisualRotation}, {"resetRenderOverrides", l_resetRenderOverrides}, {"setTint", l_setTint}, {"getTint", l_getTint}, {"resetTint", l_resetTint}, {"setSkew", l_setSkew}, {"setBend", l_setBend}, {"setRenderZ", l_setRenderZ}, {"setBlur", l_setBlur}, {"setPixelate", l_setPixelate}, {"resetBlur", l_resetBlur}, {"resetPixelate", l_resetPixelate}, {"drawUITextNative", l_drawUITextNative},
         {"getTImeDifferenceInSeconds", l_getTimeDifferenceInSeconds}, {"checkRegistrationResult", l_false}, {"getClipboardText", l_emptyString},
         {"canOpenProgram", l_false}, {"openProgram", l_nothing}, {"hasLocationCapability", l_false}, {"drawLevelParticlesNative", l_drawLevelParticlesNative},
         {"setWorldGravity", l_setWorldGravity},
@@ -2196,13 +2393,13 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"getString", r_getString}, {"drawSprite", r_drawSprite}, {"drawCompoSprite", r_drawCompoSprite}, {"drawTexturedLine2D", r_drawTexturedLine2D},
         {"drawString", r_drawString}, {"setClipRect", r_setClipRect},
         {"getSpriteBounds", r_getSpriteBounds}, {"getSpritePivot", r_getSpritePivot},
-        {"getCompoSpriteBounds", r_getCompoSpriteBounds},
+        {"getCompoSpriteBounds", r_getCompoSpriteBounds}, {"getSpritePixel", r_getSpritePixel}, {"getCompoSprites", r_getCompoSprites},
         {"getStringWidth", r_getStringWidth}, {"getFontHeight", r_getFontHeight}, {"getFontLeading", r_getFontLeading}, {"getFontTracking", r_getFontTracking},
         {"getFontMaxAscending", r_getFontMaxAscending}, {"getFontMaxDescending", r_getFontMaxDescending},
         {"createAudioOutput", r_createAudioOutput}, {"startAudioOutput", r_startAudioOutput},
         {"stopAudioOutput", r_stopAudioOutput}, {"createAudio", r_createAudio}, {"playAudio", r_playAudio},
         {"stopAudio", r_stopAudio}, {"stopAllAudio", r_stopAllAudio}, {"isAudioPlaying", r_isAudioPlaying},
-        {"setTrackVolume", r_setTrackVolume}, {"getTrackVolume", r_getTrackVolume}, {"setAudioSpeed", r_setAudioSpeed}, {"getAudioSpeed", r_getAudioSpeed}, {"pauseAudio", r_pauseAudio}, {"resumeAudio", r_resumeAudio}, {"isAudioPaused", r_isAudioPaused}, {"setMasterVolume", r_setMasterVolume}, {"getMasterVolume", r_getMasterVolume}, {"setAudioClipVolume", r_setAudioClipVolume}, {"setAudioClipSpeed", r_setAudioClipSpeed}, {"openURL", r_openURL},
+        {"setTrackVolume", r_setTrackVolume}, {"getTrackVolume", r_getTrackVolume}, {"setAudioSpeed", r_setAudioSpeed}, {"getAudioSpeed", r_getAudioSpeed}, {"pauseAudio", r_pauseAudio}, {"resumeAudio", r_resumeAudio}, {"isAudioPaused", r_isAudioPaused}, {"setMasterVolume", r_setMasterVolume}, {"getMasterVolume", r_getMasterVolume}, {"setAudioClipVolume", r_setAudioClipVolume}, {"setAudioClipSpeed", r_setAudioClipSpeed}, {"setString", r_setString}, {"setAudioClipPitch", r_setAudioClipPitch}, {"setAudioClipTempo", r_setAudioClipTempo}, {"setAudioClipPan", r_setAudioClipPan}, {"resetAudioClipEffects", r_resetAudioClipEffects}, {"seekAudioClip", r_seekAudioClip}, {"getAudioClipTime", r_getAudioClipTime}, {"getAudioClipLength", r_getAudioClipLength}, {"openURL", r_openURL},
     };
     lua_newtable(L);
     Register(L, p, lua_gettop(L), res, sizeof(res) / sizeof(res[0]));

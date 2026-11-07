@@ -720,5 +720,13 @@ int main(int argc, char** argv) {
         std::printf("\nThe game stopped with an unknown error.\n");
     }
     if (result != 0) WaitForEnter();
+    else {                                     // closed normally: leave at once, so the console window closes too (a thread waiting for console input must not hold the process)
+        std::fflush(stdout); std::fflush(stderr);
+#ifdef _WIN32
+        ExitProcess(0);
+#else
+        _exit(0);
+#endif
+    }
     return result;
 }

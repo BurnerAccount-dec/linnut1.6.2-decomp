@@ -42,7 +42,7 @@ void SoftwareBackend::DrawQuad(int texture, const float xy[8], const float uv[8]
 }
 
 void SoftwareBackend::DrawMaskedQuad(int tileTexture, int maskTexture, const float xy[8], const float tileUV[8], const float maskUV[8], float alpha) {
-    Raster(tileTexture, maskTexture, xy, tileUV, maskUV, 1, 1, 1, alpha);
+    Raster(tileTexture, maskTexture, xy, tileUV, maskUV, tileR_, tileG_, tileB_, alpha);
 }
 
 void SoftwareBackend::Raster(int texture, int mask, const float xy[8], const float uv[8], const float maskUV[8], float cr, float cg, float cb, float ca) {
@@ -97,9 +97,17 @@ void SoftwareBackend::Raster(int texture, int mask, const float xy[8], const flo
                     a *= m; r *= m; g *= m; b *= m;
                 }
                 uint8_t* d = &pixels_[((size_t)y * width_ + x) * 4];
-                d[0] = (uint8_t)(std::min(1.0f, r + d[0] / 255.0f * (1 - a)) * 255 + 0.5f);
-                d[1] = (uint8_t)(std::min(1.0f, g + d[1] / 255.0f * (1 - a)) * 255 + 0.5f);
-                d[2] = (uint8_t)(std::min(1.0f, b + d[2] / 255.0f * (1 - a)) * 255 + 0.5f);
+                auto mix = [&](float src, uint8_t dst) {
+                    float dv = dst / 255.0f, o;
+                    switch (blend_) {
+                    case 1: o = src + dv; break;                  // additive
+                    case 2: o = src * dv + dv * (1 - a); break;   // multiply
+                    case 3: o = src + dv * (1 - src); break;      // screen
+                    default: o = src + dv * (1 - a); break;
+                    }
+                    return (uint8_t)(std::min(1.0f, std::max(0.0f, o)) * 255 + 0.5f);
+                };
+                d[0] = mix(r, d[0]); d[1] = mix(g, d[1]); d[2] = mix(b, d[2]);
             }
         }
     }

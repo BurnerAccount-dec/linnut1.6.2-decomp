@@ -27,6 +27,10 @@ public:
     // texture's alpha at maskUV (used for the ground blocks, which show a theme texture through a sprite shape).
     virtual void DrawMaskedQuad(int tileTexture, int maskTexture, const float xy[8], const float tileUV[8], const float maskUV[8], float alpha) = 0;
     virtual void SetClip(bool enabled, float x, float y, float w, float h) = 0;
+    // v2.3: how the following quads mix with what is there: 0 normal, 1 additive, 2 multiply, 3 screen (the sprites are premultiplied)
+    virtual void SetBlend(int mode) { (void)mode; }
+    // v2.3: the colour a masked (tiled) quad is multiplied by, 0..n per channel; DrawQuad has its own colour arguments
+    virtual void SetTileTint(float r, float g, float b) { (void)r; (void)g; (void)b; }
     virtual void EndFrame() = 0;
 };
 
@@ -39,6 +43,8 @@ public:
     void DrawQuad(int texture, const float xy[8], const float uv[8], float r, float g, float b, float a) override;
     void DrawMaskedQuad(int tileTexture, int maskTexture, const float xy[8], const float tileUV[8], const float maskUV[8], float alpha) override;
     void SetClip(bool enabled, float x, float y, float w, float h) override;
+    void SetBlend(int mode) override { blend_ = mode; }
+    void SetTileTint(float r, float g, float b) override { tileR_ = r; tileG_ = g; tileB_ = b; }
     void EndFrame() override {}
 
     int Width() const { return width_; }
@@ -53,6 +59,8 @@ private:
     std::vector<uint8_t> pixels_;
     int width_ = 0, height_ = 0;
     bool clip_ = false;
+    int blend_ = 0;
+    float tileR_ = 1, tileG_ = 1, tileB_ = 1;
     int clipX0_ = 0, clipY0_ = 0, clipX1_ = 0, clipY1_ = 0;
 };
 

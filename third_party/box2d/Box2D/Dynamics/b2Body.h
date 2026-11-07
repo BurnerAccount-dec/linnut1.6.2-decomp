@@ -353,6 +353,8 @@ public:
 	const b2Body* GetNext() const;
 
 	/// Get the user data pointer that was provided in the body definition.
+	void SetMaxSpeed(float32 s) { m_maxSpeed = s; }
+	float32 GetMaxSpeed() const { return m_maxSpeed; }
 	void* GetUserData() const;
 
 	/// Set the user data. Use this to store your application specific data.
@@ -442,6 +444,7 @@ private:
 	float32 m_angularDamping;
 
 	float32 m_sleepTime;
+	float32 m_maxSpeed;	// per-body speed limit (0: use the global b2_maxTranslation); set through SetMaxSpeed
 	float32 m_inertiaScale;	// AngryBirds.exe (0x4d8ed0) scales the centered inertia by the body definition's inertiaScale
 
 	// AngryBirds.exe 1.6.2 (0x4d77f0): the time the sweep has been advanced to during the global TOI pass of b2World::SolveTOI.

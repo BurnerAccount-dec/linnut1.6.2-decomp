@@ -79,6 +79,7 @@ b2Body::b2Body(const b2BodyDef* bd, b2World* world)
 	m_torque = 0.0f;
 
 	m_sleepTime = 0.0f;
+	m_maxSpeed = 0.0f;
 
 	m_type = bd->type;
 

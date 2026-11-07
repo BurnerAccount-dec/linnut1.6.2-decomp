@@ -88,6 +88,13 @@ public:
     float ResGetMasterVolume() override { return audio_.MasterVolume(); }
     void ResSetAudioClipVolume(const std::string& n, float v) override { audio_.SetClipVolume(n, v); }
     void ResSetAudioClipSpeed(const std::string& n, float s) override { audio_.SetClipSpeed(n, s); }
+    void ResSetAudioClipPitch(const std::string& n, float v) override { audio_.SetClipPitch(n, v); }
+    void ResSetAudioClipTempo(const std::string& n, float v) override { audio_.SetClipTempo(n, v); }
+    void ResSetAudioClipPan(const std::string& n, float v) override { audio_.SetClipPan(n, v); }
+    void ResResetAudioClipEffects(const std::string& n) override { audio_.ResetClipEffects(n); }
+    bool ResSeekAudioClip(const std::string& n, double s) override { return audio_.SeekClip(n, s); }
+    double ResAudioClipTime(const std::string& n) override { return audio_.ClipTime(n); }
+    double ResAudioClipLength(const std::string& n) override { return audio_.ClipLength(n); }
 
     // fonts and text
     void ResCreateBitmapFont(const std::string& path) override;
@@ -95,6 +102,7 @@ public:
     void ResUseFont(const std::string& name) override { if (fonts_.count(name)) current_ = name; }
     void ResCreateTextGroupSet(const std::string& path) override;
     std::string ResGetString(const std::string& group, const std::string& key) override;
+    void ResSetString(const std::string& group, const std::string& key, const std::string& text) override { textGroups_[group].strings[key] = text; }
     void ResDrawString(const std::string& group, const std::string& text, float x, float y,
                        const std::string& vAlign, const std::string& hAlign) override;
     float ResGetStringWidth(const std::string& text) override;
@@ -181,6 +189,11 @@ public:
     float GetSpriteAngle(const std::string& n) override { PhysObject* o = Physics().Find(n); return o ? o->spriteAngle : 0.0f; }
     void SetDecoration(const std::string& n, const std::string& sprite, int amount, float increment, float scale) override { Physics().SetDecoration(n, sprite, amount, increment, scale); }
     void SetSpriteLook(const std::string& n, int what, float a, float b) override { Physics().SetSpriteLook(n, what, a, b); }
+    void SetObjectScale(const std::string& n, float sx, float sy) override { Physics().SetObjectScale(n, sx, sy); }
+    bool GetObjectScale(const std::string& n, float& sx, float& sy) override { return Physics().GetObjectScale(n, sx, sy); }
+    void SetSpeedCap(const std::string& n, float speed, float vx, float vy) override { Physics().SetSpeedCap(n, speed, vx, vy); }
+    bool GetSpeedCap(const std::string& n, float& speed, float& vx, float& vy) override { return Physics().GetSpeedCap(n, speed, vx, vy); }
+    std::vector<std::string> TouchingObjects(const std::string& n) override { return Physics().TouchingObjects(n); }
     void SetObjectAlpha(const std::string& n, float a) override { Physics().SetObjectAlpha(n, a); }
     float ObjectAlpha(const std::string& n) override { return Physics().ObjectAlpha(n); }
     void SetObjectZOrder(const std::string& n, float z) override { Physics().SetObjectZOrder(n, z); }
@@ -216,7 +229,7 @@ public:
     void SetAlpha(float a) override { state_.alpha = a < 0 ? 0 : (a > 1 ? 1 : a); }
     void SetTint(float r, float g, float b) override { state_.tintR = r < 0 ? 0 : r; state_.tintG = g < 0 ? 0 : g; state_.tintB = b < 0 ? 0 : b; }
     void GetTint(float& r, float& g, float& b) override { r = state_.tintR; g = state_.tintG; b = state_.tintB; }
-    void SetRenderExtras(int what, float x, float y) override { if (what == 0) { state_.skewX = x; state_.skewY = y; } else if (what == 1) { state_.bendX = x; state_.bendY = y; } else if (what == 2) state_.z = x; else if (what == 3) state_.blur = x < 0 ? 0 : x; else state_.pixelate = x < 0 ? 0 : x; }
+    void SetRenderExtras(int what, float x, float y) override { if (what == 0) { state_.skewX = x; state_.skewY = y; } else if (what == 1) { state_.bendX = x; state_.bendY = y; } else if (what == 2) state_.z = x; else if (what == 3) state_.blur = x < 0 ? 0 : x; else if (what == 5) state_.angle = x; else state_.pixelate = x < 0 ? 0 : x; }
     void ResDrawSprite(const std::string& sprite, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height) override;
     void DrawTexturedLine2D(const std::string& sprite, float x1, float y1, float x2, float y2, float width, float r, float g, float b, float a) override;
     void SetWorldGravity(float x, float y) override { Physics().SetGravity(x, y); }
@@ -311,12 +324,14 @@ private:
         float tintR = 1, tintG = 1, tintB = 1;   // v2.2: sprites are multiplied by this colour (setRenderState arguments 15 to 17, setTint)
         float blur = 0;       // v2.2: sprites are drawn 9 times spread over this many pixels (setRenderState argument 18, setBlur)
         float pixelate = 0;   // v2.2: sprites are drawn in blocks of this many sprite pixels (setRenderState argument 19, setPixelate)
+        int blend = 0;                   // v2.3: 0 normal, 1 additive, 2 multiply, 3 screen (setBlendMode, setRenderState argument 20)
+        int effect = 0;                  // v2.3: 0 none, 1 grayscale, 2 sepia, 3 invert, 4 chromatic, 5 glow (setShader, setRenderState argument 21)
         float z = 0;                     // setRenderState argument 13: the sprite is placed among the game's objects by z (see EmitQuad); 0 = drawn in call order
     };
     // v2.2.1: everything drawn in a frame waits in one list and is sent to the backend by FlushZ (clip changes and the end of the frame).
     // kind 0 = drawn in call order; 1 = a game object (drawGameNative), key = its z_order; 2 = a sprite drawn with a render state z, key = z.
     // Kind 1 and 2 are put in z order against each other (equal z: the order they were drawn); kind 1 keeps its own order, kind 0 never moves.
-    struct QueuedQuad { int kind; float key; int tex, mask; float xy[8], uv[8], tuv[8], alpha, r, g, b; };
+    struct QueuedQuad { int kind; float key; int tex, mask; float xy[8], uv[8], tuv[8], alpha, r, g, b; int blend; };
     std::vector<QueuedQuad> zQueue_;
     int keyedCount_ = 0, spriteCount_ = 0;   // kind 1 + 2, and kind 2, in zQueue_
     bool drawingNative_ = false;             // DrawGame is drawing an object
@@ -328,6 +343,28 @@ private:
     const TextureInfo* TextureFor(const SpriteSheet& sheet);
     const TextureInfo* TextureFile(const std::string& path, bool repeat);
     void DrawSpriteAt(const SpriteSheet& sheet, const Sprite& sp, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height);
+    void DrawSpriteAtRaw(const SpriteSheet& sheet, const Sprite& sp, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height);
+    // v2.3: graphics settings of one target (see Platform::SetRenderOverride). Applied on top of the render state when a sprite is drawn for that target.
+    struct RenderOverride {
+        bool alpha = false, tint[3] = {false, false, false}, skew = false, bend = false, z = false, blur = false, pixelate = false, blend = false, effect = false, rot = false;
+        float a = 1, t[3] = {1, 1, 1}, skewX = 0, skewY = 0, bendX = 0, bendY = 0, zv = 0, blurV = 0, pixV = 0, rotV = 0;
+        int blendV = 0, effectV = 0;
+    };
+    std::map<std::string, RenderOverride> overrides_;
+    std::string drawTag_, compoTag_;     // what is being drawn: "background", an object's name ...; the composite sprite whose parts are drawn
+    struct TagScope { GamePlatform* g; std::string old; TagScope(GamePlatform* p, const std::string& t) : g(p), old(p->drawTag_) { g->drawTag_ = t; } ~TagScope() { g->drawTag_ = old; } };
+    void ApplyOverride(const RenderOverride& o);
+    std::map<int, std::pair<std::string, bool>> handleSource_;     // texture handle -> the png it came from (for the shader variants)
+    std::map<long long, int> textureVariants_;                     // handle * 8 + effect -> handle of the converted copy
+    int VariantTexture(int handle, int effect);
+    std::map<std::string, Image> pixelImages_;
+    bool ResGetSpritePixel(const std::string& sprite, int x, int y, int& r, int& g, int& b, int& a) override;
+    bool ResGetCompoParts(const std::string& name, std::vector<CompoPartInfo>& out) override;
+    void SetRenderOverride(const std::string& target, int what, float a, float b, float c) override;
+    bool GetRenderOverride(const std::string& target, int what, float& a, float& b, float& c) override;
+    bool HasObject(const std::string& name) override { return Physics().Find(name) != nullptr; }
+    void SetBlendMode(int mode) override { state_.blend = mode < 0 || mode > 3 ? 0 : mode; }
+    void SetShaderEffect(int effect) override { state_.effect = effect < 0 || effect > 5 ? 0 : effect; }
     const BitmapFont* CurrentFont() const;
     void Transform(float x, float y, float cx, float cy, float& ox, float& oy) const;
 

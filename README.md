@@ -41,6 +41,57 @@ Version 2.3. What works, per game:
 
 **Space and Rio draw order.** See "Draw order and z": one pass over the z layers, as the exes do.
 
+## New script functions in 2.3 (modding)
+
+Every one of these is native, so it works in every game and version the engine runs. The graphics setters take an optional **target** as their last argument (see "Graphics settings for one target").
+
+### Objects and physics
+
+| Function | What it does |
+|---|---|
+| `setScale(name, sx [, sy])`, `getScale(name)` | The scale the object's picture is drawn with: the same value `setObjectParameter(name, 5, v)` sets, without going through it. Leave `sy` out for a uniform scale. `getScale` returns `sx, sy` (nil if there is no such object). It scales the picture only; `resizeCircle` changes the shape (the Time Travel puffer bird calls both). |
+| `setSpeedCap(name, maxSpeed [, maxVx, maxVy])`, `getSpeedCap(name)`, `clearSpeedCap(name)` | A limit for one object: after every physics step its velocity is brought back under `maxSpeed` (length) and, if given, `maxVx` / `maxVy` (0 or nil = no limit on that one). It is applied on top of Box2D's global `setMaxTranslation`, which still limits how far any body may move in one step (to let a capped object go faster than that, raise `setMaxTranslation`). |
+| `getTouchingObjects(name)` | A table of the names of every object the body touches this very step (it walks the body's contact list; sensors and disabled contacts included). |
+| `rayCast(x1, y1, x2, y2 [, all])` | Box2D's own ray cast. Without `all`: `name, hitX, hitY, normalX, normalY, fraction` of the nearest object (nil if none). With `all = true`: a table of `{name, x, y, nx, ny, fraction}` for every object the ray passes through, nearest first (lasers through stacked glass, piercing shots). `getRayCastedObjects` is still there. |
+| `fileExists(path)` | true if the file exists in the game folder or in the saves folder; nothing is loaded. |
+| `res.setString(group, key, text)` | Sets one text of a text group and makes the group if it is new, so a script can inject wholly new text that `res.getString` and `drawString` then show. The console has the same: `text <group> <key> <text>` and `texts [group]`. |
+
+Already there, nothing new needed:
+
+* **Fixed rotation:** `setFixedRotation(name, true / false)` locks or unlocks tumbling on the live body, no fixtures are rebuilt.
+* **Sensor (trigger volume):** `setAsSensor(name, true / false)` turns every fixture of the object into a sensor; the contact then goes to `enterCollision` / `exitCollision` instead of `blockCollision`, and nothing blocks the movement.
+* **Visual rotation:** `setVisualRotation(angle [, target])` (new name) or the older `setSpriteRotation(name, angle)` turn the picture and leave the body alone.
+
+### Audio
+
+`res.setAudioClipPitch(name, p)` (speed and pitch together, like a record), `res.setAudioClipTempo(name, t)` (speed only, the pitch stays), `res.setAudioClipPan(name, -1 .. 1)`, `res.resetAudioClipEffects(name)`. They work on the voices of that clip playing now **and** are remembered for the name, so they can be set before `playAudio` and the next play starts with them. `res.seekAudioClip(name, seconds)` jumps inside a playing clip (custom loops, synchronised cues), `res.getAudioClipTime(name)` and `res.getAudioClipLength(name)` give seconds (-1 if nothing plays / unknown). `setAudioClipSpeed` and `setAudioSpeed` stay as they were.
+
+### Graphics settings for one target
+
+`setAlpha`, `setTint`, `resetTint`, `getTint`, `setSkew`, `setBend`, `setRenderZ`, `setBlur`, `resetBlur`, `setPixelate`, `resetPixelate` and the new `setBlendMode`, `setShader`, `setTintChannel`, `setVisualRotation` take a string as their **last** argument. Without it they change the render state like before (what the next sprites are drawn with). With it they are kept for that target and applied whenever it is drawn:
+
+* an **object name** (`setAlpha(0.5, "pig_3")` is the same as `setObjectAlpha`, so you do not need that one any more; the others apply to its picture),
+* a **sprite name** (every drawing of that sprite),
+* a **composite sprite name** (all of its parts; give one part's sprite name to change only that part),
+* `"background"`, `"foreground"`, `"trajectory"` (the dots, puffs and Space's aiming aid) and `"particles"`: what the engine draws itself.
+
+`resetRenderOverrides(target)` forgets everything set for a target. Examples: `setTint(1, 0.3, 0.3, "background")`, `setBlendMode("add", "pig_3")`, `setShader("grayscale", "foreground")`, `setBlur(4, "TRAIL_WHITE_1")`.
+
+* `setBlendMode(mode [, target])`: `"normal"`, `"add"`, `"multiply"`, `"screen"` (or 0 to 3). `setRenderState` takes it as its 20th value.
+* `setShader(name [, target])`: `"none"`, `"grayscale"`, `"sepia"`, `"invert"`, `"chromatic"` (colour fringes), `"glow"`. `setRenderState` takes it as its 21st value. These are built in: the renderer is fixed-function OpenGL 1.x, so shader programs you write yourself are not possible.
+* `setTintChannel("r" | "g" | "b" | "a", value [, target])`: one channel of the tint (or the alpha) and nothing else; above 1 brightens.
+* All of them also work on the tiled "texture" blocks (the ground and static blocks): tint, blur, bend, pixelation, blend mode and the presets apply to the tile texture seen through the block's shape.
+* `res.getSpritePixel(sprite, x, y)` returns `r, g, b, a` (0 to 255) of the pixel x right and y down from the sprite's top left corner (nil if outside); for collision masks, colour lookups and the like.
+* `res.getCompoSprites(name [, "current" | "all"])`: for a composite sprite (or an object drawn as one) `"current"` (default) is a list of `{sprite, x, y, scale, angle}` for the parts it is made of now, `"all"` is a list of the different sprite names it uses.
+
+### The console
+
+New commands: `text <group> <key> <text>`, `texts [group]`, `gravity [x y]`, `maxtranslation <t>`, `scale <object> <sx> [sy]`, `speedcap <object> <speed>`, `blend <object> <mode>`, `shader <object> <name>`. Anything else typed is still run as Lua (`lua getTouchingObjects("pig_3")`), and since every native is a Lua function, anything the engine does can be changed from there.
+
+### Prototype build and window
+
+The folder of the Angry Birds Space prototype (`AngryBirdsSpace_v1.0.0_proto_Windows`) is accepted: its `SettingsWrapper` global and the bit functions its scripts call are provided. The command prompt closes with the game when the game is closed normally; after a crash it stays open so the message can be read.
+
 ## New in 2.2.4
 
 **Angry Birds Space.** Levels load and play (see "Angry Birds Space (PC)"). Space uses Box2D 2.2.0 and no world gravity; contacts with sensors go to `enterCollision` / `exitCollision`.
@@ -441,6 +492,8 @@ This writes `dec` next to the exe (or give a folder: `--decrypt C:\somewhere\dec
 - Rio: Smuggler's Plane 11-10 and the rest of Rio's physics were checked by the author against the retail game and behave the same. The physics was matched against the decompiled code, not retail recordings (see "Physics: how closely it follows the exes").
 - Angry Birds Space: levels of the first theme load and play; the other themes, bosses and compound bodies are untested.
 - 2.2: Mauro's early score points and Golden Beachball 5 were not reproduced in the test harness. Ham 'em High 12-1 creeps slightly after a first load and settles fully after a restart (Box2D contact order, not fixed).
+- Not done yet in Space: the credits level's text placement and hitboxes, the particle limits, the level-select scrolling force, the level editor, 1:1 graphics functions and the planet level-file parameters are still being compared with the retail exe. The Rio bird that stays on its yelling sprite when the rubber band is pulled is still to be fixed.
+- Shader programs you write yourself (GLSL) are not possible with the OpenGL 1.x renderer; `setShader` has built-in presets. The natively drawn backgrounds, foregrounds, trajectory dots and aiming aid can be styled through the targets `"background"`, `"foreground"`, `"trajectory"` and `"particles"`, but their layout is not yet editable from Lua.
 - A few natives are not implemented (for example the colour table behind `drawBoxNative` and `setupCompoObject`).
 - Windows only so far; the code is plain SDL2 and should port, but only Windows is tested.
 

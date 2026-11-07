@@ -31,6 +31,16 @@ public:
 
     bool IsStatic() const override { return b_->GetType() == b2_staticBody; }
     bool IsAwake() const override { return b_->IsAwake(); }
+    void SetMaxSpeed(float s) override { b_->SetMaxSpeed(s); }
+    void Touching(std::vector<PhysObject*>& out) const override {
+        for (b2ContactEdge* e = b_->GetContactList(); e; e = e->next) {
+            if (!e->contact->IsTouching()) continue;
+            b2Fixture* fa = e->contact->GetFixtureA();
+            b2Fixture* f = fa->GetBody() == b_ ? e->contact->GetFixtureB() : fa;
+            PhysObject* o = static_cast<PhysObject*>(f->GetUserData());
+            if (o) out.push_back(o);
+        }
+    }
     bool HasJoints() const override { return b_->GetJointList() != nullptr; }
     float PosX() const override { return b_->GetPosition().x; }
     float PosY() const override { return b_->GetPosition().y; }

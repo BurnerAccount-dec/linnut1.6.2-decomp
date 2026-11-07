@@ -406,6 +406,24 @@ static void RunAll(Box2DVersion version) {
         CHECK(!none.valid);
     }
 
+    // ---- v2.3 setSpeedCap: the body's own limit replaces the world's max translation (both ways)
+    {
+        std::unique_ptr<PhysicsWorld> wp = MakePhysicsWorld(version);
+        PhysicsWorld& w = *wp;
+        w.SetGravity(0, 0);
+        w.SetMaxTranslation(0.05f);                                    // the world allows 0.05 per step, about 3 units a second at 60 steps
+        w.CreateCircle(Def("free", 0, 0, 0.5f, 0, 1));
+        w.CreateCircle(Def("capped", 0, 20, 0.5f, 0, 1));
+        w.SetSpeedCap("capped", 30, 0, 0);
+        w.SetVelocity("free", 20, 0);
+        w.SetVelocity("capped", 20, 0);
+        for (int i = 0; i < 5; i++) w.Step(1.0f / 60.0f, 10, 10);
+        CHECK(w.GetSpeed("free") < 4.0f);                              // held by the world's limit
+        CHECK(Near(w.GetSpeed("capped"), 20.0f, 0.5f));                // its own limit (30) lets it keep 20
+        w.SetVelocity("capped", 100, 0);
+        w.Step(1.0f / 60.0f, 10, 10);
+        CHECK(Near(w.GetSpeed("capped"), 30.0f, 0.5f));                // and holds it at 30
+    }
 }
 
 int main() {
