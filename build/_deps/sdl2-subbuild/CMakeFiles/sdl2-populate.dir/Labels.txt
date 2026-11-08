@@ -1,0 +1,14 @@
+# Target labels
+ sdl2-populate
+# Source files and their labels
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/CMakeFiles/sdl2-populate
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/CMakeFiles/14e5a5ecdae8ea07e1bc9a0b1634fd91/sdl2-populate.rule
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/CMakeFiles/01e42fd11d50c07204144f219938570b/sdl2-populate-complete.rule
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/CMakeFiles/e0df1de38756add14c7018d5ddf0e48e/sdl2-populate-build.rule
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/CMakeFiles/e0df1de38756add14c7018d5ddf0e48e/sdl2-populate-configure.rule
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/CMakeFiles/e0df1de38756add14c7018d5ddf0e48e/sdl2-populate-download.rule
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/CMakeFiles/e0df1de38756add14c7018d5ddf0e48e/sdl2-populate-install.rule
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/CMakeFiles/e0df1de38756add14c7018d5ddf0e48e/sdl2-populate-mkdir.rule
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/CMakeFiles/e0df1de38756add14c7018d5ddf0e48e/sdl2-populate-patch.rule
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/CMakeFiles/e0df1de38756add14c7018d5ddf0e48e/sdl2-populate-test.rule
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/CMakeFiles/e0df1de38756add14c7018d5ddf0e48e/sdl2-populate-update.rule

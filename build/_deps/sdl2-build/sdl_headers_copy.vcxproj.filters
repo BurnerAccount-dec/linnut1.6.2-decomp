@@ -1,0 +1,248 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_assert.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_atomic.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_audio.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_bits.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_blendmode.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_clipboard.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_copying.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_cpuinfo.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_egl.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_endian.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_error.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_events.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_filesystem.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_gamecontroller.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_gesture.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_guid.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_haptic.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_hidapi.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_hints.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_joystick.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_keyboard.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_keycode.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_loadso.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_locale.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_log.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_main.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_messagebox.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_metal.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_misc.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_mouse.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_mutex.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_name.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_opengl.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_opengl_glext.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_opengles.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_opengles2.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_opengles2_gl2.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_opengles2_gl2ext.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_opengles2_gl2platform.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_opengles2_khrplatform.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_pixels.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_platform.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_power.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_quit.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_rect.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_render.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_rwops.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_scancode.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_sensor.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_shape.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_stdinc.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_surface.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_system.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_syswm.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_test.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_test_assert.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_test_common.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_test_compare.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_test_crc32.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_test_font.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_test_fuzzer.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_test_harness.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_test_images.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_test_log.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_test_md5.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_test_memory.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_test_random.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_thread.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_timer.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_touch.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_types.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_version.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_video.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\SDL_vulkan.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\begin_code.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\7f20072a6ea3f6c936c2cf459f612702\close_code.h.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\18379c5e4e36b6e8f8a864c2f0ef9aa1\sdl_headers_copy.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-build\CMakeFiles\sdl_headers_copy" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{3DBFEB72-B5F3-38B1-B766-E117AFF16743}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,3 @@
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/CMakeFiles/sdl2-populate.dir
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/CMakeFiles/ALL_BUILD.dir
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/CMakeFiles/ZERO_CHECK.dir

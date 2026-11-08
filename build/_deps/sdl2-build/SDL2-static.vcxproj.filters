@@ -1,0 +1,601 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\SDL.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\SDL_assert.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\SDL_dataqueue.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\SDL_error.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\SDL_guid.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\SDL_hints.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\SDL_list.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\SDL_log.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\SDL_utils.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\atomic\SDL_atomic.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\atomic\SDL_spinlock.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\audio\SDL_audio.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\audio\SDL_audiocvt.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\audio\SDL_audiodev.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\audio\SDL_audiotypecvt.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\audio\SDL_mixer.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\audio\SDL_wave.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\cpuinfo\SDL_cpuinfo.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\dynapi\SDL_dynapi.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\events\SDL_clipboardevents.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\events\SDL_displayevents.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\events\SDL_dropevents.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\events\SDL_events.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\events\SDL_gesture.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\events\SDL_keyboard.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\events\SDL_keysym_to_scancode.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\events\SDL_mouse.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\events\SDL_quit.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\events\SDL_scancode_tables.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\events\SDL_touch.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\events\SDL_windowevents.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\events\imKStoUCS.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\file\SDL_rwops.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\haptic\SDL_haptic.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\hidapi\SDL_hidapi.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\SDL_gamecontroller.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\SDL_joystick.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\SDL_steam_virtual_gamepad.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\controller_type.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\e_atan2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\e_exp.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\e_fmod.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\e_log.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\e_log10.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\e_pow.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\e_rem_pio2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\e_sqrt.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\k_cos.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\k_rem_pio2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\k_sin.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\k_tan.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\s_atan.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\s_copysign.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\s_cos.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\s_fabs.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\s_floor.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\s_scalbn.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\s_sin.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\libm\s_tan.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\locale\SDL_locale.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\misc\SDL_url.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\power\SDL_power.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\SDL_d3dmath.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\SDL_render.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\SDL_yuv_sw.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\direct3d\SDL_render_d3d.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\direct3d\SDL_shaders_d3d.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\direct3d11\SDL_render_d3d11.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\direct3d11\SDL_shaders_d3d11.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\direct3d12\SDL_render_d3d12.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\direct3d12\SDL_shaders_d3d12.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\opengl\SDL_render_gl.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\opengl\SDL_shaders_gl.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\opengles\SDL_render_gles.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\opengles2\SDL_render_gles2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\opengles2\SDL_shaders_gles2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\ps2\SDL_render_ps2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\psp\SDL_render_psp.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\software\SDL_blendfillrect.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\software\SDL_blendline.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\software\SDL_blendpoint.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\software\SDL_drawline.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\software\SDL_drawpoint.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\software\SDL_render_sw.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\software\SDL_rotate.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\software\SDL_triangle.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\vitagxm\SDL_render_vita_gxm.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\vitagxm\SDL_render_vita_gxm_memory.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\render\vitagxm\SDL_render_vita_gxm_tools.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\sensor\SDL_sensor.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\stdlib\SDL_crc16.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\stdlib\SDL_crc32.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\stdlib\SDL_getenv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\stdlib\SDL_iconv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\stdlib\SDL_malloc.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\stdlib\SDL_mslibc.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\stdlib\SDL_qsort.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\stdlib\SDL_stdlib.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\stdlib\SDL_string.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\stdlib\SDL_strtokr.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\thread\SDL_thread.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\timer\SDL_timer.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_RLEaccel.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_blit.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_blit_0.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_blit_1.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_blit_A.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_blit_N.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_blit_auto.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_blit_copy.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_blit_slow.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_bmp.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_clipboard.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_egl.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_fillrect.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_pixels.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_rect.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_shape.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_stretch.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_surface.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_video.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_vulkan_utils.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\SDL_yuv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\yuv2rgb\yuv_rgb_lsx.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\yuv2rgb\yuv_rgb_sse.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\yuv2rgb\yuv_rgb_std.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\audio\dummy\SDL_dummyaudio.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\audio\disk\SDL_diskaudio.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\virtual\SDL_virtualjoystick.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\dummy\SDL_nullevents.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\dummy\SDL_nullframebuffer.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\dummy\SDL_nullvideo.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\offscreen\SDL_offscreenevents.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\offscreen\SDL_offscreenframebuffer.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\offscreen\SDL_offscreenopengles.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\offscreen\SDL_offscreenvideo.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\offscreen\SDL_offscreenwindow.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\core\windows\SDL_hid.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\core\windows\SDL_immdevice.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\core\windows\SDL_windows.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\core\windows\SDL_xinput.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\misc\windows\SDL_sysurl.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\audio\winmm\SDL_winmm.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\audio\directsound\SDL_directsound.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\audio\wasapi\SDL_wasapi.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\audio\wasapi\SDL_wasapi_win32.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\windows\SDL_windowsclipboard.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\windows\SDL_windowsevents.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\windows\SDL_windowsframebuffer.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\windows\SDL_windowskeyboard.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\windows\SDL_windowsmessagebox.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\windows\SDL_windowsmodes.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\windows\SDL_windowsmouse.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\windows\SDL_windowsopengl.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\windows\SDL_windowsopengles.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\windows\SDL_windowsshape.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\windows\SDL_windowsvideo.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\windows\SDL_windowsvulkan.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\video\windows\SDL_windowswindow.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\thread\generic\SDL_syscond.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\thread\windows\SDL_syscond_cv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\thread\windows\SDL_sysmutex.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\thread\windows\SDL_syssem.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\thread\windows\SDL_systhread.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\thread\windows\SDL_systls.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\sensor\windows\SDL_windowssensor.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\power\windows\SDL_syspower.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\locale\windows\SDL_syslocale.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\filesystem\windows\SDL_sysfilesystem.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\timer\windows\SDL_systimer.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\loadso\windows\SDL_sysloadso.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\hidapi\SDL_hidapi_combined.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\hidapi\SDL_hidapi_gamecube.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\hidapi\SDL_hidapi_luna.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\hidapi\SDL_hidapi_ps3.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\hidapi\SDL_hidapi_ps4.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\hidapi\SDL_hidapi_ps5.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\hidapi\SDL_hidapi_rumble.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\hidapi\SDL_hidapi_shield.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\hidapi\SDL_hidapi_stadia.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\hidapi\SDL_hidapi_steam.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\hidapi\SDL_hidapi_steamdeck.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\hidapi\SDL_hidapi_switch.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\hidapi\SDL_hidapi_wii.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\hidapi\SDL_hidapi_xbox360.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\hidapi\SDL_hidapi_xbox360w.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\hidapi\SDL_hidapi_xboxone.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\hidapi\SDL_hidapijoystick.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\windows\SDL_dinputjoystick.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\windows\SDL_rawinputjoystick.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\windows\SDL_windows_gaming_input.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\windows\SDL_windowsjoystick.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\joystick\windows\SDL_xinputjoystick.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\haptic\windows\SDL_dinputhaptic.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\haptic\windows\SDL_windowshaptic.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\src\haptic\windows\SDL_xinputhaptic.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-src\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{CB8B5693-A90E-3E83-A5DF-6CA5C706BF13}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

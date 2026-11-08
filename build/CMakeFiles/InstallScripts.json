@@ -1,0 +1,8 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/Users/Hugofritz/Downloads/engine/build/cmake_install.cmake",
+		"C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

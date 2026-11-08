@@ -1,0 +1,152 @@
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\_DEPS\SDL2-SUBBUILD\CMAKEFILES\E0DF1DE38756ADD14C7018D5DDF0E48E\SDL2-POPULATE-MKDIR.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -Dcfgdir=/Debug -P C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/sdl2-populate-prefix/tmp/sdl2-populate-mkdirs.cmake
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/sdl2-populate-prefix/src/sdl2-populate-stamp/Debug/sdl2-populate-mkdir
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\_DEPS\SDL2-SUBBUILD\CMAKEFILES\E0DF1DE38756ADD14C7018D5DDF0E48E\SDL2-POPULATE-DOWNLOAD.RULE
+setlocal
+cd C:\Users\Hugofritz\Downloads\engine\build\_deps
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE -P C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/sdl2-populate-prefix/src/sdl2-populate-stamp/download-sdl2-populate.cmake
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE -P C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/sdl2-populate-prefix/src/sdl2-populate-stamp/verify-sdl2-populate.cmake
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE -P C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/sdl2-populate-prefix/src/sdl2-populate-stamp/extract-sdl2-populate.cmake
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/sdl2-populate-prefix/src/sdl2-populate-stamp/Debug/sdl2-populate-download
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\_DEPS\SDL2-SUBBUILD\CMAKEFILES\E0DF1DE38756ADD14C7018D5DDF0E48E\SDL2-POPULATE-UPDATE.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/sdl2-populate-prefix/src/sdl2-populate-stamp/Debug/sdl2-populate-update
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\_DEPS\SDL2-SUBBUILD\CMAKEFILES\E0DF1DE38756ADD14C7018D5DDF0E48E\SDL2-POPULATE-PATCH.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/sdl2-populate-prefix/src/sdl2-populate-stamp/Debug/sdl2-populate-patch
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\_DEPS\SDL2-SUBBUILD\CMAKEFILES\E0DF1DE38756ADD14C7018D5DDF0E48E\SDL2-POPULATE-CONFIGURE.RULE
+setlocal
+cd C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/sdl2-populate-prefix/src/sdl2-populate-stamp/Debug/sdl2-populate-configure
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\_DEPS\SDL2-SUBBUILD\CMAKEFILES\E0DF1DE38756ADD14C7018D5DDF0E48E\SDL2-POPULATE-BUILD.RULE
+setlocal
+cd C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/sdl2-populate-prefix/src/sdl2-populate-stamp/Debug/sdl2-populate-build
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\_DEPS\SDL2-SUBBUILD\CMAKEFILES\E0DF1DE38756ADD14C7018D5DDF0E48E\SDL2-POPULATE-INSTALL.RULE
+setlocal
+cd C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/sdl2-populate-prefix/src/sdl2-populate-stamp/Debug/sdl2-populate-install
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\_DEPS\SDL2-SUBBUILD\CMAKEFILES\E0DF1DE38756ADD14C7018D5DDF0E48E\SDL2-POPULATE-TEST.RULE
+setlocal
+cd C:\Users\Hugofritz\Downloads\engine\build\_deps\sdl2-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/sdl2-populate-prefix/src/sdl2-populate-stamp/Debug/sdl2-populate-test
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\_DEPS\SDL2-SUBBUILD\CMAKEFILES\01E42FD11D50C07204144F219938570B\SDL2-POPULATE-COMPLETE.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E make_directory C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/CMakeFiles/Debug
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/CMakeFiles/Debug/sdl2-populate-complete
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/sdl2-populate-prefix/src/sdl2-populate-stamp/Debug/sdl2-populate-done
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\_DEPS\SDL2-SUBBUILD\CMAKEFILES\14E5A5ECDAE8EA07E1BC9A0B1634FD91\SDL2-POPULATE.RULE
+setlocal
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\_DEPS\SDL2-SUBBUILD\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild -BC:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild --check-stamp-file C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-subbuild/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

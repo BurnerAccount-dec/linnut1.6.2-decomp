@@ -22,8 +22,8 @@ cmake -S . -B build -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBR
 cmake --build build --config Release --target angrybirds || goto fail
 if not exist build\Release\AngryBirdsEngine.exe goto fail
 
-findstr /i /m /c:"user" build\Release\AngryBirdsEngine.exe && goto personal
-findstr /i /m /c:"user" build\Release\AngryBirdsEngine.exe && goto personal
+rem the name of whoever runs this, taken from Windows, so the name is not written into this file
+findstr /i /m /c:"%USERNAME%" build\Release\AngryBirdsEngine.exe && goto personal
 findstr /i /m /c:"C:\Users" build\Release\AngryBirdsEngine.exe && goto personal
 
 mkdir dist

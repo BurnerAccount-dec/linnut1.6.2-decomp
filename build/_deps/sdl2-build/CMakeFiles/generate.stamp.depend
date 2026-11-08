@@ -1,0 +1,39 @@
+# CMake generation dependency list for this directory.
+C:/Program Files/CMake/share/cmake-4.4/Modules/CMakeCheckCompilerFlagCommonPatterns.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/CMakeDependentOption.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/CMakeParseArguments.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/CMakePushCheckState.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/CheckCCompilerFlag.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/CheckCSourceCompiles.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/CheckCSourceRuns.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/CheckCXXCompilerFlag.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/CheckCXXSourceCompiles.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/CheckIncludeFile.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/CheckIncludeFiles.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/CheckLanguage.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/CheckLibraryExists.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/CheckSourceCompiles.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/CheckStructHasMember.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/CheckSymbolExists.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/FindGit.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/FindPackageHandleStandardArgs.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/FindPackageMessage.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/FindPkgConfig.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/GNUInstallDirs.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/Internal/CheckCompilerFlag.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/Internal/CheckFlagCommonConfig.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/Internal/CheckSourceCompiles.cmake
+C:/Program Files/CMake/share/cmake-4.4/Modules/Internal/CheckSourceRuns.cmake
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-build/SDL_config.h.intermediate
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-src/CMakeLists.txt
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-src/SDL2.spec.in
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-src/cmake/CheckCPUArchitecture.cmake
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-src/cmake/macros.cmake
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-src/cmake/sdlchecks.cmake
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-src/cmake/sdlfind.cmake
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-src/cmake/sdlplatform.cmake
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-src/cmake_uninstall.cmake.in
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-src/include/SDL_config.h.cmake
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-src/include/SDL_revision.h.cmake
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-src/sdl2-config.in
+C:/Users/Hugofritz/Downloads/engine/build/_deps/sdl2-src/sdl2.pc.in

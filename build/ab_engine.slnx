@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Solution>
+	<Configurations>
+		<BuildType Name="Debug"/>
+		<BuildType Name="Release"/>
+		<BuildType Name="MinSizeRel"/>
+		<BuildType Name="RelWithDebInfo"/>
+		<Platform Name="Win32"/>
+	</Configurations>
+	<Project Path="ALL_BUILD.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="779047bc-81e3-352c-bf40-18206f67f9b9" DefaultStartup="true">
+		<BuildDependency Project="_deps/sdl2-build/SDL2-static.vcxproj"/>
+		<BuildDependency Project="_deps/sdl2-build/SDL2main.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_alpha_tests.vcxproj"/>
+		<BuildDependency Project="ab_audio.vcxproj"/>
+		<BuildDependency Project="ab_audio_tests.vcxproj"/>
+		<BuildDependency Project="ab_engine.vcxproj"/>
+		<BuildDependency Project="ab_frame_tests.vcxproj"/>
+		<BuildDependency Project="ab_game.vcxproj"/>
+		<BuildDependency Project="ab_input.vcxproj"/>
+		<BuildDependency Project="ab_level_test.vcxproj"/>
+		<BuildDependency Project="ab_level_writer_tests.vcxproj"/>
+		<BuildDependency Project="ab_lua.vcxproj"/>
+		<BuildDependency Project="ab_lua_frame_tests.vcxproj"/>
+		<BuildDependency Project="ab_physics.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v21.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v22.vcxproj"/>
+		<BuildDependency Project="ab_physics_tests.vcxproj"/>
+		<BuildDependency Project="ab_png_tests.vcxproj"/>
+		<BuildDependency Project="ab_render_test.vcxproj"/>
+		<BuildDependency Project="ab_script_boot.vcxproj"/>
+		<BuildDependency Project="ab_sprite_sheet_tests.vcxproj"/>
+		<BuildDependency Project="ab_tests.vcxproj"/>
+		<BuildDependency Project="ab_video.vcxproj"/>
+		<BuildDependency Project="ab_video_test.vcxproj"/>
+		<BuildDependency Project="angrybirds.vcxproj"/>
+		<BuildDependency Project="box2d.vcxproj"/>
+		<BuildDependency Project="box2d22.vcxproj"/>
+		<BuildDependency Project="h264bsd.vcxproj"/>
+		<BuildDependency Project="lua51.vcxproj"/>
+		<Build Solution="Debug|*" Project="false"/>
+		<Build Solution="Release|*" Project="false"/>
+		<Build Solution="MinSizeRel|*" Project="false"/>
+		<Build Solution="RelWithDebInfo|*" Project="false"/>
+	</Project>
+	<Project Path="RUN_TESTS.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="8dcfdcf5-ba5f-33a8-b82e-590d1cee5ffb">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<Build Solution="Debug|*" Project="false"/>
+		<Build Solution="Release|*" Project="false"/>
+		<Build Solution="MinSizeRel|*" Project="false"/>
+		<Build Solution="RelWithDebInfo|*" Project="false"/>
+	</Project>
+	<Project Path="_deps/sdl2-build/SDL2-static.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="6de1ee1f-e5ed-3a43-9b91-bd539f9d2a3a">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="_deps/sdl2-build/sdl_headers_copy.vcxproj"/>
+	</Project>
+	<Project Path="_deps/sdl2-build/SDL2main.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="53833c00-c865-33b4-b644-568bf87fb8e5">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="_deps/sdl2-build/sdl_headers_copy.vcxproj"/>
+	</Project>
+	<Project Path="ZERO_CHECK.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="839955ad-a3ad-38f4-bb63-a04973f23723"/>
+	<Project Path="ab_alpha_tests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="18089d8c-3a8a-3324-ae7b-7a3915b55456">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_audio.vcxproj"/>
+		<BuildDependency Project="ab_engine.vcxproj"/>
+		<BuildDependency Project="ab_game.vcxproj"/>
+		<BuildDependency Project="ab_lua.vcxproj"/>
+		<BuildDependency Project="ab_physics.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v21.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v22.vcxproj"/>
+		<BuildDependency Project="ab_video.vcxproj"/>
+		<BuildDependency Project="box2d.vcxproj"/>
+		<BuildDependency Project="box2d22.vcxproj"/>
+		<BuildDependency Project="h264bsd.vcxproj"/>
+		<BuildDependency Project="lua51.vcxproj"/>
+	</Project>
+	<Project Path="ab_audio.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="ceb37910-ca5a-300f-909f-0bf96c6f6bf2">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="ab_audio_tests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="3f915d22-f364-340a-a678-4dfd144bc136">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_audio.vcxproj"/>
+	</Project>
+	<Project Path="ab_engine.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="88622dc2-8da6-307b-b792-f01bade749aa">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_audio.vcxproj"/>
+		<BuildDependency Project="ab_game.vcxproj"/>
+		<BuildDependency Project="ab_lua.vcxproj"/>
+		<BuildDependency Project="ab_physics.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v21.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v22.vcxproj"/>
+		<BuildDependency Project="ab_video.vcxproj"/>
+		<BuildDependency Project="box2d.vcxproj"/>
+		<BuildDependency Project="box2d22.vcxproj"/>
+		<BuildDependency Project="h264bsd.vcxproj"/>
+		<BuildDependency Project="lua51.vcxproj"/>
+	</Project>
+	<Project Path="ab_frame_tests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="d0c06847-6520-3818-9458-1c76f1154111">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_game.vcxproj"/>
+	</Project>
+	<Project Path="ab_game.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="760e9269-0812-310e-8803-b5c89fb44eea">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="ab_input.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="3842cb55-e52e-306c-a26b-9f7345181710">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="lua51.vcxproj"/>
+	</Project>
+	<Project Path="ab_level_test.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="916ac311-f96d-3826-961f-02534a17a914">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_audio.vcxproj"/>
+		<BuildDependency Project="ab_engine.vcxproj"/>
+		<BuildDependency Project="ab_game.vcxproj"/>
+		<BuildDependency Project="ab_lua.vcxproj"/>
+		<BuildDependency Project="ab_physics.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v21.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v22.vcxproj"/>
+		<BuildDependency Project="ab_video.vcxproj"/>
+		<BuildDependency Project="box2d.vcxproj"/>
+		<BuildDependency Project="box2d22.vcxproj"/>
+		<BuildDependency Project="h264bsd.vcxproj"/>
+		<BuildDependency Project="lua51.vcxproj"/>
+	</Project>
+	<Project Path="ab_level_writer_tests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="31b8c1b0-a4af-39cf-8a61-00da3a46c61f">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_audio.vcxproj"/>
+		<BuildDependency Project="ab_engine.vcxproj"/>
+		<BuildDependency Project="ab_game.vcxproj"/>
+		<BuildDependency Project="ab_lua.vcxproj"/>
+		<BuildDependency Project="ab_physics.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v21.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v22.vcxproj"/>
+		<BuildDependency Project="ab_video.vcxproj"/>
+		<BuildDependency Project="box2d.vcxproj"/>
+		<BuildDependency Project="box2d22.vcxproj"/>
+		<BuildDependency Project="h264bsd.vcxproj"/>
+		<BuildDependency Project="lua51.vcxproj"/>
+	</Project>
+	<Project Path="ab_lua.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="4b9ce774-c642-3908-8a2d-aa9d3b70c459">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_game.vcxproj"/>
+		<BuildDependency Project="lua51.vcxproj"/>
+	</Project>
+	<Project Path="ab_lua_frame_tests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="e8096940-3f98-3e67-a3d8-3e8d411ee8a8">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_game.vcxproj"/>
+		<BuildDependency Project="ab_lua.vcxproj"/>
+		<BuildDependency Project="lua51.vcxproj"/>
+	</Project>
+	<Project Path="ab_physics.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="9f246276-bc30-3f4c-a1bf-683a825d71a2">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_game.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v21.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v22.vcxproj"/>
+		<BuildDependency Project="box2d.vcxproj"/>
+		<BuildDependency Project="box2d22.vcxproj"/>
+	</Project>
+	<Project Path="ab_physics_b2v21.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="eb230ad3-0fc5-3d90-acfd-09f8504f7bcc">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_game.vcxproj"/>
+		<BuildDependency Project="box2d.vcxproj"/>
+	</Project>
+	<Project Path="ab_physics_b2v22.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="4a0de278-567a-31cd-a809-465dd7585f1a">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_game.vcxproj"/>
+		<BuildDependency Project="box2d22.vcxproj"/>
+	</Project>
+	<Project Path="ab_physics_tests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="55724b19-6dfb-3e38-b252-ac1bf3e8e324">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_game.vcxproj"/>
+		<BuildDependency Project="ab_physics.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v21.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v22.vcxproj"/>
+		<BuildDependency Project="box2d.vcxproj"/>
+		<BuildDependency Project="box2d22.vcxproj"/>
+	</Project>
+	<Project Path="ab_png_tests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="e2986543-361f-3fa6-bfad-4b008e4cf29e">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_audio.vcxproj"/>
+		<BuildDependency Project="ab_engine.vcxproj"/>
+		<BuildDependency Project="ab_game.vcxproj"/>
+		<BuildDependency Project="ab_lua.vcxproj"/>
+		<BuildDependency Project="ab_physics.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v21.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v22.vcxproj"/>
+		<BuildDependency Project="ab_video.vcxproj"/>
+		<BuildDependency Project="box2d.vcxproj"/>
+		<BuildDependency Project="box2d22.vcxproj"/>
+		<BuildDependency Project="h264bsd.vcxproj"/>
+		<BuildDependency Project="lua51.vcxproj"/>
+	</Project>
+	<Project Path="ab_render_test.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="e5f7ba56-392c-310c-b11f-16f40642a20b">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_audio.vcxproj"/>
+		<BuildDependency Project="ab_engine.vcxproj"/>
+		<BuildDependency Project="ab_game.vcxproj"/>
+		<BuildDependency Project="ab_lua.vcxproj"/>
+		<BuildDependency Project="ab_physics.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v21.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v22.vcxproj"/>
+		<BuildDependency Project="ab_video.vcxproj"/>
+		<BuildDependency Project="box2d.vcxproj"/>
+		<BuildDependency Project="box2d22.vcxproj"/>
+		<BuildDependency Project="h264bsd.vcxproj"/>
+		<BuildDependency Project="lua51.vcxproj"/>
+	</Project>
+	<Project Path="ab_script_boot.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="c0f76130-f30d-3739-8ff2-1720909be264">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_game.vcxproj"/>
+		<BuildDependency Project="ab_lua.vcxproj"/>
+		<BuildDependency Project="lua51.vcxproj"/>
+	</Project>
+	<Project Path="ab_sprite_sheet_tests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="fb6b946b-de6f-36b9-8812-d8665f084aa1">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_audio.vcxproj"/>
+		<BuildDependency Project="ab_engine.vcxproj"/>
+		<BuildDependency Project="ab_game.vcxproj"/>
+		<BuildDependency Project="ab_lua.vcxproj"/>
+		<BuildDependency Project="ab_physics.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v21.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v22.vcxproj"/>
+		<BuildDependency Project="ab_video.vcxproj"/>
+		<BuildDependency Project="box2d.vcxproj"/>
+		<BuildDependency Project="box2d22.vcxproj"/>
+		<BuildDependency Project="h264bsd.vcxproj"/>
+		<BuildDependency Project="lua51.vcxproj"/>
+	</Project>
+	<Project Path="ab_tests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="69a78860-622c-30d1-bb4b-f71415bd4069">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_game.vcxproj"/>
+	</Project>
+	<Project Path="ab_video.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="01e9d363-f16f-3bc0-a0c3-f72e3305e9c0">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="h264bsd.vcxproj"/>
+	</Project>
+	<Project Path="ab_video_test.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="5a87111a-fd14-3a6c-8f63-f768710a4140">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_video.vcxproj"/>
+		<BuildDependency Project="h264bsd.vcxproj"/>
+	</Project>
+	<Project Path="angrybirds.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="9aef6503-cf1f-38da-9f85-4f0479ae7147">
+		<BuildDependency Project="_deps/sdl2-build/SDL2-static.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ab_audio.vcxproj"/>
+		<BuildDependency Project="ab_engine.vcxproj"/>
+		<BuildDependency Project="ab_game.vcxproj"/>
+		<BuildDependency Project="ab_input.vcxproj"/>
+		<BuildDependency Project="ab_lua.vcxproj"/>
+		<BuildDependency Project="ab_physics.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v21.vcxproj"/>
+		<BuildDependency Project="ab_physics_b2v22.vcxproj"/>
+		<BuildDependency Project="ab_video.vcxproj"/>
+		<BuildDependency Project="box2d.vcxproj"/>
+		<BuildDependency Project="box2d22.vcxproj"/>
+		<BuildDependency Project="h264bsd.vcxproj"/>
+		<BuildDependency Project="lua51.vcxproj"/>
+	</Project>
+	<Project Path="box2d.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="d37615c4-228c-3223-bef6-e6d50be1de22">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="box2d22.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="ac797509-9604-30f6-b73b-e7c0a29e62ec">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="h264bsd.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="d692a686-9efe-35c2-8619-531c69db3aae">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="lua51.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="e5fe13dd-cf9a-37ac-af0a-797152753632">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="_deps/sdl2-build/sdl_headers_copy.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="d9ac65c7-5682-31dd-bfcf-0a9b72e59f96">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="_deps/sdl2-build/uninstall.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="3c255207-4316-377e-806e-98c2059cd4b1">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<Build Solution="Debug|*" Project="false"/>
+		<Build Solution="Release|*" Project="false"/>
+		<Build Solution="MinSizeRel|*" Project="false"/>
+		<Build Solution="RelWithDebInfo|*" Project="false"/>
+	</Project>
+</Solution>
