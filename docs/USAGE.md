@@ -81,7 +81,8 @@ Environment variables, set in the command prompt before starting the engine (`se
 | `AB_NOCCD=1` | switch off continuous collision for fast objects |
 | `AB_VELITERS=n`, `AB_POSITERS=n` | velocity / position solver iterations per step (the engine uses the scripts' own 10/10 for Rio, like the exe) |
 | `AB_NOWARM=1` | switch off warm starting (tests) |
-| `AB_JOINTDBG=<text>` | print the joints created for objects whose name contains the text |
+| `AB_JOINTDBG=<text>` | print the joints created for objects whose name contains the text |; also logs the entry count of every `createJoints` call
+| `AB_DUMPLEVEL=<prefix>` | writes the decrypted text of every loaded level to `<prefix>.<level>.lua` (compiled levels stay bytecode; `unluac` reads them) |
 | `AB_CONSOLE=1` | keep the typed console on in a `--screenshot` run (tests) |
 | `AB_NODEBUGKEYS=1` | run without the developers' keys and the editor button |
 | `AB_SLOWFRAMES=1` | print every frame that took over 25 ms |
@@ -104,6 +105,10 @@ This writes `dec` next to the exe (or give a folder: `--decrypt C:\somewhere\dec
 - A file you put into `dec` that the game does not have is ignored; a file that is missing from `dec` is read from the game as usual.
 - The extra commands above (alpha, collider types, polygon skin) work in plain-text scripts of any game.
 
+## Changing the engine from Lua
+
+Nothing here needs a rebuild. Put the code in `data/scripts/extra_scripts.lua` (Classic 1.6.2 loads it by itself), in a plain-text script in the `dec` folder, or type it into the console. The full reference is in [`SCRIPTING.md`](SCRIPTING.md): the `engine` table (`engine.original`, `engine.on`, `engine.shouldCollide`, `engine.strengthChange`, `engine.drawObject`), the `tuning` table (`engine.tuningDefaults` lists every name), `getThemeLayers` / `setThemeLayer` / `getCamera`, and the events `update`, `levelLoaded`, `objectCreated`, `objectRemoved`, `contact`, `drawBackground`, `drawForeground`, `drawGameBefore` and `drawGame`. To try a line quickly: `AB_EXEC="<lua>" AB_EXEC_FRAME=<n>` runs it on frame `n`.
+
 ## Debug logging
 
 These variables print what the engine does to the command prompt window, for bug reports and for matching the engine against the original game (set them with `set NAME=1` before starting the engine):
@@ -115,7 +120,8 @@ These variables print what the engine does to the command prompt window, for bug
 | `AB_TRAJDBG=1`, `AB_AIMDBG=1` | the points of the aiming aid's trajectory (`TRAJ`, `AP` lines) |
 | `AB_DMGDBG=1` | every contact that damages or destroys a block |
 | `AB_CONTACTDBG=<text>`, `AB_PHYSDBG=1`, `AB_BODYDUMP=n` | contacts whose names contain the text, a general physics log, the positions of every body every n steps |
-| `AB_JOINTDBG=<text>` | the joints created for objects whose name contains the text |
+| `AB_JOINTDBG=<text>` | the joints created for objects whose name contains the text |; also the entry count of every `createJoints` call
+| `AB_DUMPLEVEL=<prefix>` | writes the decrypted text of every loaded level to `<prefix>.<level>.lua` (compiled levels stay bytecode; `unluac` reads them) |
 | `AB_SLOWFRAMES=1` | every frame that took over 25 ms |
 
 When you report a problem, the last 40 lines of this output plus the name of the level are usually enough to find it.

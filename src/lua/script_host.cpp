@@ -128,7 +128,8 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
         "local original, resOriginal, handlers = {}, {}, {}\n"
         "for k, v in G.pairs(env) do if G.type(v) == 'function' then original[k] = v end end\n"
         "if G.type(env.res) == 'table' then for k, v in G.pairs(env.res) do if G.type(v) == 'function' then resOriginal[k] = v end end end\n"
-        "local engine = {version = '2.8', original = original, resOriginal = resOriginal, hookCount = 0}\n"
+        "local engine = {version = '2.9', original = original, resOriginal = resOriginal, hookCount = 0}\n"
+        "engine.tuningDefaults = {['sw.forceDivisor']=10,['sw.homingDamage']=0.2,['sw.wobbleFactor']=0.02,['sw.wobbleMax']=0.1,['sw.removeLimit']=0.88,['rio.wobbleFactor']=0.02,['rio.wobbleMax']=0.1,['zoom.stepIn']=0.2,['zoom.stepOut']=0.1,['zoom.duration']=0.5,['solver.velocityThreshold']=1,['solver.baumgarte']=0.2,['solver.maxRotation']=1.5707964,['solver.angularSleepTolerance']=0.034906585,['solver.maxLinearCorrection']=0.2,['solver.linearSlop']=0.05,['solver.timeToSleep']=0.25,['solver.sleepTolerance']=0.1,['water.buoyancy']=0.1,['water.band']=1.5,['water.keepOrientationOffset']=0.25,['water.boxPushFactor']=0.25,['water.pushSpeedLimit']=15,['gravity.revertFactor']=-0.1,['particle.amountScale']=1,['particle.speedScale']=1,['particle.lifeScale']=1,['particle.sizeScale']=1,['particle.gravityScale']=1,['classic.blockForce']=0.1,['classic.blockScore']=10,['classic.birdForceDivisor']=10,['classic.legacyVelocityFactor']=1.75,['gravity.birdDecay']=1.3,['wobble.duration']=1,['wobble.maxScale']=4,['wobble.cutoff']=0.01,['wobble.frequency']=100,['wobble.baseFrequency']=5,['flip.speed']=3,['moving.tolerance']=0.5,['moving.zeroTolerance']=0.001,['background.skip']=0,['foreground.skip']=0}\n"
         "function engine.natives(includeRes)\n"
         "    local names = {}\n"
         "    for k in G.pairs(original) do names[#names + 1] = k end\n"
@@ -161,6 +162,8 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
         "env.engine = engine\n");
     GetEnvField("native");
     if (!lua_istable(L_, -1)) { lua_pop(L_, 1); NewGlobalTable("native"); } else lua_pop(L_, 1);
+    GetEnvField("tuning");
+    if (!lua_istable(L_, -1)) { lua_pop(L_, 1); NewGlobalTable("tuning"); } else lua_pop(L_, 1);
     lua_pushboolean(L_, config_.isLiteVersion);
     SetEnvField("isLiteVersion");
     lua_pushboolean(L_, config_.showCursor);

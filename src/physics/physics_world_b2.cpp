@@ -238,6 +238,13 @@ public:
         static const char* vi = std::getenv("AB_VELITERS"); static const char* pi = std::getenv("AB_POSITERS");   // test overrides
         if (vi) velocityIterations = std::atoi(vi);
         if (pi) positionIterations = std::atoi(pi);
+#ifdef AB_BOX2D_V22
+        b2_velocityThresholdV22 = Tn("solver.velocityThreshold", 1.0f); b2_maxLinearCorrectionV22 = Tn("solver.maxLinearCorrection", 0.2f);
+        b2_baumgarteV22 = Tn("solver.baumgarte", 0.2f); b2_maxRotationV22 = Tn("solver.maxRotation", 1.5707964f); b2_angularSleepToleranceV22 = Tn("solver.angularSleepTolerance", 0.034906585f);
+#else
+        b2_velocityThresholdV21 = Tn("solver.velocityThreshold", 1.0f); b2_maxLinearCorrectionV21 = Tn("solver.maxLinearCorrection", 0.2f);
+        b2_contactBaumgarteV21 = Tn("solver.baumgarte", 0.2f); b2_maxRotationV21 = Tn("solver.maxRotation", 1.5707964f); b2_angularSleepToleranceV21 = Tn("solver.angularSleepTolerance", 0.034906585f);
+#endif
         world_.Step(dt, velocityIterations, positionIterations);
         for (size_t i = 0; i < joints_.size(); i++)      // v2.2: backAndForth joints turn round at their limits without the scripts having to ask
             if (joints_[i]->backAndForth) CheckJointLimits(joints_[i]->name);

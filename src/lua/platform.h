@@ -176,6 +176,14 @@ public:
 
     // ---- camera
     virtual void SetTopLeft(float x, float y) { (void)x; (void)y; }
+    // theme layers as data (which: 0 background, 1 foreground of the new theme system)
+    struct ThemeLayerInfo { std::string sprite; float speed = 1, scale = 1, scaleX = 1, scaleY = 1, offset = 0, offX = 0, offY = 0, dx = 0, dy = 0, velX = 0, velY = 0, angle = 0; bool looping = true, hidden = false; };
+    virtual void ClearParticleCache() {}
+    virtual void GroundColor(bool set, float& r, float& g, float& b) { if (!set) r = g = b = 0; }
+    virtual void GetCamera(float& x, float& y, float& ws, int& w, int& h) { x = y = 0; ws = 1; w = h = 0; }
+    virtual int ThemeLayerCount(int which) { (void)which; return 0; }
+    virtual bool GetThemeLayer(int which, int i, ThemeLayerInfo& o) { (void)which; (void)i; (void)o; return false; }
+    virtual bool SetThemeLayer(int which, int i, const ThemeLayerInfo& in) { (void)which; (void)i; (void)in; return false; }
     virtual void SetWorldScale(float s) { (void)s; }
     virtual void SetMaxWorldScale(float s) { (void)s; }
     virtual void ResetMouseWheelScale(float s) { (void)s; }   // Space / Star Wars: sets the wheel zoom on its own (the exe's 0x40d160)

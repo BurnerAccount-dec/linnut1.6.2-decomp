@@ -3,7 +3,11 @@
 #include <cmath>
 
 namespace ab {
+std::function<float(const char*, float)> g_damageTune;
+std::function<float(const std::string&, const std::string&, float, float)> g_damageHook;
+std::function<float(const std::string&, const std::string&, float, float, float)> g_forceHook;
 namespace {
+float T(const char* k, float d) { return g_damageTune ? g_damageTune(k, d) : d; }
 
 float Length(Vec2 v) { return std::sqrt(v.x * v.x + v.y * v.y); }
 
@@ -39,7 +43,8 @@ ContactResult ResolveContact(const ContactObject& a, const ContactObject& b) {
         // block against block: force from the difference of the two momenta
         Vec2 dp = {a.mass * a.velocity.x - b.mass * b.velocity.x,
                    a.mass * a.velocity.y - b.mass * b.velocity.y};
-        float force = Length(dp) * 0.1f;
+        float force = Length(dp) * T("classic.blockForce", 0.1f);
+        if (g_forceHook) force = g_forceHook(a.name, b.name, dp.x, dp.y, force);   // engine.force
 
         // Rio (0x40ca60): the damage a block takes is scaled by the other block's damageFactors,
         // looked up by the material of the block that is hit (Lua tables with no entry scale by 1).
@@ -48,6 +53,7 @@ ContactResult ResolveContact(const ContactObject& a, const ContactObject& b) {
         float forceA = force, forceB = force;
         if (b.damageFactors) forceA *= Lookup(b.damageFactors->damageMultiplier, a.material, 1.0f);
         if (a.damageFactors) forceB *= Lookup(a.damageFactors->damageMultiplier, b.material, 1.0f);
+        if (g_damageHook) { forceA = g_damageHook(b.name, a.name, force, forceA); forceB = g_damageHook(a.name, b.name, force, forceB); }
 
         bool okA, okB;
         float total = HitBlock(a, forceA, okA, r);
@@ -61,7 +67,7 @@ ContactResult ResolveContact(const ContactObject& a, const ContactObject& b) {
         e.wasDamageDone = okA || okB;
         r.events.push_back(e);
 
-        if (total > 0) r.blockScoreAdd = std::floor(total) * 10.0f;
+        if (total > 0) r.blockScoreAdd = std::floor(total) * T("classic.blockScore", 10.0f);
         return r;
     }
 
@@ -74,7 +80,7 @@ ContactResult ResolveContact(const ContactObject& a, const ContactObject& b) {
         e.isBird = true;
         e.object1 = a.name;
         e.object2 = b.name;
-        e.force = Length(fast.velocity) * fast.mass / 10.0f;
+        e.force = Length(fast.velocity) * fast.mass / T("classic.birdForceDivisor", 10.0f);
         e.damage = 0;
         r.events.push_back(e);
         return r;
@@ -91,8 +97,10 @@ ContactResult ResolveContact(const ContactObject& a, const ContactObject& b) {
         velocityMultiplier = Lookup(bird.damageFactors->velocityMultiplier, block.material, 1.0f);
     }
 
-    float impact = Length(bird.velocity) * bird.mass / 10.0f;
+    float impact = Length(bird.velocity) * bird.mass / T("classic.birdForceDivisor", 10.0f);
+    if (g_forceHook) impact = g_forceHook(bird.name, block.name, bird.velocity.x * bird.mass, bird.velocity.y * bird.mass, impact);   // engine.force
     float damage = impact * damageMultiplier;
+    if (g_damageHook) damage = g_damageHook(bird.name, block.name, impact, damage);
     float dealt = 0;
 
     if (block.hasStrength) {
@@ -113,7 +121,7 @@ ContactResult ResolveContact(const ContactObject& a, const ContactObject& b) {
                     r.velocityChange.velocity = {bird.velocity.x * ratio, bird.velocity.y * ratio};
                     r.velocityChange.immediate = false;
                 } else {
-                    float ratio = ((-remaining / bird.mass) / damage) * 10.0f * 1.75f;
+                    float ratio = ((-remaining / bird.mass) / damage) * T("classic.birdForceDivisor", 10.0f) * T("classic.legacyVelocityFactor", 1.75f);
                     if (ratio > 1.0f) ratio = 1.0f;
                     r.velocityChange.velocity = {bird.velocity.x * ratio, bird.velocity.y * ratio};
                     r.velocityChange.immediate = true;

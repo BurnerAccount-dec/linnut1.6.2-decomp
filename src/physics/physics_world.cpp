@@ -310,7 +310,7 @@ void PhysicsWorld::SetObjectParameter(const std::string& n, int id, float value)
 // and 0.1 and by the game's gravity force multiplier. A sensor without a radius is a field: the force points along its angle.
 float PhysicsWorld::BirdGravityFactor(float timer) const {
     if (timer < 0) return gravityForceMultiplier;                     // 0x46f900: before any collision the timer is -1 and the full multiplier applies
-    float m = gravityForceMultiplier - timer * 1.3f;
+    float m = gravityForceMultiplier - timer * Tn("gravity.birdDecay", 1.3f);
     return m > 1 ? m : 1;
 }
 
@@ -338,7 +338,7 @@ bool PhysicsWorld::GravityPull(const PhysObject& s, const PhysObject& t, float t
     }
     float mag = F * mass * 0.1f;
     if (t.isBird) mag *= BirdGravityFactor(timer);
-    else if (t.revertGravity) mag *= -0.1f;
+    else if (t.revertGravity) mag *= Tn("gravity.revertFactor", -0.1f);
     else if (t.revertMulti) {
         if (std::sqrt(tvx * tvx + tvy * tvy) >= t.revertMaxSpeed) return false;
         mag *= t.revertMult;
@@ -370,9 +370,9 @@ void PhysicsWorld::ApplyWater(PhysObject& w, PhysObject& o) {
         fVar2 = std::min(depth, fVar3);
     }
     if (w.stopOnExit) { ux = 0; uy = 1; fVar2 = 0; }                     // +0x15e (id 34)
-    float F = mass * 0.1f * (o.waterDensity - w.waterDensity) * (wMax - (wMax - wMin) * (fVar2 / fVar3));
+    float F = mass * Tn("water.buoyancy", 0.1f) * (o.waterDensity - w.waterDensity) * (wMax - (wMax - wMin) * (fVar2 / fVar3));
     if (bird) F = waterForceMultiplier * F;
-    float band = std::min(g * 1.5f, fVar3);
+    float band = std::min(g * Tn("water.band", 1.5f), fVar3);
     float offX = 0, offY = 0;
     if (fVar3 - band < fVar2 && !bird) {
         float ratio = (fVar3 - fVar2) / band;
@@ -382,14 +382,14 @@ void PhysicsWorld::ApplyWater(PhysObject& w, PhysObject& o) {
         float dot = vx * ux + vy * uy;
         offX = dot * vx * (1 - ratio); offY = dot * vy * (1 - ratio);
     }
-    if (o.keepOrientation) { offX = std::cos(ang - PI_ * 0.5f) * 0.25f; offY = std::sin(ang - PI_ * 0.5f) * 0.25f; }
+    if (o.keepOrientation) { offX = std::cos(ang - PI_ * 0.5f) * Tn("water.keepOrientationOffset", 0.25f); offY = std::sin(ang - PI_ * 0.5f) * Tn("water.keepOrientationOffset", 0.25f); }
     float size = g;
     if (!o.isCircle) {                                                   // the aspect ratio of a box moves the push point further out
         float lo = std::min(o.boxW, o.boxH), hi = std::max(o.boxW, o.boxH);
-        size = (lo > 0 ? hi / lo : 1.0f) * 0.25f * g;
+        size = (lo > 0 ? hi / lo : 1.0f) * Tn("water.boxPushFactor", 0.25f) * g;
     }
     float vx = o.pbody->VelX(), vy = o.pbody->VelY();
-    if (-g * 15.0f < uy * vy + ux * vx || bird)
+    if (-g * Tn("water.pushSpeedLimit", 15.0f) < uy * vy + ux * vx || bird)
         o.pbody->ApplyForce(F * ux, F * uy, o.pbody->PosX() + size * offX, o.pbody->PosY() + size * offY);
     float drag = (bird ? birdWaterDrag : objectWaterDrag) * mass;        // always, whatever the depth
     o.pbody->ApplyForce(-vx * drag, -vy * drag, o.pbody->PosX(), o.pbody->PosY());
@@ -658,6 +658,11 @@ void PhysicsWorld::ApplyVelocityChange(const VelocityChange& v) {
 // 0x40c440. Collide only if both objects have `collision` set, except that a circle created with
 // z_order 999 never collides with an object whose material is "immovable".
 bool PhysicsWorld::ShouldCollideObjects(const PhysObject* a, const PhysObject* b) const {
+    bool base = ShouldCollideBase(a, b);
+    if (luaFilter && a && b) { int v = luaFilter(a, b); if (v == 0) return false; if (v == 1) return true; }
+    return base;
+}
+bool PhysicsWorld::ShouldCollideBase(const PhysObject* a, const PhysObject* b) const {
     if (!a || !b) return true;
     if (starWarsRules) {
         // Angry Birds Star Wars, 0x410e70 (fields: group +0xf4, kind +0x110, flag19 +0x13d, flag20 +0x157, immovable-off +0x152, collision +0x153, blockCollision +0x154, controlled +0x155)

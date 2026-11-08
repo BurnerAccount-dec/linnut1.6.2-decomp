@@ -100,11 +100,13 @@ extern bool b2_spaceBuild;              // Space is built from a newer Box2D tha
 
 /// A velocity threshold for elastic collisions. Any collision with a relative linear
 /// velocity below this threshold will be treated as inelastic.
-#define b2_velocityThreshold		1.0f
+extern float b2_velocityThresholdV22;
+#define b2_velocityThreshold		b2_velocityThresholdV22
 
 /// The maximum linear position correction used when solving constraints. This helps to
 /// prevent overshoot.
-#define b2_maxLinearCorrection		0.2f
+extern float b2_maxLinearCorrectionV22;
+#define b2_maxLinearCorrection		b2_maxLinearCorrectionV22
 
 /// The maximum angular position correction used when solving constraints. This helps to
 /// prevent overshoot.
@@ -118,13 +120,15 @@ extern float32 b2_maxTranslationSquared;
 
 /// The maximum angular velocity of a body. This limit is very large and is used
 /// to prevent numerical problems. You shouldn't need to adjust this.
-#define b2_maxRotation				(0.5f * b2_pi)
+extern float b2_maxRotationV22;
+#define b2_maxRotation			b2_maxRotationV22
 #define b2_maxRotationSquared		(b2_maxRotation * b2_maxRotation)
 
 /// This scale factor controls how fast overlap is resolved. Ideally this would be 1 so
 /// that overlap is removed in one time step. However using values close to 1 often lead
 /// to overshoot.
-#define b2_baumgarte				0.2f
+extern float b2_baumgarteV22;
+#define b2_baumgarte		b2_baumgarteV22
 #define b2_toiBaugarte				0.75f
 
 
@@ -137,7 +141,8 @@ extern float32 b2_maxTranslationSquared;
 #define b2_linearSleepTolerance		b2_linearSleepToleranceValue
 
 /// A body cannot sleep if its angular velocity is above this tolerance.
-#define b2_angularSleepTolerance	(2.0f / 180.0f * b2_pi)
+extern float b2_angularSleepToleranceV22;
+#define b2_angularSleepTolerance	b2_angularSleepToleranceV22
 
 // Memory Allocation
 

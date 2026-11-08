@@ -30,6 +30,11 @@ float b2_solverSkinFraction = 1.0f;
 bool b2_coincidentCircleNormal = true;
 bool b2_spaceBuild = false;
 
+float b2_velocityThresholdV22 = 1.0f;
+float b2_baumgarteV22 = 0.2f;
+float b2_maxRotationV22 = 0.5f * 3.14159265359f;
+float b2_angularSleepToleranceV22 = 2.0f / 180.0f * 3.14159265359f;
+float b2_maxLinearCorrectionV22 = 0.2f;
 float32 b2_maxTranslation = 2.0f;
 float32 b2_maxTranslationSquared = 4.0f;
 

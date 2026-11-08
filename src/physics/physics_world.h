@@ -164,6 +164,9 @@ public:
     bool spaceRules = false;
     bool ShouldCollide(const PhysObject* a, const PhysObject* b) const { return ShouldCollideObjects(a, b); }   // the contact filter (for tests)
     float waterForceMultiplier = 2.0f, birdWaterDrag = 0.4f, objectWaterDrag = 0, gameWorldScale = 1;   // game +0x3cc, +0x3d0, +0x3d4, +0x160 (defaults of the constructor at 0x43dedc)
+    // Lua tuning (the global `tuning` table, copied in before every step): Tn("water.band", 1.5f) is the script's value or the built-in one
+    std::map<std::string, float> tuning;
+    float Tn(const char* key, float def) const { auto it = tuning.find(key); return it == tuning.end() ? def : it->second; }
     bool starWarsRules = false;                      // Star Wars: the contact filter at 0x410e70 (spaceRules is set too)
     std::function<std::vector<std::string>(const PhysObject&)> collisionMaterialsOf;   // objects.world[name].collisionMaterials, read by the filter for an object with blockCollision false
 
@@ -329,7 +332,12 @@ protected:
     JointRecord* FindJoint(const std::string& name);
     void RebuildJointViews();
     void DropJointRecord(void* joint);                                        // the Box2D joint is gone (SayGoodbye)
-    bool ShouldCollideObjects(const PhysObject* a, const PhysObject* b) const;   // 0x40c440
+    bool ShouldCollideObjects(const PhysObject* a, const PhysObject* b) const;   // the contact filter: the rule below, then the Lua filter
+    bool ShouldCollideBase(const PhysObject* a, const PhysObject* b) const;      // 0x40c440
+public:
+    // Lua contact filter (engine.shouldCollide(nameA, nameB)): -1 no opinion, 0 never collide, 1 collide
+    std::function<int(const PhysObject*, const PhysObject*)> luaFilter;
+protected:
     struct ColliderRules {
         bool pair[kColliderTypes][kColliderTypes];
         ColliderRules() {

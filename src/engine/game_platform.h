@@ -8,6 +8,7 @@
 //   scripts.LoadScripts(); scripts.CreateStartUpAssets();
 //   each frame:  platform.RunFrame(dt);      // = the exe's Game::update (0x408980)
 #pragma once
+#include <list>
 #include <array>
 #include <memory>
 #include <functional>
@@ -190,7 +191,7 @@ public:
     float GetSpeed(const std::string& n) override { return Physics().GetSpeed(n); }
     void SetRecordVelocity(const std::string& n, bool on) override { Physics().SetRecordVelocity(n, on); }
     bool GetVelocity(const std::string& n, float& vx, float& vy) override { return Physics().GetVelocity(n, vx, vy); }
-    bool HasMovingObjects(float tol) override { return Physics().HasMovingObjects(tol); }
+    bool HasMovingObjects(float tol) override { SyncTuningOnly(); return Physics().HasMovingObjects(tol == 0.5f ? Physics().Tn("moving.tolerance", 0.5f) : tol == 0.001f ? Physics().Tn("moving.zeroTolerance", 0.001f) : tol); }
     void GetLocalPoint(const std::string& n, float wx, float wy, float& lx, float& ly) override { Physics().GetLocalPoint(n, wx, wy, lx, ly); }
     void SetCollisionEnabled(const std::string& n, bool on) override { Physics().SetCollisionEnabled(n, on); }
     void SetColliderType(const std::string& n, int type) override { Physics().SetColliderType(n, type); }
@@ -329,6 +330,15 @@ public:
 private:
     void OnContact(PhysObject& a, PhysObject& b, ContactHandle& contact);
     void UpdateKillTimers(float dt);
+    void SyncTuning(int& velIter, int& posIter);
+    // Lua access to the theme layers and the camera (getCamera, getThemeLayers, setThemeLayer)
+    void GroundColor(bool set, float& r, float& g, float& b) override { if (set) { groundR_ = r; groundG_ = g; groundB_ = b; } else { r = groundR_; g = groundG_; b = groundB_; } }
+    void ClearParticleCache() override { oldParticleDefs_.push_back(std::move(particleDefs_)); particleDefs_.clear(); }   // live particles keep pointing at their old definition
+    void GetCamera(float& x, float& y, float& ws, int& w, int& h) override { x = camX_; y = camY_; ws = worldScale_; w = screenWidth_; h = screenHeight_; }
+    int ThemeLayerCount(int which) override { return which == 2 ? (int)fgLayers_.size() : (int)(which == 1 ? ntFg_ : bgLayers_).size(); }
+    bool GetThemeLayer(int which, int i, ThemeLayerInfo& o) override;
+    bool SetThemeLayer(int which, int i, const ThemeLayerInfo& in) override;
+    void SyncTuningOnly() { int a = 0, b = 0; SyncTuning(a, b); }
     void OnContactStarWars(PhysObject& a, PhysObject& b, ContactHandle& contact);   // 0x42f9d0
     class Host;                       // FrameHost: world step, Lua writes, (no audio / effects yet)
     // The persistent state set by setRenderState (0x408630): translation, scale, angle, pivot.
@@ -395,7 +405,8 @@ private:
     struct BirdFace { float wait = 1.0f + 4.0f * (std::rand() % 1000) / 1000.0f, blink = 0.0f; };
     std::map<std::string, BirdFace> birdFaces_;
 
-    struct BgLayer { std::string sprite; float speed = 1, scale = 1; bool looping = true; float autoScroll = 0, offset = 0; bool space = false; float offX = 0, offY = 0, baseOffY = 0;
+    struct BgLayer { float dx = 0, dy = 0; bool hidden = false;   // Lua: extra offset in screen pixels, skip the layer
+                     std::string sprite; float speed = 1, scale = 1; bool looping = true; float autoScroll = 0, offset = 0; bool space = false; float offX = 0, offY = 0, baseOffY = 0;
                      // Space (0x48bdd0 / 0x467f70): the layer's own numbers
                      bool empty = false; float zDist = 0, xMult = 1, yMult = 1, angleMult = 0, posX = 0, posY = 0, scaleSpeed = 1, angle = 0;
                      // NEW_THEME_SYSTEM (0x44c1b0): scaleX / scaleY (0xbc / 0xc0), the flag bits (0xa4: 1 OVERSTRETCH_ANCHOR_V, 2 V_REPEAT, 4 H_REPEAT, 0x20 ANCHOR_V, 0x40, 0x100 / 0x200 REPEAT_LEFT_ONLY / REPEAT_RIGHT_ONLY) and the rocks spawnParameters scatters
@@ -463,6 +474,7 @@ private:
     const ParticleDef* ParticleDefFor(const std::string& type);
     void UpdateParticles(float dt, bool removeBelowGround = true, int which = -1);   // which: -1 all, 0 world+level lists, 1 menu list
     std::map<std::string, ParticleDef> particleDefs_;
+    std::list<std::map<std::string, ParticleDef>> oldParticleDefs_;   // definitions replaced by clearParticleCache (particles still use them)
     std::vector<Particle> particles_;
     int softLimit_ = 40, hardLimit_ = 125;     // constructor defaults (0x41c2fb)
     float softFactor_ = 0.5f;
@@ -472,6 +484,7 @@ private:
     float zoom_ = 1, zoomPrev_ = 1, zoomMax_ = 1, zoomStart_ = 1, zoomTarget_ = 1, zoomT_ = -1, zoomDur_ = 0.5f;
     bool exitRequested_ = false, fullScreenReq_ = false;
     std::vector<BgLayer> bgLayers_;
+    std::vector<float> fgDx_, fgDy_; std::vector<char> fgHidden_;   // Lua: per-layer offset (pixels) and visibility of the old-style foreground strip (which = 2)
     struct ThemeSprite { std::string name, sprite; float x, y, scaleX, scaleY, angle, speedX; int layer; float angleVel = 0; bool flipped = false; float velX = 0, velY = 0, scaleSpeed = 0;
                         std::vector<std::string> frames; int frame = 0; float animTimer = 0, animDelay = 0, startDelay = 0; bool loop = false, finished = false; float wrapW = 0, wrapH = 0; };   // frames: createThemeAnimation
     std::vector<ThemeSprite> themeSprites_;
@@ -506,6 +519,7 @@ private:
     std::vector<PendingCursor> cursors_;   // v2.2: the hand cursors of this frame, drawn at the very end so nothing covers them
     std::map<std::string, TextureInfo> textures_;
     ScriptHost* scripts_ = nullptr;
+    float solverBase_[3] = {0.05f, 0.25f, 0.1f};   // the solver settings the game started with (tuning replaces single ones)
     std::string dataRoot_;
     std::unique_ptr<PhysicsWorld> physics_;
     SpriteLibrary sprites_;

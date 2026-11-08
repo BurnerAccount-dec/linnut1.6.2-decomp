@@ -587,9 +587,12 @@ res.drawString("", "hello", screenWidth * 0.5, 40, "TOP", "HCENTER")
 | `particles.native_addParticlesWithMode{definitionName=, amount=, x=, y=, w=, h=, angle=, mode=}` (SW) | The theme-system form (mode 1 foreground, 2 background). |
 | `themeSystem.spawnFGLayerParticles(id)` (SW) | Starts the foreground particle layer with that `spawnerId`. |
 | `clearParticles()`, `clearParticlesNative()`, `clearParticlesWithTagNative()` | Remove all particles. |
-| `setParticleSystemLimits`, `clearParticleCache`, `enableInGameParticlesNative`, `updateMenuParticlesNative` | Accepted and ignored. |
+| `clearParticleCache()` | Forgets the particle definitions the engine has read, so the next particles read `particleTable.particles` again (see "Particle tuning"). |
+| `setParticleSystemLimits`, `enableInGameParticlesNative`, `updateMenuParticlesNative` | Accepted and ignored. |
 
 ### Engine additions
+
+Also new in 2.9 and documented at the end of this chapter: `getCamera`, `getThemeLayers`, `setThemeLayer`, `clearParticleCache`, the `tuning` table and the rule hooks.
 
 Documented in full above: `createSilhouette`, `predictCollision`, gravity of one object, transparency and draw order, colliders; `rayCast`, `getTouchingObjects`, `setSpeedCap`, `setScale`, `fileExists` (2.4).
 
@@ -685,3 +688,539 @@ Several engine settings are plain globals that the engine reads when it needs th
 ### 5. What is not (yet) changeable from Lua
 
 The rules that the original exes compiled in, and that no original script ever reached, are still C++: the collision damage and wobble formulas of the SW, Space and Rio physics, the contact filter, the Box2D step itself, the drawing order inside `drawGameNative` and the particle emitter maths. You can change their *inputs* (the object parameters, `setSpeedCap`, `setWorldGravity`, `setObjectGravity`, colliders, density and restitution), their *results* (wrap `birdCollision`, `blockCollision`, `removeObject`) and *when* they run (`setPhysicsEnabled`, `setPhysicsSimulationScale`), and you can replace the native that triggers them. Anything else you need, tell us in an issue: the plan is to open each of those as a global the engine reads, the way `simulationAimSpeed` already works.
+
+---
+
+## Modding guide: how to change what the engine does
+
+This chapter is the long version of "Changing the engine from Lua". Each recipe has the idea in pseudocode first and the real Lua after it. Run the Lua from a script of the game, from `extra_scripts.lua`, or with `AB_EXEC` while testing.
+
+### The three levers
+
+1. **Replace a native** (`engine.original`): change what a function does.
+2. **Listen to an event** (`engine.on`): run your code when the engine does something.
+3. **Set a tuning value** (`tuning`): change a number the engine uses inside its own code.
+
+Pick the lever in this order: a tuning value if there is one, an event if you only need to react, a replaced native if you need to change the result.
+
+### Lever 3: the `tuning` table
+
+`tuning` is an empty global table. The engine looks a name up in it each time it needs the number. A name that is not set keeps the built-in value, so an empty table changes nothing, and you can set a value at any time (also in the middle of a level).
+
+| Name | Default | Used by | Effect |
+|---|---|---|---|
+| `sw.forceDivisor` | 10 | Star Wars collisions (0x42f9d0) | The force of a hit is divided by this. Smaller means more damage everywhere. |
+| `sw.homingDamage` | 0.2 | Star Wars birds | Fraction of the damage a HOMING bird does before its first collision. |
+| `sw.wobbleFactor` | 0.02 | Star Wars blocks and birds | Wobble amplitude per unit of force. |
+| `sw.wobbleMax` | 0.1 | Star Wars blocks and birds | Largest wobble amplitude. |
+| `sw.removeLimit` | 0.88 | Star Wars sensors of kind 5 and 7 | They are removed when they pass this fraction of a level limit. |
+| `rio.wobbleFactor` | 0.02 | Rio hits | Wobble amplitude per unit of momentum difference. |
+| `rio.wobbleMax` | 0.1 | Rio hits | Largest wobble amplitude. |
+| `zoom.stepIn` | 0.2 | mouse wheel, zoom of 1 or more | Zoom change per wheel notch. |
+| `zoom.stepOut` | 0.1 | mouse wheel, zoom below 1 | Zoom change per wheel notch. |
+| `zoom.duration` | 0.5 | mouse wheel | Seconds a zoom change takes. |
+
+**Physics names** (read every physics step, all games; set them as `tuning["water.band"] = 3`):
+
+| Name | Default | Effect |
+|---|---|---|
+| `solver.velocityIterations`, `solver.positionIterations` | the game's own (10 and 10 in most) | Box2D solver iterations per step. Higher is stiffer and slower. |
+| `solver.linearSlop` | 0.05 (Space 0.005) | Allowed overlap before Box2D pushes bodies apart (Box2D 2.2 builds: Rio, Space, Star Wars). |
+| `solver.timeToSleep` | 0.25 (Space 0.5) | Seconds a body must be still before it sleeps. |
+| `solver.sleepTolerance` | 0.1 (Space 0.5) | How slow counts as still. |
+| `water.buoyancy` | 0.1 | Star Wars water: buoyancy per unit of mass and density difference. |
+| `water.band` | 1.5 | Depth, in world units, of the top layer where the buoyancy fades out. |
+| `water.keepOrientationOffset` | 0.25 | Where an upright-keeping object is pushed from (the righting force). |
+| `water.boxPushFactor` | 0.25 | The same for boxes, scaled by their aspect ratio. |
+| `water.pushSpeedLimit` | 15 | Objects sinking faster than this many world units per second get no buoyancy push. |
+| `gravity.revertFactor` | -0.1 | Strength of a "revert gravity" sensor, relative to a normal one. |
+
+**Hit wobble, flipping and "is anything moving"** (Rio, Star Wars):
+
+| Name | Default | Effect |
+|---|---|---|
+| `wobble.duration` | 1 | Seconds a hit wobble takes to die out. |
+| `wobble.maxScale` | 4 | Largest wobble scale (amplitude times the object's bounce multiplier). |
+| `wobble.cutoff` | 0.01 | The wobble stops when it falls below this. |
+| `wobble.frequency`, `wobble.baseFrequency` | 100, 5 | How fast the wobble shakes: `time * (amplitude * frequency + object bounce frequency * baseFrequency)`. |
+| `flip.speed` | 3 | Objects with "enable flipping" turn to face their direction when they move sideways faster than this. |
+| `moving.tolerance` | 0.5 | `hasMovingObjects()` counts an object as moving above this speed. |
+| `moving.zeroTolerance` | 0.001 | The same for `hasMovingObjectsZeroTolerance()`. |
+| `gravity.birdDecay` | 1.3 | How fast a bird's extra pull from gravity sensors fades after its first collision (per second). |
+
+The dot in a name is part of the name: write `tuning["sw.forceDivisor"] = 5`.
+
+Pseudocode and Lua, "make every hit do twice the damage and wobble more":
+
+```
+set sw.forceDivisor to half of its default
+set sw.wobbleMax to 0.3
+```
+```lua
+tuning["sw.forceDivisor"] = 5
+tuning["sw.wobbleMax"]    = 0.3
+```
+
+Other numbers that scripts already control and the engine reads: the config values `forceDamageMultiplier` (1) and `scoreDamageMultiplier` (5) in the game's config table or as globals, plus the globals in section 3 of "Changing the engine from Lua". Per-level values are `setWorldGravity`, `setLevelLimits`, `setPhysicsSimulationScale` and the object parameters of `setObjectParameter`.
+
+### Lever 2: all the events
+
+| Event | Arguments | Notes |
+|---|---|---|
+| `update` | `dt, realDt` | every frame |
+| `levelLoaded` | `path` | after the level table is in `loadedObjects` |
+| `objectCreated` | `name, kind` | `kind` is `box`, `circle` or `polygon` |
+| `objectRemoved` | `name` | raised before the object is gone |
+| `contact` | `nameA, nameB` | raised when two objects begin to touch, before the engine's damage rules run (Star Wars, Rio, Space and Classic) |
+
+Your own events work the same way: `engine.emit("myEvent", 1, 2)` calls every `engine.on("myEvent", fn)` handler.
+
+Recipe: "count pigs killed and show it" (pseudocode):
+
+```
+on objectRemoved(name):
+    if name starts with "PIG": kills = kills + 1
+on update:
+    draw kills at the top left
+```
+```lua
+local kills = 0
+engine.on("objectRemoved", function(name)
+    if string.find(name, "PIG") then kills = kills + 1 end
+end)
+engine.on("update", function(dt)
+    setRenderState(0, 0, 1, 1, 0)
+    res.drawString("", "Pigs: " .. kills, 10, 10, "TOP", "LEFT")
+end)
+```
+
+Recipe: "bullet time when a bird hits something":
+
+```
+on contact(a, b):
+    if a or b is a bird: set simulation scale 0.3, remember the time
+on update(dt):
+    if slow and 1 second passed: set simulation scale 1
+```
+```lua
+local slowLeft = 0
+engine.on("contact", function(a, b)
+    if string.find(a, "BIRD") or string.find(b, "BIRD") then
+        setPhysicsSimulationScale(0.3); slowLeft = 1
+    end
+end)
+engine.on("update", function(dt, realDt)
+    if slowLeft > 0 then
+        slowLeft = slowLeft - realDt
+        if slowLeft <= 0 then setPhysicsSimulationScale(1) end
+    end
+end)
+```
+
+### Lever 1: replacing natives
+
+Rule: wrap the global, call the original, then change the arguments or the result.
+
+```
+newFunction(args):
+    change args
+    result = original(args)
+    change result
+    return result
+```
+
+Recipe: "no gravity in every level":
+```lua
+local orig = engine.original.setWorldGravity
+function setWorldGravity(gx, gy) orig(0, 0) end
+```
+
+Recipe: "all blocks are twice as bouncy":
+```lua
+local prev = createBox
+function createBox(name, sprite, x, y, w, h, density, friction, restitution, ...)
+    return prev(name, sprite, x, y, w, h, density, friction, (restitution or 0) * 2, ...)
+end
+```
+
+Recipe: "log every native call" (pseudocode: for each name in the list, replace the global by a function that prints the name and calls the original):
+```lua
+for _, name in ipairs(engine.natives()) do
+    local f = engine.original[name]
+    if name ~= "print" and type(f) == "function" then
+        _G[name] = function(...) engine.original.print("call", name); return f(...) end
+    end
+end
+```
+
+Recipe: "replace a whole subsystem, for example your own aiming dots": replace `populateAimingAid`, `clearAimingAid` and `updateBirdTrajectoryTable` with Lua functions that fill your own table, and draw it from `engine.on("update", ...)` with `res.drawSprite`.
+
+### Changing the game scripts themselves
+
+The game's own functions (`update`, `birdCollision`, `blockCollision`, `shootSelectedBird`, `initialize` and the rest of what `gamelogic.lua` defines) are globals too, so the same wrap works:
+
+```
+newBirdCollision(a, b, force, damage, ...):
+    if my rule applies: return          -- skip the original
+    original(a, b, force, damage, ...)  -- or run it
+```
+```lua
+local origBC = birdCollision
+function birdCollision(a, b, force, damage, ...)
+    if force < 2 then return end        -- ignore soft taps
+    return origBC(a, b, force, damage, ...)
+end
+```
+
+For bigger changes decrypt the scripts with `--decrypt` and edit the plain files (see `docs/USAGE.md`).
+
+### What can still not be reached from Lua
+
+Be aware of these limits; they are the real list, not a promise:
+
+- The Box2D code itself, the contact filter rule, and the drawing order inside `drawGameNative` are compiled in (their numbers, such as solver iterations and sleep times, are in `tuning`).
+- The sprite wobble curve and some drawing constants are not in `tuning` yet.
+- The collision damage arithmetic of Classic, Seasons, Rio and Space is C++; you change it through its inputs, through `contact`, or by wrapping `birdCollision` and `blockCollision`.
+
+If you want one of these opened up, say which and it can be added as a `tuning` name in the same way.
+
+### Backgrounds and foregrounds from Lua (parallax, sine waves, your own layers)
+
+Theme layers are data you can read and change, and the engine tells you when it draws them.
+
+| Function / event | What it does |
+|---|---|
+| `getCamera()` | `x, y, worldScale, screenWidth, screenHeight`: the world position of the screen's top left corner, the zoom (pixels per world unit) and the window size. |
+| `getThemeLayers([which])` | A list of layer tables, back to front. `which` 0 (default) is the background, 1 the foreground of the new theme system (Star Wars). Each table has `index, sprite, speed, scale, scaleX, scaleY, offset, offX, offY, dx, dy, velX, velY, angle, looping, hidden`. The tables are copies: change a field and hand it back with `setThemeLayer`. |
+| `setThemeLayer(index, fields [, which])` | Changes the fields you name (`index` counts from 1). `dx` and `dy` move the layer by that many **screen pixels** on top of its normal parallax, so they are the easiest handle for effects. `hidden = true` stops the engine drawing the layer. `sprite`, `speed`, `scale`, `offX` and `offY` change what and where it is. |
+| `engine.on("drawBackgroundBefore", f)` / `"drawBackground"` | Raised before and after the engine draws the background layers. Draw your own layers in `drawBackground` (they appear on top of the engine's, behind the blocks). |
+| `engine.on("drawForegroundBefore", f)` / `"drawForeground"` | The same for the foreground. |
+| `tuning["background.skip"] = 1` / `tuning["foreground.skip"] = 1` | The engine draws no background / foreground at all; you draw it all in the events. |
+
+#### Recipe 1: make the existing layers bob on a sine wave, deeper layers moving more
+
+```
+each frame:
+    t = t + dt
+    for every theme layer i (back to front):
+        layer.dy = sin(t * speed + i * phase) * amplitude * i
+```
+```lua
+local t = 0
+engine.on("update", function(dt)
+    t = t + dt
+    for i, layer in ipairs(getThemeLayers()) do
+        setThemeLayer(i, {dy = math.sin(t * 2 + i) * 12 * i})   -- 12 px per layer, a different phase for each
+    end
+end)
+```
+Use `dx` the same way for a sideways sway. To make the wave depend on the camera (so it ripples as the player scrolls) read it with `getCamera()`:
+```lua
+local cx = getCamera()
+setThemeLayer(i, {dy = math.sin(cx * 0.02 + i) * 20})
+```
+
+#### Recipe 2: your own parallax layer, each element on its own sine wave
+
+```
+on drawBackground:
+    read the camera
+    for each element k of my layer:
+        x = k * spacing - camera.x * parallaxFactor * worldScale     -- far layers move less than the camera
+        y = baseY + sin(time + k * phase) * amplitude                -- the sine wave
+        draw the sprite at x, y
+```
+```lua
+local t = 0
+engine.on("update", function(dt) t = t + dt end)
+
+engine.on("drawBackground", function()
+    local camX, camY, ws, sw, sh = getCamera()
+    setRenderState(0, 0, 1, 1, 0, 0, 0, 1)
+    local spacing, parallax = 160, 0.3
+    local first = math.floor(camX * parallax * ws / spacing)
+    for k = first, first + math.ceil(sw / spacing) + 1 do
+        local x = k * spacing - camX * parallax * ws
+        local y = sh * 0.55 + math.sin(t * 1.5 + k * 0.7) * 25
+        res.drawSprite("CLOUD_1", x, y, "VCENTER", "HCENTER")   -- any sprite name of the loaded sheets
+    end
+end)
+```
+`getThemeLayers()[i].sprite` tells you a sprite name that is loaded for the current theme. To replace the engine's background completely, also set `tuning["background.skip"] = 1`, and `"foreground.skip"` for the foreground.
+
+#### Recipe 3: swap a layer's picture, speed or visibility
+
+```lua
+setThemeLayer(2, {speed = 0.8})        -- moves with the camera nearly 1:1
+setThemeLayer(3, {hidden = true})      -- gone
+setThemeLayer(1, {scale = 1.2})        -- bigger
+```
+
+Notes: the layers are rebuilt when a level (theme) loads, so set your changes after `levelLoaded` (or every frame, as in recipe 1). `dx` / `dy` are applied by Classic, Seasons, Rio, Space and Star Wars backgrounds and by the new-system foreground; the old foreground (the rolling ground strip of Classic) is not a layer list yet, so use `foreground.skip` and draw it in `drawForeground` if you want to change it.
+
+### Discovering every tuning name
+
+`engine.tuningDefaults` is a table of every `tuning` name with its built-in value, so a script (or the console) can list them all or reset one:
+
+```lua
+for name, default in pairs(engine.tuningDefaults) do print(name, default, tuning[name]) end
+tuning["water.band"] = nil          -- back to the built-in value
+```
+
+### Which games the layer functions were checked on
+
+`getThemeLayers`, `setThemeLayer`, `getCamera` and the draw events work in every game that draws a theme: they were checked in Angry Birds Star Wars (a Hoth level: the layers bob with a sine wave, and the engine background can be replaced) and on Classic 1.6.2's background loop (`dy = -200` moves the whole background 200 pixels up), which Seasons and Rio use too. Space uses the same layer routine as Star Wars. The menus of Classic and Seasons draw their backdrop with the scripts' own sprite calls, not with theme layers, so there you change the backdrop by wrapping the menu's draw function.
+
+### Rule hooks: functions the engine calls so Lua can decide
+
+These are plain functions you put in the `engine` table. While one is not defined the engine uses its own rule, so nothing changes. Define it to take over the decision.
+
+| Function | Called | Return |
+|---|---|---|
+| `engine.shouldCollide(nameA, nameB)` | every time the physics asks whether two objects may collide (in every game, after the engine's own rule) | `true` forces a collision, `false` makes the two pass through each other, `nil` keeps the engine's rule |
+| `engine.strengthChange(name, other, oldStrength, newStrength)` | after a hit has worked out the strength a block is left with (Classic, Seasons, Rio, Space and Star Wars) | a number replaces `newStrength` (zero or less destroys the block, more than zero keeps it alive), `nil` keeps it |
+
+Pseudocode and Lua: "birds pass through ice, and wood takes half the damage":
+
+```
+shouldCollide(a, b):
+    if one of them is a bird and the other is ice: return false
+    otherwise: return nil          -- the engine decides
+strengthChange(block, bird, old, new):
+    if block is wood: return old - (old - new) / 2
+```
+```lua
+function engine.shouldCollide(a, b)
+    if (string.find(a, "BIRD") and string.find(b, "ICE")) or (string.find(b, "BIRD") and string.find(a, "ICE")) then
+        return false
+    end
+end
+function engine.strengthChange(name, other, old, new)
+    if string.find(name, "WOOD") then return old - (old - new) / 2 end
+end
+```
+
+`shouldCollide` runs for every pair the broad-phase finds, so keep it short (no printing, no loops over all objects) or the game slows down.
+
+### Drawing hooks for objects and the whole game scene
+
+| Function / event | When | Effect |
+|---|---|---|
+| `engine.drawObject(name)` | before the engine draws each physics object, every frame | return `false` and the object is not drawn (draw it yourself in `drawGame` if you want a different picture); any other result draws it as usual |
+| `engine.on("drawGameBefore", f)` | before the engine draws the blocks, birds and pigs | draw behind everything in the scene; the render state is the world camera, as the engine uses it |
+| `engine.on("drawGame", f)` | after the scene is drawn | draw on top; the render state is reset to screen pixels, so use `getCamera()` to place things at world positions |
+
+The order in which objects are drawn is `z_order`: set `objects.world[name].z_order` through `setObjectZOrder(name, z)`, or `bringObjectToFront` / `sendObjectToBack`.
+
+Recipe: "pigs wear a hat" (pseudocode, then Lua):
+
+```
+on drawGame:
+    camera = getCamera()
+    for every object whose name starts with PIG:
+        screen x = (object.x * 20 - camera.x) * camera.scale
+        screen y = (object.y * 20 - camera.y) * camera.scale
+        draw HAT at (x, y - 30)
+```
+```lua
+engine.on("drawGame", function()
+    local cx, cy, ws = getCamera()
+    setRenderState(0, 0, 1, 1, 0, 0, 0, 1)
+    for name, o in pairs(objects.world) do
+        if string.find(name, "PIG") then
+            res.drawSprite("HAT_1", (o.x * 20 - cx) * ws, (o.y * 20 - cy) * ws - 30, "VCENTER", "HCENTER")
+        end
+    end
+end)
+```
+(`HAT_1` stands for any sprite name that exists in the game's sprite sheets; objects live in world units and the engine draws them at 20 pixels per unit.)
+
+### More tuning names (Classic, Seasons, Rio and Space damage)
+
+| Name | Default | Effect |
+|---|---|---|
+| `classic.blockForce` | 0.1 | Block against block: the force of a hit is the momentum difference times this. |
+| `classic.blockScore` | 10 | Points per whole point of damage when two blocks hit. |
+| `classic.birdForceDivisor` | 10 | A bird's hit force is speed times mass divided by this (smaller means more damage). |
+| `classic.legacyVelocityFactor` | 1.75 | How much of its speed a bird that breaks a block keeps, on the legacy collision path. |
+
+### Particle tuning
+
+| Name | Default | Effect |
+|---|---|---|
+| `particle.amountScale` | 1 | Multiplies how many particles every `addParticles` / `addLevelParticles` call makes (the soft and hard limits still apply). |
+| `particle.speedScale` | 1 | Multiplies the starting speed of new particles. |
+| `particle.lifeScale` | 1 | Multiplies how long new particles live. |
+| `particle.sizeScale` | 1 | Multiplies the size of new particles (both the start and the end scale). |
+| `particle.gravityScale` | 1 | Multiplies the gravity of every particle definition, also for particles that already exist. |
+
+Everything else about a particle (velocities, angles, lifetime, gravity, scales, sprites, animation) comes from its entry in the game's particle table (`particleTable` in `particles.lua`); the definitions live in `particleTable.particles[name]` and are ordinary Lua. The engine reads a definition the first time a particle of that type is made and keeps it, so after you edit one (for example `particleTable.particles.SMOKE_1.lifeTime = 3`) call `clearParticleCache()`; the next particles of every type then read the table again.
+
+### The old-style foreground strip (Classic, Seasons, Rio): layer list 2
+
+`getThemeLayers(2)` / `setThemeLayer(index, fields, 2)` give the rolling ground strip of the older games, which is not a theme layer: each entry has `sprite`, `speed`, `scale`, `offset`, `dx`, `dy` and `hidden`. `dy = -150` on the first entry lifts the dirt layer 150 pixels and shows the one behind it; `hidden = true` removes a layer; `sprite` swaps its picture. (The colour the engine fills below the strip is the theme's ground colour; to change that, hide the layers and draw your own in `drawForeground`.)
+
+### More events
+
+| Event | Arguments | When |
+|---|---|---|
+| `physicsStep` | `dt` | just before each physics step (the world steps at a fixed rate, more than once per frame when the game runs slow) |
+| `physicsStepEnd` | `dt` | right after each physics step and its speed caps |
+| `contactEnd` | `nameA, nameB` | when two objects stop touching |
+| `contact` | `nameA, nameB` | when two objects begin to touch (documented above) |
+
+Recipe, "count how long a bird stays on the ground" (pseudocode):
+
+```
+on contact(bird, ground): start counting
+on contactEnd(bird, ground): stop counting
+on physicsStep(dt): if counting, total = total + dt
+```
+```lua
+local counting, total = false, 0
+engine.on("contact",    function(a, b) if string.find(a .. b, "BIRD") and string.find(a .. b, "GROUND") then counting = true end end)
+engine.on("contactEnd", function(a, b) if string.find(a .. b, "BIRD") and string.find(a .. b, "GROUND") then counting = false end end)
+engine.on("physicsStep", function(dt) if counting then total = total + dt end end)
+```
+
+### Replacing the damage itself: `engine.damage`
+
+| Function | Called | Return |
+|---|---|---|
+| `engine.damage(attacker, victim, force, damage)` | when a bird hits a block (all games) and when one block hits another (Classic, Seasons, Rio, Space), after the engine has worked out `damage` (Star Wars: after the defence and the homing reduction) and before the block's strength is changed | a number replaces `damage`; `nil` keeps it |
+
+`force` is the raw hit force before the bird's damage multipliers. Together with `engine.strengthChange` (what strength the block is left with) and the `classic.*` / `sw.*` tuning names (the constants inside the formulas) this lets Lua replace the whole damage rule.
+
+```
+damage(attacker, victim, force, damage):
+    if attacker is a bird and victim is glass: return damage * 3    -- glass breaks easily
+    return nil                                                      -- everything else as usual
+```
+```lua
+function engine.damage(attacker, victim, force, damage)
+    if string.find(attacker, "BIRD") and string.find(victim, "GLASS") then return damage * 3 end
+end
+```
+Star Wars block-against-block hits do not go through `engine.damage` yet; use `engine.strengthChange` there.
+
+### Ground colour
+
+`getGroundColor()` returns `r, g, b` (0 to 255), the colour the old-style foreground fills below the ground strip; `setGroundColor(r, g, b)` changes it. Together with layer list 2 this makes the whole Classic ground changeable.
+
+### Changing every new particle: `engine.particle`
+
+| Function | Called | Return |
+|---|---|---|
+| `engine.particle(type, t)` | for every particle the engine creates, after it has picked the particle's values | `false` drops the particle; anything else keeps it. Change the table `t` to change the particle: `x, y, vx, vy, angle, angleVel, scaleBegin, scaleEnd, lifeTime, sprite` |
+
+```
+particle(type, t):
+    if type is smoke: make it go up faster and live twice as long
+```
+```lua
+function engine.particle(type, t)
+    if string.find(type, "smoke") then t.vy = t.vy - 50; t.lifeTime = t.lifeTime * 2 end
+end
+```
+It runs once per particle, so keep it short when a game makes hundreds at once.
+
+### More Box2D numbers in `tuning`
+
+| Name | Default | Effect |
+|---|---|---|
+| `solver.velocityThreshold` | 1 | Below this closing speed a hit does not bounce (Box2D's restitution threshold). Set it to 0 for bouncier small hits. |
+| `solver.maxLinearCorrection` | 0.2 | The most Box2D pushes two overlapping bodies apart in one step. |
+| `solver.baumgarte` | 0.2 | How hard overlaps are corrected each step (higher pushes apart faster and can jitter). |
+| `solver.maxRotation` | 1.5708 | The most a body may turn in one step, in radians. |
+| `solver.angularSleepTolerance` | 0.0349 | How slowly a body must spin to count as still for sleeping, in radians per second. |
+
+### Data that is already plain Lua (edit it directly)
+
+Most of what a game *is* lives in Lua tables that the engine reads when it needs them, so nothing has to be exposed for it. The names differ a little between games; list them with `for k, v in pairs(_G) do print(k, type(v)) end` or `printGlobals()`.
+
+| Table | What it holds | Change it to |
+|---|---|---|
+| `objects.world[name]` | every live object (`strength`, `defence`, `material`, `sprite`, `x`, `y`, `angle`, `z_order`, ...) | damage, heal or re-skin an object; set `strength` and the next hit uses it |
+| `objects.joints[name]` | the joints of the level | read joint settings (use `setJointParameters` to change a live joint) |
+| `blockTable` / block definitions (`blocks.lua`) | strength, defence, density, damage factors of every material and bird | rebalance a material; new objects use the new numbers |
+| `particleTable.particles[name]` | particle definitions | edit, then call `clearParticleCache()` |
+| `scoreTable`, `deadBlocks` | score and destroyed blocks | change scoring, revive a block |
+| `loadedObjects` | the level that was just loaded, before the objects are created | add, move or remove objects in a level as it loads (hook `levelLoaded` is raised after it) |
+| theme tables (`themes.lua` and friends) | backgrounds, foregrounds, sounds of a theme | build your own theme; the layer functions above edit the live one |
+| `settings`, `highscores` | the saves | `saveLuaFile` writes them |
+| text groups | every string | `res.setString(group, key, text)` |
+| the game's own functions (`update`, `birdCollision`, `shootSelectedBird`, ...) | the game rules written in Lua | wrap or replace them |
+
+### Where each part of the engine can be changed (summary)
+
+| Part | How |
+|---|---|
+| Physics: gravity, damping, restitution, density, speed caps, colliders, joints, sensors | natives (`setWorldGravity`, `setObjectDensity`, `setSpeedCap`, `setColliderRule`, `setJointParameters`, ...) |
+| Physics: contact filter | `engine.shouldCollide` |
+| Physics: solver, sleep, thresholds, water, gravity sensors | `tuning` (`solver.*`, `water.*`, `gravity.*`) |
+| Physics: every step | events `physicsStep`, `physicsStepEnd`, `contact`, `contactEnd` |
+| Damage and strength | `engine.damage`, `engine.strengthChange`, `tuning` (`classic.*`, `sw.*`), the block definitions |
+| Drawing: objects, scene, backgrounds, foregrounds, ground | `engine.drawObject`, `drawGameBefore` / `drawGame`, `drawBackground*` / `drawForeground*`, layer lists 0, 1 and 2, `setGroundColor`, the render-state functions |
+| Camera and zoom | `setTopLeft`, `setWorldScale`, `setMaxWorldScale`, `getCamera`, `tuning` (`zoom.*`) |
+| Particles | `engine.particle`, `tuning` (`particle.*`), `particleTable`, `clearParticleCache` |
+| Sound, text, saves, files, windows | the `res` functions and the natives in the reference above |
+| Any native function | wrap it with `engine.original` |
+| Anything the above does not reach | the C++ source (this repository): the Box2D code itself and the arithmetic inside the damage and particle routines |
+
+### What was checked on which game
+
+Every function and event of this chapter was run with a smoke script (it calls each one, defines every hook and counts the events) on these games:
+
+| Game | Result |
+|---|---|
+| Angry Birds 1.6.2 (Classic), menu | no script errors; layer lists 0 and 2, the background and foreground events and `update` fire |
+| Angry Birds 2.0.0, menu | the same |
+| Angry Birds Space, level | no script errors; every event fires (`contact`, `contactEnd`, `physicsStep`, `physicsStepEnd`, `drawGame`, `drawBackground`, `update`), 10 background layers |
+| Angry Birds Star Wars, Hoth level | no script errors; every event fires, background layers move with `dy`, `engine.shouldCollide` and `engine.drawObject` change the scene |
+| Angry Birds Rio, menu | no script errors; the layer and draw events only fire inside a level, which was not run |
+| Angry Birds Seasons | not run (only part of the Seasons data was available); it shares the Classic code paths |
+
+Tell us about a game or call that misbehaves and it will be fixed.
+
+---
+
+## Changing how damage is worked out and how things are drawn (2.9)
+
+### `engine.force(a, b, momentumX, momentumY, force)`
+
+Called for every contact in every game, before any damage is worked out. `a` and `b` are the two object names, `momentumX/Y` is the momentum difference (for a bird against a block it is the bird's momentum), `force` is the number the engine worked out from it. Return a number to use instead, or `nil`/nothing to keep it. Everything after this (`engine.damage`, defence, strength, score) uses what you return.
+
+```lua
+-- pseudocode: every hit is twice as strong, but nothing under 3 counts
+engine.force = function(a, b, mx, my, force)
+    if force < 3 then return 0 end
+    return force * 2
+end
+```
+
+Order of the damage hooks for one hit: `engine.force` (how hard) -> `engine.damage` (how much of it a victim takes) -> `engine.strengthChange` (what strength it is left with). In Star Wars this now covers block against block as well as bird against block. Classic, Seasons and Rio use the same three hooks.
+
+### `engine.drawSprite(sprite, object, x, y)`
+
+Called for every sprite the game draws (menus, backgrounds, objects, particles, text). `sprite` is the sprite name, `object` is the name of the object being drawn (empty for menus and backgrounds), `x, y` the position in pixels. Return:
+
+* `false` to leave this sprite undrawn;
+* a table to change how this one sprite is drawn, any of: `dx, dy` (added to the position), `angle` (added, radians), `sx, sy`, `alpha`, `r, g, b` (all multiplied), `skewX, skewY, bendX, bendY, blur, pixelate, z, blend, effect` (set), `flipX`;
+* nothing to draw it as normal.
+
+The hook can not draw by calling `res.drawSprite` inside itself for the same sprite name, a call from inside the hook is not passed to the hook again, so it is safe to draw extra sprites from it.
+
+```lua
+-- pseudocode: a sine wave through everything, red tint on pigs
+engine.drawSprite = function(sprite, object, x, y)
+    local t = {dy = 12 * math.sin(x / 60 + time)}
+    if string.find(object, 'PIG') then t.g = 0.4; t.b = 0.4 end
+    return t
+end
+```
+
+Together with `engine.drawObject` (skip a whole object), the layer functions (`setThemeLayer`) and the draw events (`drawBackground`, `drawGame`, `drawForeground` and their `...Before` forms), a script decides what is drawn, where, and how. The only thing not reachable is the OpenGL code that turns a quad into pixels.
+
+### Checked
+
+Star Wars (Hoth level, blocks kicked with `setVelocity` so they hit each other): `engine.force` 388 calls, `engine.damage` 73, `engine.strengthChange` 73, `engine.drawSprite` about a million calls, the scene visibly tinted and waving. Rio 1.4.2 main menu: `engine.drawSprite` tinted and moved every sprite. Seasons main menu: hook ran with no errors. Classic and Rio hits are covered by the same code as the Star Wars damage test, which was not repeated there.

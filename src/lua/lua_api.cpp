@@ -1767,6 +1767,56 @@ int l_isPhysicsEnabled(lua_State* L) { lua_pushboolean(L, P(L)->IsPhysicsEnabled
 int l_setLevelLimits(lua_State* L) { P(L)->SetLevelLimits(N(L, 1), N(L, 2), N(L, 3), N(L, 4)); return 0; }
 
 // ---- camera
+// getCamera() -> x, y, worldScale, screenWidth, screenHeight: the world position of the screen's top left corner, the zoom (pixels per world unit) and the window size
+// clearParticleCache(): forget the particle definitions the engine has read; the next particle reads its definition from particleTable.particles again
+// getGroundColor() -> r, g, b (0..255): the colour the old-style foreground fills below the ground strip. setGroundColor(r, g, b) changes it.
+int l_getGroundColor(lua_State* L) { float r, g, b; P(L)->GroundColor(false, r, g, b); lua_pushnumber(L, r); lua_pushnumber(L, g); lua_pushnumber(L, b); return 3; }
+int l_setGroundColor(lua_State* L) { float r = N(L, 1), g = N(L, 2), b = N(L, 3); P(L)->GroundColor(true, r, g, b); return 0; }
+int l_clearParticleCache(lua_State* L) { P(L)->ClearParticleCache(); return 0; }
+int l_getCamera(lua_State* L) {
+    float x, y, ws; int w, h;
+    P(L)->GetCamera(x, y, ws, w, h);
+    lua_pushnumber(L, x); lua_pushnumber(L, y); lua_pushnumber(L, ws); lua_pushnumber(L, w); lua_pushnumber(L, h);
+    return 5;
+}
+// getThemeLayers([which]) -> { {index=1, sprite=, speed=, scale=, scaleX=, scaleY=, offset=, offX=, offY=, dx=, dy=, velX=, velY=, angle=, looping=, hidden=}, ... }
+// which 0 (default) is the background, 1 the foreground of the new theme system. Changes go back with setThemeLayer(index, fields [, which]).
+int l_getThemeLayers(lua_State* L) {
+    int which = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : 0;
+    int n = P(L)->ThemeLayerCount(which);
+    lua_newtable(L);
+    for (int i = 0; i < n; i++) {
+        Platform::ThemeLayerInfo t;
+        if (!P(L)->GetThemeLayer(which, i, t)) continue;
+        lua_newtable(L);
+        auto num = [&](const char* k, double v) { lua_pushnumber(L, v); lua_setfield(L, -2, k); };
+        num("index", i + 1);
+        lua_pushstring(L, t.sprite.c_str()); lua_setfield(L, -2, "sprite");
+        num("speed", t.speed); num("scale", t.scale); num("scaleX", t.scaleX); num("scaleY", t.scaleY); num("offset", t.offset);
+        num("offX", t.offX); num("offY", t.offY); num("dx", t.dx); num("dy", t.dy); num("velX", t.velX); num("velY", t.velY); num("angle", t.angle);
+        lua_pushboolean(L, t.looping); lua_setfield(L, -2, "looping");
+        lua_pushboolean(L, t.hidden); lua_setfield(L, -2, "hidden");
+        lua_rawseti(L, -2, i + 1);
+    }
+    return 1;
+}
+// setThemeLayer(index, fields [, which]): changes the named fields of layer `index` (1 is the first); fields that are not in the table stay as they are.
+// dx / dy move the layer by that many screen pixels on top of its parallax, so setting dy = sin(time) * 20 every frame makes it bob.
+int l_setThemeLayer(lua_State* L) {
+    int idx = (int)luaL_checknumber(L, 1) - 1;
+    int which = lua_isnumber(L, 3) ? (int)lua_tonumber(L, 3) : 0;
+    luaL_checktype(L, 2, LUA_TTABLE);
+    Platform::ThemeLayerInfo t;
+    if (!P(L)->GetThemeLayer(which, idx, t)) return 0;
+    auto num = [&](const char* k, float& v) { lua_getfield(L, 2, k); if (lua_isnumber(L, -1)) v = (float)lua_tonumber(L, -1); lua_pop(L, 1); };
+    auto flag = [&](const char* k, bool& v) { lua_getfield(L, 2, k); if (lua_isboolean(L, -1)) v = lua_toboolean(L, -1) != 0; lua_pop(L, 1); };
+    lua_getfield(L, 2, "sprite"); if (lua_isstring(L, -1)) t.sprite = lua_tostring(L, -1); lua_pop(L, 1);
+    num("speed", t.speed); num("scale", t.scale); num("scaleX", t.scaleX); num("scaleY", t.scaleY); num("offset", t.offset);
+    num("offX", t.offX); num("offY", t.offY); num("dx", t.dx); num("dy", t.dy); num("velX", t.velX); num("velY", t.velY); num("angle", t.angle);
+    flag("looping", t.looping); flag("hidden", t.hidden);
+    P(L)->SetThemeLayer(which, idx, t);
+    return 0;
+}
 int l_setTopLeft(lua_State* L) { P(L)->SetTopLeft(N(L, 1), N(L, 2)); return 0; }
 int l_setWorldScale(lua_State* L) { P(L)->SetWorldScale(N(L, 1)); return 0; }
 int l_setMaxWorldScale(lua_State* L) { P(L)->SetMaxWorldScale(N(L, 1)); return 0; }
@@ -2484,7 +2534,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"getRenderZ", l_getRenderZ}, {"setColliderType", l_setColliderType}, {"getColliderType", l_getColliderType}, {"setColliderRule", l_setColliderRule}, {"getColliderRule", l_getColliderRule},
         {"setPolygonRadius", l_setPolygonRadius}, {"getPolygonRadius", l_getPolygonRadius}, {"removeJointsFromObject", l_removeJointsFromObject},
         {"getIntersectingObjects", l_getIntersectingObjects},
-        {"setParticleSystemLimits", l_nothing}, {"clearParticleCache", l_nothing}, {"enableInGameParticlesNative", l_nothing},
+        {"setParticleSystemLimits", l_nothing}, {"clearParticleCache", l_clearParticleCache}, {"getGroundColor", l_getGroundColor}, {"setGroundColor", l_setGroundColor}, {"enableInGameParticlesNative", l_nothing},
         {"updateBackgroundAndForegroundScrollingNative", l_updateBackgroundAndForegroundScrollingNative}, {"rotateThemeSprites", l_rotateThemeSprites},
         {"setThemeSprite", l_setThemeSprite}, {"drawMenuParticlesNative", l_nothing}, {"updateMenuParticlesNative", l_nothing}, {"isHDVersion", l_false},
         {"createJoint", l_createJoint}, {"createJoints", l_createJoints}, {"setJointParameters", l_setJointParameters},
@@ -2499,7 +2549,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"getAngle", l_getAngle}, {"getWorldPoint", l_getWorldPoint}, {"setObjectParameter", l_setObjectParameter}, {"setScale", l_setScale}, {"getScale", l_getScale}, {"setSpeedCap", l_setSpeedCap}, {"getSpeedCap", l_getSpeedCap}, {"clearSpeedCap", l_clearSpeedCap}, {"getTouchingObjects", l_getTouchingObjects}, {"rayCast", l_rayCast}, {"fileExists", l_fileExists},
         {"setPhysicsSimulationScale", l_setPhysicsSimulationScale}, {"setPhysicsEnabled", l_setPhysicsEnabled}, {"setThemeOffsetY", l_setThemeOffsetY}, {"setStartingCameraValue", l_setStartingCameraValue},
         {"isPhysicsEnabled", l_isPhysicsEnabled}, {"setLevelLimits", l_setLevelLimits},
-        {"setTopLeft", l_setTopLeft}, {"setWorldScale", l_setWorldScale}, {"setMaxWorldScale", l_setMaxWorldScale}, {"resetMouseWheelScale", l_resetMouseWheelScale},
+        {"setTopLeft", l_setTopLeft}, {"getCamera", l_getCamera}, {"getThemeLayers", l_getThemeLayers}, {"setThemeLayer", l_setThemeLayer}, {"setWorldScale", l_setWorldScale}, {"setMaxWorldScale", l_setMaxWorldScale}, {"resetMouseWheelScale", l_resetMouseWheelScale},
         {"setMaxTranslation", l_setMaxTranslation},
         {"setRenderState", l_setRenderState}, {"drawRect", l_drawRect}, {"drawLine2D", l_drawLine2D},
         {"drawTexturedRect", l_nothing}, {"drawSome", l_nothing},

@@ -12,6 +12,7 @@
 //   * return if either fixture has no user data,
 //   * return unless both object names are keys of objects.world.
 #pragma once
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -74,6 +75,13 @@ struct ContactResult {
     VelocityChange velocityChange;
     std::vector<CollisionEvent> events;     // Lua callbacks, in call order
 };
+
+// Lua tuning for the rules below (set by the game; without it every constant keeps its built-in value)
+extern std::function<float(const char*, float)> g_damageTune;
+// Lua damage hook: (attacker, victim, force, damage) -> the damage to use (engine.damage); without it the damage stays
+extern std::function<float(const std::string&, const std::string&, float, float)> g_damageHook;
+// engine.force(a, b, momentumX, momentumY, force) -> number or nil: replaces the force a contact is worked out as
+extern std::function<float(const std::string&, const std::string&, float, float, float)> g_forceHook;
 
 ContactResult ResolveContact(const ContactObject& a, const ContactObject& b);
 

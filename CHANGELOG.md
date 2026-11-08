@@ -2,7 +2,26 @@
 
 What changed in each version of the engine, newest first. The README has the current status; the reference for script writers is in [`docs/SCRIPTING.md`](docs/SCRIPTING.md) and how to run and debug in [`docs/USAGE.md`](docs/USAGE.md).
 
-## New in 2.7
+## New in 2.9
+
+**This release contains everything since the 2.8 release candidate, which was never published: the Star Wars physics port, the Seasons 4.1.0 start-up fix and the first `engine` table (all described below under "Angry Birds Star Wars" and the first Lua entries) as well as the later additions.** The new Lua features of 2.9, in one list:
+
+* `tuning` table (about 40 built-in numbers: Star Wars damage, wobble and water, Rio wobble, Classic damage, solver iterations and sleep, zoom, particles, gravity) and `engine.tuningDefaults`.
+* Rule hooks: `engine.shouldCollide(a, b)`, `engine.strengthChange(name, other, old, new)`, `engine.drawObject(name)`.
+* Events: `update`, `levelLoaded`, `objectCreated`, `objectRemoved`, `contact`, `drawBackground`, `drawForeground`, `drawBackgroundBefore`, `drawForegroundBefore`, `drawGameBefore`, `drawGame`.
+* Theme layers as data: `getThemeLayers`, `setThemeLayer` (`dx`, `dy`, `hidden`, `speed`, `scale`, `sprite`, ...), `getCamera`, `tuning["background.skip"]` / `["foreground.skip"]`.
+* `clearParticleCache()` is real now: edit `particleTable.particles[name]` and call it, and new particles use the edited definition.
+* The Classic ground strip as layer list 2 (`getThemeLayers(2)`), and the events `physicsStep`, `physicsStepEnd`, `contactEnd`.
+* `engine.damage(attacker, victim, force, damage)` replaces the damage of a hit; `getGroundColor()` / `setGroundColor(r, g, b)` for the ground fill of the old-style foreground.
+* `engine.particle(type, t)` edits or drops every new particle; `solver.velocityThreshold` and `solver.maxLinearCorrection` open two more Box2D numbers (both Box2D copies).
+* `solver.baumgarte`, `solver.maxRotation` and `solver.angularSleepTolerance` open three more Box2D numbers (both Box2D copies).
+* `engine.force(a, b, mx, my, force)` replaces the force of any contact (all games).
+* `engine.drawSprite(sprite, object, x, y)` is called for every sprite drawn: return false to skip it or a table (dx, dy, angle, sx, sy, alpha, r, g, b, blend, effect, ...) to change how it is drawn.
+* Star Wars block against block damage now goes through `engine.force`, `engine.damage` and `engine.strengthChange` like bird against block.
+* Checked with real hits: engine.damage, engine.strengthChange and engine.force fire on Star Wars block collisions; engine.drawSprite checked on Star Wars, Rio and Seasons.
+* Checked with one smoke script on Classic, 2.0.0, Space, Star Wars and Rio (Seasons not run). `docs/SCRIPTING.md` has the table of what was checked and a map of where each part of the engine can be changed from Lua, including the Lua tables that are plain data.
+* A complete native function reference and a modding guide with pseudocode in `docs/SCRIPTING.md`.
+
 
 **Angry Birds Star Wars: the engine now follows the retail exe's physics and per-frame update.** Everything below is ported from the decompiled `AngryBirdsStarWars.exe` (addresses in brackets); the modding side of it is in [`docs/SCRIPTING.md`](docs/SCRIPTING.md#angry-birds-star-wars).
 
@@ -19,9 +38,14 @@ What changed in each version of the engine, newest first. The README has the cur
 * **Star Wars foreground layers (0x44b9xx).** With `NEW_THEME_SYSTEM_FOREGROUND` the theme's `fgLayers` only go through the new-system routine; the old positional/named foreground loop used to run as well, so Cloud City's foreground was drawn twice. Without the flag only the positional loop runs, and its fourth entry (scale) defaults to 1, not 1.5.
 * **Stale joints after a tap.** `removeObject` clears `objects.joints` entries of the removed object in Space and Star Wars too (tapping a log or pig in a level select no longer leaves a joint pointing at a missing object, which stopped the draw loop before the buttons and cursor).
 - **Angry Birds Seasons 4.1.0 start-up.** The scripts read the globals `uniqueInstallationId` (settingsWrapper.lua) and the table `native` (createStartUpAssets); both exist now, so the game no longer stops with "attempt to concatenate global 'uniqueInstallationId'" / "attempt to index field 'native'".
+- **Backgrounds and foregrounds from Lua.** `getCamera()`, `getThemeLayers()` and `setThemeLayer(index, fields)` give the theme layers as data (`dx` and `dy` move a layer in screen pixels, `hidden`, `speed`, `scale`, `sprite`, `offX`, `offY` and more), `engine.on("drawBackground" / "drawForeground")` (and the `...Before` versions) let a script draw its own layers, and `tuning["background.skip"]` / `tuning["foreground.skip"]` replace the engine's drawing entirely. `docs/SCRIPTING.md` has recipes for sine-wave parallax.
+- **Rule hooks.** `engine.shouldCollide(a, b)` lets Lua decide whether two objects collide (every game), and `engine.strengthChange(name, other, old, new)` lets Lua replace the strength a block is left with after a hit. `engine.tuningDefaults` lists every `tuning` name with its default.
+- **Drawing and damage hooks.** `engine.drawObject(name)` can stop one object being drawn, `engine.on("drawGameBefore" / "drawGame")` draw behind and over the scene, and four `classic.*` tuning names open the damage rules of the older games.
+- **Particle tuning.** `particle.amountScale`, `speedScale`, `lifeScale`, `sizeScale` and `gravityScale`; `clearParticleCache()` re-reads the particle table.
 - **Everything changeable from Lua.** New global `engine` table: `engine.original` / `engine.resOriginal` (the engine's own natives, kept when a script replaces a global), `engine.natives()`, and `engine.on` / `off` / `emit` with the events `update`, `levelLoaded`, `objectCreated` and `objectRemoved`. `docs/SCRIPTING.md` has a new, complete native function reference and a chapter "Changing the engine from Lua".
+- **`tuning` table and `contact` event.** The engine's built-in constants can be set from Lua (`tuning["sw.forceDivisor"] = 5`): Star Wars damage divisor, homing damage, hit wobble and sensor removal limit, Rio wobble, and the mouse-wheel zoom step and duration; and, in every game, the Box2D solver (iterations, slop, sleep time and tolerance), the Star Wars water formula, the revert-gravity strength, the hit-wobble curve, the flip speed and the `hasMovingObjects` thresholds. `engine.on("contact", function(a, b) ... end)` fires when two objects begin to touch. `docs/SCRIPTING.md` ends with a modding guide with pseudocode and recipes.
 - **Asteroid-field rock layers (0x44adb0 / 0x44a800).** A layer with `spawnParameters` puts its rock on a random spot of its screen area, shifted by `(random - 0.5) * worldW / worldH` of the level box. The exe reads `amount` and `xSpeedVariance` but never uses them, so the engine ignores them too.
-* **Release name.** `make_release.bat` writes `AngryBirdsEngine-v2.7.zip`.
+* **Release name.** `make_release.bat` writes `AngryBirdsEngine-v2.9.zip`.
 
 ## New in 2.6
 

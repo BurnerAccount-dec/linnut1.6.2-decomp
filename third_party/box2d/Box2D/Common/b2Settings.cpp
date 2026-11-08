@@ -20,6 +20,11 @@
 #include <cstdlib>
 
 b2Version b2_version = {2, 1, 1};
+float b2_velocityThresholdV21 = 1.0f;
+float b2_contactBaumgarteV21 = 0.2f;
+float b2_maxRotationV21 = 0.5f * 3.14159265359f;
+float b2_angularSleepToleranceV21 = 2.0f / 180.0f * 3.14159265359f;
+float b2_maxLinearCorrectionV21 = 0.2f;
 float32 b2_maxTranslation = 2.0f;
 float32 b2_maxTranslationSquared = 4.0f;
 
