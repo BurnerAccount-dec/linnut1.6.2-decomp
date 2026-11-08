@@ -144,14 +144,56 @@ ifMissing("drawString3D", function(group, text, x, y, z, tilt, turn, depth, alph
     env.setRenderState(0, 0, 1, 1, 0, 0, 0, 1)
 end)
 
+
+-- renderGravityVisualsNative(sensor, screenX, screenY, zoom) (0x415f90): the rings (circle sensors) and bars (box sensors) that the script's gravityVisuals list
+-- keeps for a gravitation sensor. A circle entry's sprite is drawn eight times round the sensor (four turns of a quarter, then four more shifted by an eighth),
+-- scaled by entry.scale * radius * 3 * zoom * 0.019; a box entry's sprite is drawn along the sensor's length at entry.pos (0..1), turned a quarter past the sensor's angle.
+-- (The game's own script passes no zoom, which reads as 0 in the exe, so the retail game draws nothing; a mod that passes the zoom gets the rings.)
+-- Every sprite is turned about its own bottom corner (the pivot is the sprite size) and drawn with the pivot anchors (VPIVOT, HPIVOT).
+ifMissing("renderGravityVisualsNative", function(sen, sx, sy, zoom)
+    zoom = zoom or 0   -- the retail script passes only three arguments, and the exe's number reader gives 0 for the missing fourth: scaled to nothing, so nothing is drawn
+    if type(sen) ~= "table" or sen.sensorType == nil or sen.addVisualTimer == nil or not sen.active or sen.definition == nil then return end
+    local def = env.blockTable and env.blockTable.blocks and env.blockTable.blocks[sen.definition]
+    local vis = sen.gravityVisuals
+    if not def or type(vis) ~= "table" then return end
+    local pi = _G.math.pi
+    if def.type == "circle" then
+        local unit = (sen.radius or 0) * 3.0 * zoom * 0.019
+        for _, e in _G.ipairs(vis) do
+            local s = (e.scale or 1) * unit
+            if s ~= 0 then
+                local w, h = env.res.getSpriteBounds(e.sprite)
+                for pass = 0, 1 do
+                    for i = 1, 4 do
+                        env.setRenderState(sx / s, sy / s, s, s, (i - 1) * pi * 0.5 + pass * pi * 0.25, w, h)
+                        env.res.drawSprite(e.sprite, e.x or 0, e.y or 0, "VPIVOT", "HPIVOT")
+                    end
+                end
+            end
+        end
+    elseif def.type == "box" and sen.width and sen.height then
+        local hw, hh = sen.width * 20 * 0.5, sen.height * 20 * 0.5
+        local pw, ph = env.res.getSpriteBounds("THEME_1_GRAVITY_SLICE_BOX_FADED")
+        if not pw or pw == 0 then return end
+        local u = hw * 2 / pw
+        local a = sen.angle or 0
+        local cs, sn = _G.math.cos(a), _G.math.sin(a)
+        local s = u * zoom
+        if s == 0 then return end
+        env.setRenderState(sx / s, sy / s, s, s, pi * 0.5 + a, pw, ph)
+        for _, e in _G.ipairs(vis) do
+            local p = e.pos or 0
+            env.res.drawSprite(e.sprite, (p * 2 * hh * sn - hh * sn) / u, (-p * 2 * hh * cs + hh * cs) / u, "VPIVOT", "HPIVOT")
+        end
+    end
+end)
+
 -- TODO (Space bring-up): placeholders that keep the scripts running; each needs the exe's behaviour
-for _, n in ipairs({"populateAimingAid",
-                    "createLineShape",
-                    "drawForeground", "renderMaskedImageNative",
+for _, n in ipairs({"drawForeground", "renderMaskedImageNative",
                     "linkSensor",
                     "drawSelectedTexturizedObject", "loadPreviousLevel",
                    
-                    "setFontPlaceholder", "getFontPlaceholder", "renderGravityVisualsNative"}) do ifMissing(n, function() end) end
+                    "setFontPlaceholder", "getFontPlaceholder"}) do ifMissing(n, function() end) end
 for _, n in ipairs({"getFontHeight", "getFontMaxAscending", "getFontMaxDescending", "getFontLeading", "getFontTracking", "getStringWidth"}) do
     ifMissing(n, function() return 0 end)
 end
@@ -187,17 +229,29 @@ ifMissing("native_setMass", function(name, density) env.setObjectDensity(name, d
 for _, n in ipairs({"native_drawSimulationTrajectory", "native_refreshThemeSystem",
                     "native_resetThemeSystem", "native_onLevelInitComplete", "native_initPaymentProvider", "native_startURLThread", "native_startQrScanner",
                     "native_stopQrScanner", "native_setQrRecognizedCallback", "native_iapRestorePurchases", "native_setThemeLayerOffset", "native_setThemeLayerScale",
-                    "native_setZOrderRange", "native_setKeepOrientation", "native_setControlled", "native_setIgnoresScore", "native_setTimeSinceCollision",
-                    "native_setBlockCollisionEnabled", "native_setAdditionalBirdGravity", "native_setBirdWaterDrag", "native_setObjectWaterDrag", "native_setWaterColor",
-                    "native_resizeRadius", "native_setAffectedByForceMultipliers"}) do ifMissing(n, function() end) end
+                    "native_setZOrderRange",
+                    "native_setAdditionalBirdGravity", "native_setWaterColor",
+                    "native_resizeRadius"}) do ifMissing(n, function() end) end
+ifMissing("native_setBirdWaterDrag", function(v) env.setBirdWaterDrag(v) end)
+ifMissing("native_setObjectWaterDrag", function(v) env.setObjectWaterDrag(v) end)
 ifMissing("native_isPaymentInitialized", function() return false end)
 ifMissing("native_isCameraSupported", function() return false end)
 ifMissing("native_hasFrontCamera", function() return false end)
 ifMissing("native_getDeviceOrientation", function() return 0 end)
 ifMissing("native_getLevelLimits", function() return 0, 0, 0, 0 end)
--- native_setIsWater / native_setWaterDensity(name, ...) are used as wrappers around createObject: they hand the object's name back
-ifMissing("native_setIsWater", function(name) return name end)
-ifMissing("native_setWaterDensity", function(name) return name end)
+-- the setters of single flags on the object record (0x4290d0, 0x428290, 0x428050, 0x427fe0, 0x427f70, 0x427e90, 0x427f00, 0x4280c0): the object record
+-- keeps them, 200 and up are the engine's own setObjectParameter ids
+local function flagNative(nativeName, id)
+    ifMissing(nativeName, function(name, on) env.setObjectParameter(name, id, (on == true or on == 1) and 1 or 0) end)
+end
+flagNative("native_setBlockCollisionEnabled", 200)
+flagNative("native_setIgnoresScore", 201)
+flagNative("native_setKeepOrientation", 202)
+flagNative("native_setAffectedByForceMultipliers", 203)
+flagNative("native_setIsWater", 204)
+flagNative("native_setControlled", 206)
+ifMissing("native_setWaterDensity", function(name, density) env.setObjectParameter(name, 205, density or 0) end)
+ifMissing("native_setTimeSinceCollision", function(name, t) env.setObjectParameter(name, 207, t or 0) end)
 
 -- res.createCompositeAudio(name, {clip names}): a sound made of other sounds that play one after the other
 -- (Star Wars: the title theme, then the menu music). Without it startInitialLoading failed in createAudioAssets and restarted every frame.

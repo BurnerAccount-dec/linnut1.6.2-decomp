@@ -98,6 +98,7 @@ public:
     virtual float CreateBox(const BodyDef& d) { (void)d; return 0; }
     virtual float CreateCompound(const BodyDef& d, const std::vector<CompoundShape>& shapes, float damping) { (void)d; (void)shapes; (void)damping; return 0; }
     virtual float CreatePolygon(const BodyDef& d, const std::vector<float>& verts /* x,y pairs */) { (void)d; (void)verts; return 0; }
+    virtual float CreateLine(const BodyDef& d, const std::vector<float>& verts /* x,y pairs */) { (void)d; (void)verts; return 0; }   // Star Wars createLineShape
     virtual float CreateCircle(const BodyDef& d) { (void)d; return 0; }
     // d has the defaults applied; the call may change x1..y2 (coordType 0 writes the body positions).
     // Returns false if an end object does not exist.

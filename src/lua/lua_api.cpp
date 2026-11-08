@@ -608,7 +608,7 @@ int l_loadLevel(lua_State* L) {
     int loaded = 1;
     std::string loadError = "No such file or directory";
     if (file.find(".temp") == std::string::npos || !P(L)->FindSavedLevel(file, bytes)) ab::ReadLuaFile(path, bytes);   // the editor's TAB copy comes from memory
-    if (const char* dump = std::getenv("AB_DUMPLEVEL")) { if (FILE* f = std::fopen(dump, "wb")) { std::fwrite(bytes.data(), 1, bytes.size(), f); std::fclose(f); } }   // debug: the decrypted level text
+    if (const char* dump = std::getenv("AB_DUMPLEVEL")) { if (FILE* f = std::fopen((std::string(dump) + "." + file.substr(file.find_last_of("/\\") + 1)).c_str(), "wb")) { std::fwrite(bytes.data(), 1, bytes.size(), f); std::fclose(f); } }   // debug: the decrypted level text
     if (!bytes.empty()) {
         loaded = luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), path.c_str());
         if (loaded != 0) { loadError = lua_tostring(L, -1); lua_pop(L, 1); }
@@ -1029,6 +1029,12 @@ int l_createPolygon(lua_State* L) {
     WriteWorldEntry(L, d, "polygon", P(L)->CreatePolygon(d, P(L)->Vertices()));
     return 0;
 }
+// createLineShape (Star Wars): the same arguments as createPolygon; the vertices from addVertex become a chain of edges (0x439640)
+int l_createLineShape(lua_State* L) {
+    BodyDef d = ReadBody(L, false);
+    WriteWorldEntry(L, d, "line", P(L)->CreateLine(d, P(L)->Vertices()));
+    return 0;
+}
 // ---- Angry Birds Space compound bodies: the scripts clear the list, add one entry per part, then createCompoundObject makes the body
 std::vector<CompoundShape> g_compoundShapes;
 float g_compoundDamping = 0;
@@ -1294,6 +1300,12 @@ int l_createJoint(lua_State* L) {
     lua_getfield(L, 1, "recreate");
     if (lua_isboolean(L, -1)) { lua_pushvalue(L, -1); lua_setfield(L, -3, "recreate"); }
     lua_pop(L, 1);
+    // Star Wars: the level's own joint fields that the scripts read later stay on the table (gamescene.lua draws a joint whose
+    // `isDrawn` is set (vines, ropes), levelGoalsLogic.lua tests `breakable`, the breaking force and the draw position ride along)
+    for (const char* extra : {"breakable", "breakForce", "isDrawn", "jointPosX", "jointPosY"}) {
+        lua_getfield(L, 1, extra);
+        if (!lua_isnil(L, -1)) lua_setfield(L, -2, extra); else lua_pop(L, 1);
+    }
     lua_setfield(L, -2, d.name.c_str());
     lua_pop(L, 1);
     SpaceLinkJoint(L, d.end1, d.end2);
@@ -1301,6 +1313,11 @@ int l_createJoint(lua_State* L) {
 }
 // createJoints(list) (Angry Birds Rio): creates every joint of a level's joint table; a joint without a name takes its key
 int l_createJoints(lua_State* L) {
+    if (std::getenv("AB_JOINTDBG")) {
+        int n = 0;
+        if (lua_istable(L, 1)) { lua_pushnil(L); while (lua_next(L, 1)) { ++n; lua_pop(L, 1); } }
+        std::fprintf(stderr, "createJoints: %s, %d entries\n", lua_istable(L, 1) ? "table" : "not a table", n);
+    }
     if (!lua_istable(L, 1)) return 0;
     lua_pushnil(L);
     while (lua_next(L, 1)) {
@@ -1372,7 +1389,7 @@ int l_removeObject(lua_State* L) {
         }
         lua_pop(L, 1);
     }
-    if (RioMode(L) && PushObjectsTable(L, "joints")) {      // Rio: a joint whose object is gone does not stay in objects.joints (removeBird would follow it to a missing object)
+    if ((RioMode(L) || IsSpaceData(L)) && PushObjectsTable(L, "joints")) {      // Rio and Space/Star Wars: a joint whose object is gone does not stay in objects.joints (removeBird would follow it to a missing object)
         std::string gone = S(L, 1);
         std::vector<std::string> stale;
         lua_pushnil(L);
@@ -1428,6 +1445,7 @@ int BodyCmd(lua_State* L, int cmd, bool boolArg = false) {
 }
 int l_enableAimingAid(lua_State* L) { float r = 0; P(L)->BodyCommand("", 20, lua_toboolean(L, 1) ? 1.0f : 0.0f, r); return 0; }
 int l_setAimingAidSprite(lua_State* L) { float r = 0; P(L)->BodyCommand(lua_isstring(L, 1) ? lua_tostring(L, 1) : "", 21, lua_isnumber(L, 2) ? (float)lua_tonumber(L, 2) : 1.0f, r); return 0; }
+int l_populateAimingAid(lua_State* L) { float r = 0; P(L)->BodyCommand("", 22, 0, r); return 0; }
 int l_clearAimingAid(lua_State* L) { float r = 0; P(L)->BodyCommand("", 23, 0, r); return 0; }
 int l_updateBirdTrajectoryTable(lua_State* L) { float r = 0; P(L)->BodyCommand(lua_isstring(L, 1) ? lua_tostring(L, 1) : "BirdSimulation", 24, 0, r); return 0; }
 int l_spriteExists(lua_State* L) { lua_pushboolean(L, P(L)->SpriteExists(S(L, 1))); return 1; }
@@ -2372,9 +2390,10 @@ int l_getFullScreenWidth(lua_State* L) { lua_getfield(L, LUA_REGISTRYINDEX, "ab.
 int l_getFullScreenHeight(lua_State* L) { lua_getfield(L, LUA_REGISTRYINDEX, "ab.env"); lua_getfield(L, -1, "screenHeight"); lua_remove(L, -2); if (!lua_isnumber(L, -1)) { lua_pop(L, 1); lua_pushnumber(L, 0); } return 1; }
 int l_performBitwiseOr(lua_State* L) { lua_pushnumber(L, (double)((int)N(L, 1) | (int)N(L, 2))); return 1; }   // 0x40dcb0
 // Retail natives (names from the registration table in AngryBirdsStarWars.exe)
-float g_waterForceMultiplier = 1.0f;   // setWaterForceMultiplier 0x40d490 / getWaterForceMultiplier 0x40d4a0
-int l_setWaterForceMultiplier(lua_State* L) { g_waterForceMultiplier = (float)N(L, 1); return 0; }
-int l_getWaterForceMultiplier(lua_State* L) { lua_pushnumber(L, g_waterForceMultiplier); return 1; }
+int l_setWaterForceMultiplier(lua_State* L) { float r = 0; P(L)->BodyCommand("", 90, (float)N(L, 1), r); return 0; }   // 0x40d490 (game +0x3cc, 2 until set)
+int l_getWaterForceMultiplier(lua_State* L) { float r = 2; P(L)->BodyCommand("", 91, 0, r); lua_pushnumber(L, r); return 1; }   // 0x40d4a0
+int l_setBirdWaterDrag(lua_State* L) { float r = 0; P(L)->BodyCommand("", 92, (float)N(L, 1), r); return 0; }       // 0x40d4b0 (+0x3d0, 0.4 until set)
+int l_setObjectWaterDrag(lua_State* L) { float r = 0; P(L)->BodyCommand("", 93, (float)N(L, 1), r); return 0; }   // 0x40d4c0 (+0x3d4, 0 until set)
 int l_fileExistsInAppData(lua_State* L) {   // 0x421ee0
     std::vector<uint8_t> bytes;
     lua_pushboolean(L, ab::ReadLuaFile(S(L, 1), bytes) && !bytes.empty());
@@ -2449,7 +2468,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"initializePainter", l_initializePainter}, {"clearCanvas", l_clearCanvas}, {"paintToCanvas", l_paintToCanvas}, {"drawCanvasWithMask", l_drawCanvasWithMask},
         {"getDominantCanvasColors", l_getDominantCanvasColors}, {"createSpriteFromCanvas", l_createSpriteFromCanvas}, {"loadCanvasSprite", l_loadCanvasSprite}, {"createSilhouette", l_createSilhouette}, {"predictCollision", l_predictCollision}, {"setObjectGravity", l_setObjectGravity}, {"setObjectGravityScale", l_setObjectGravityScale}, {"resetObjectGravity", l_resetObjectGravity}, {"getObjectGravity", l_getObjectGravity}, {"setupCompoObject", l_setupCompoObject},
         {"createDirectory", l_createDirectory}, {"checkDirectory", l_checkDirectory}, {"checkForLuaFile", l_checkForLuaFile},
-        {"createBox", l_createBox}, {"createCircle", l_createCircle}, {"createPolygon", l_createPolygon},
+        {"createBox", l_createBox}, {"createCircle", l_createCircle}, {"createPolygon", l_createPolygon}, {"createLineShape", l_createLineShape},
         {"clearVertices", l_clearVertices}, {"addVertex", l_addVertex},
         {"getVelocity", l_getVelocity}, {"createCompoundBodyFromTable", l_createCompoundBodyFromTable}, {"getLinearVelocity", l_getLinearVelocity}, {"getRayCastedObjects", l_getRayCastedObjects}, {"getBGColor", l_getBGColor}, {"hasMovingObjects", l_hasMovingObjects},
         {"hasMovingObjectsZeroTolerance", l_hasMovingObjectsZeroTolerance}, {"getLocalPoint", l_getLocalPoint},
@@ -2466,7 +2485,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"checkJointLimits", l_checkJointLimits}, {"destroyJoint", l_destroyJoint},
         {"removeObject", l_removeObject}, {"savePersistentLuaFile", l_savePersistentLuaFile}, {"applyImpulse", l_applyImpulse}, {"applyForce", l_applyForce}, {"applyForceNative", l_applyForce}, {"setObjectDecoration", l_setObjectDecoration}, {"setNormalTrailSprite", l_setNormalTrailSprite}, {"setSpecialTrailSprite", l_setSpecialTrailSprite}, {"setSpriteRotation", l_setSpriteRotation}, {"setPivotOffset", l_setPivotOffset}, {"setTextureScale", l_setTextureScale}, {"setRecordVelocity", l_setRecordVelocity},
         {"setPosition", l_setPosition}, {"setRotation", l_setRotation}, {"setVelocity", l_setVelocity},
-        {"setAngularVelocity", l_setAngularVelocity}, {"setLinearDamping", l_setLinearDamping}, {"clearShapesArray", l_clearShapesArray}, {"addBoxToCompoundList", l_addBoxToCompoundList}, {"addPolygonToCompoundList", l_addPolygonToCompoundList}, {"addLineToCompoundList", l_addLineToCompoundList}, {"addCircleToCompoundList", l_addCircleToCompoundList}, {"setCompoundShapeLinearDamping", l_setCompoundShapeLinearDamping}, {"setCompoundShapeParameter", l_setCompoundShapeParameter}, {"createCompoundObject", l_createCompoundObject}, {"finalizeCompoundObject", l_finalizeCompoundObject}, {"enableAimingAid", l_enableAimingAid}, {"setAimingAidSprite", l_setAimingAidSprite}, {"clearAimingAid", l_clearAimingAid}, {"updateBirdTrajectoryTable", l_updateBirdTrajectoryTable}, {"simulateAimingAid", l_simulateAimingAid}, {"spriteExists", l_spriteExists}, {"setSensorGravityMask", l_setSensorGravityMask}, {"setRevertGravity", l_setRevertGravity}, {"setRevertGravityWithMultiplier", l_setRevertGravityWithMultiplier}, {"setObjectGravityCategory", l_setObjectGravityCategory},
+        {"setAngularVelocity", l_setAngularVelocity}, {"setLinearDamping", l_setLinearDamping}, {"clearShapesArray", l_clearShapesArray}, {"addBoxToCompoundList", l_addBoxToCompoundList}, {"addPolygonToCompoundList", l_addPolygonToCompoundList}, {"addLineToCompoundList", l_addLineToCompoundList}, {"addCircleToCompoundList", l_addCircleToCompoundList}, {"setCompoundShapeLinearDamping", l_setCompoundShapeLinearDamping}, {"setCompoundShapeParameter", l_setCompoundShapeParameter}, {"createCompoundObject", l_createCompoundObject}, {"finalizeCompoundObject", l_finalizeCompoundObject}, {"enableAimingAid", l_enableAimingAid}, {"setAimingAidSprite", l_setAimingAidSprite}, {"clearAimingAid", l_clearAimingAid}, {"populateAimingAid", l_populateAimingAid}, {"updateBirdTrajectoryTable", l_updateBirdTrajectoryTable}, {"simulateAimingAid", l_simulateAimingAid}, {"spriteExists", l_spriteExists}, {"setSensorGravityMask", l_setSensorGravityMask}, {"setRevertGravity", l_setRevertGravity}, {"setRevertGravityWithMultiplier", l_setRevertGravityWithMultiplier}, {"setObjectGravityCategory", l_setObjectGravityCategory},
         {"setSensorMinimumAndMaximumForces", l_setSensorMinimumAndMaximumForces}, {"setGravityForceMultiplier", l_setGravityForceMultiplier},
         {"getGravityForceMultiplier", l_getGravityForceMultiplier}, {"setAngularDamping", l_setAngularDamping},
         {"setFixedRotation", l_setFixedRotation}, {"setActive", l_setActive}, {"multiplyVelocity", l_multiplyVelocity}, {"setAsSensor", l_setAsSensor},
@@ -2479,7 +2498,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"setRenderState", l_setRenderState}, {"drawRect", l_drawRect}, {"drawLine2D", l_drawLine2D},
         {"drawTexturedRect", l_nothing}, {"drawSome", l_nothing},
         {"drawGameNative", l_drawGameNative}, {"drawBackgroundNative", l_drawBackgroundNative},
-        {"drawForegroundNative", l_drawForegroundNative}, {"drawParticlesFiltered", l_drawParticlesFiltered}, {"readDataFile", l_readDataFile}, {"setObjectDensity", l_setObjectDensity}, {"setRestitution", l_setRestitution}, {"handleJointLimits", l_handleJointLimits}, {"getFullScreenWidth", l_getFullScreenWidth}, {"getFullScreenHeight", l_getFullScreenHeight}, {"performBitwiseOr", l_performBitwiseOr}, {"setWaterForceMultiplier", l_setWaterForceMultiplier}, {"getWaterForceMultiplier", l_getWaterForceMultiplier}, {"fileExistsInAppData", l_fileExistsInAppData}, {"loadTextFileToString", l_loadTextFileToString}, {"isGameOverlayActive", l_isGameOverlayActive}, {"clearScreen", l_retailNoop}, {"refreshCurrentLocale", l_retailNoop}, {"recoverRenderObjects", l_retailNoop}, {"drawParticlesNative", l_drawParticlesNative},
+        {"drawForegroundNative", l_drawForegroundNative}, {"drawParticlesFiltered", l_drawParticlesFiltered}, {"readDataFile", l_readDataFile}, {"setObjectDensity", l_setObjectDensity}, {"setRestitution", l_setRestitution}, {"handleJointLimits", l_handleJointLimits}, {"getFullScreenWidth", l_getFullScreenWidth}, {"getFullScreenHeight", l_getFullScreenHeight}, {"performBitwiseOr", l_performBitwiseOr}, {"setWaterForceMultiplier", l_setWaterForceMultiplier}, {"getWaterForceMultiplier", l_getWaterForceMultiplier}, {"setBirdWaterDrag", l_setBirdWaterDrag}, {"setObjectWaterDrag", l_setObjectWaterDrag}, {"fileExistsInAppData", l_fileExistsInAppData}, {"loadTextFileToString", l_loadTextFileToString}, {"isGameOverlayActive", l_isGameOverlayActive}, {"clearScreen", l_retailNoop}, {"refreshCurrentLocale", l_retailNoop}, {"recoverRenderObjects", l_retailNoop}, {"drawParticlesNative", l_drawParticlesNative},
         {"setSprite", l_setSprite}, {"setMaterial", l_setMaterial}, {"setTexture", l_setTexture}, {"setTheme", l_setTheme},
         {"clipText", l_clipText},
         {"startNewTrajectory", l_startNewTrajectory}, {"addToTrajectory", l_addToTrajectory},

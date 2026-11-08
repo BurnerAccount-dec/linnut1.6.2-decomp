@@ -284,6 +284,7 @@ bool ScriptHost::LoadScripts() {
     };
     if (!config_.commonScriptPath.empty()) {
         space_ = true;
+        starWars_ = true;
         if (!LoadTableFile(L_, "starTable", config_.scriptPath + "/starLimits.lua", &error_)) return false;   // the star limits per level
         bool ok = RunFile(config_.commonScriptPath + "/gamelogic.lua");
         if (ok) {   // Star Wars: the exe runs options.lua (releaseBuild, customerString, gameVersionNumber ...) itself, before the first callback
@@ -535,6 +536,30 @@ bool ScriptHost::BlockCollision(const std::string& a, const std::string& b, floa
         return CallWithArgs("blockCollision", 6);
     }
     return CallWithArgs("blockCollision", 4);
+}
+
+bool ScriptHost::BirdCollisionSW(const std::string& a, const std::string& b, float force, float damage, const float pn[4]) {
+    GetEnvField("birdCollision");
+    if (!lua_isfunction(L_, -1)) { lua_pop(L_, 1); return true; }
+    lua_pushlstring(L_, a.data(), a.size());
+    lua_pushlstring(L_, b.data(), b.size());
+    lua_pushnumber(L_, force);
+    lua_pushnumber(L_, damage);
+    for (int i = 0; i < 4; i++) lua_pushnumber(L_, pn[i]);
+    return CallWithArgs("birdCollision", 8);
+}
+
+bool ScriptHost::BlockCollisionSW(const std::string& a, const std::string& b, float force, bool wasDamageDone, float damage, const float pn[4]) {
+    GetEnvField("blockCollision");
+    if (!lua_isfunction(L_, -1)) { lua_pop(L_, 1); return true; }
+    lua_pushlstring(L_, a.data(), a.size());
+    lua_pushlstring(L_, b.data(), b.size());
+    lua_pushnumber(L_, force);
+    lua_pushboolean(L_, wasDamageDone);
+    lua_pushboolean(L_, 0);
+    lua_pushnumber(L_, damage);
+    for (int i = 0; i < 4; i++) lua_pushnumber(L_, pn[i]);
+    return CallWithArgs("blockCollision", 10);
 }
 
 bool ScriptHost::ResolutionChanged(float w, float h) {

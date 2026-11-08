@@ -95,7 +95,7 @@ void UpdateFrame(FrameState& s, FrameHost& host, float dt) {
         }
 
         // 4. publish to Lua
-        bool hasMoving = false, hasAwake = false, hasMovingAboveTolerance = false;
+        bool hasMoving = false, hasAwake = false, hasMovingAboveTolerance = false, hasMovingZero = false;
         if (!s.objects.empty()) {
             for (size_t i = 0; i < s.objects.size(); i++) {
                 FrameObject* o = s.objects[i];
@@ -117,6 +117,13 @@ void UpdateFrame(FrameState& s, FrameHost& host, float dt) {
                     float vx = b.VelX(), vy = b.VelY();
                     float speedSq = vy * vy + vx * vx;
                     if (speedSq > 0.0005f && !o->isBird && !b.HasJoints()) hasMovingAboveTolerance = true;
+                    if (s.starWarsSync) {
+                        // 0x43387c / 0x4338bf / 0x433a52: no joint test, and an object flagged with parameter 12 never counts; the angular test uses |w|
+                        if (speedSq > 0.0f && !o->isBird && !o->ignoreMoving) hasMovingZero = true;
+                        float aw = b.AngularVelocity(); if (aw < 0.0f) aw = -aw;
+                        if ((speedSq > 9.0f || aw > 0.1f) && !o->ignoreMoving) hasMoving = true;
+                        host.SetObjectNumber(o->id, "velocity", std::sqrt(speedSq));   // 0x433953: objects.world[name].velocity, read by gamescene's specialty speed limits
+                    } else
                     if (speedSq > 9.0f || (b.AngularVelocity() > 0.1f && !b.HasJoints())) hasMoving = true;
 
                     bool done = false;
@@ -125,13 +132,13 @@ void UpdateFrame(FrameState& s, FrameHost& host, float dt) {
                         host.SetObjectNumber(o->id, "yVel", vy);
                         host.SetObjectNumber(o->id, "angle", o->interpAngle);
                         done = true;
-                    } else if (o->recordVelocity) {
+                    } else if (o->recordVelocity || (s.starWarsSync && o->rollMaterial == kRollPropeller)) {   // 0x433960: a controlled, propeller or recorded object
                         // Space publishes these for an object the script flagged with setRecordVelocity (0x483eb6), the angle with them. The other
                         // games' exes only do it for birds, so a script could not read a block's velocity from objects.world there; the engine sets the
                         // flag on every object of those games, so objects.world[name].xVel / .yVel work for all of them
                         host.SetObjectNumber(o->id, "xVel", vx);
                         host.SetObjectNumber(o->id, "yVel", vy);
-                        if (o->recordAngle) host.SetObjectNumber(o->id, "angle", o->interpAngle);
+                        if (o->recordAngle || o->rollMaterial == kRollPropeller) host.SetObjectNumber(o->id, "angle", o->interpAngle);
                     }
                     if (!done && o->rolls) {
                         float w = b.AngularVelocity();
@@ -154,6 +161,7 @@ void UpdateFrame(FrameState& s, FrameHost& host, float dt) {
         host.SetGameBool("hasMovingObjects", hasMoving);
         host.SetGameBool("hasAwakeObjects", hasAwake);
         host.SetGameBool("hasMovingObjectsAboveTolerance", hasMovingAboveTolerance);
+        if (s.starWarsSync) host.SetGameBool("hasMovingObjectsZeroTolerance", hasMovingZero);
 
         // 6. joints
         for (size_t i = 0; i < s.joints.size(); i++) {

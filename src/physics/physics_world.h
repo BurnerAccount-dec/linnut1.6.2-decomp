@@ -94,6 +94,7 @@ struct PhysObject : FrameObject {
     // Angry Birds Rio, from the exe's object record: setObjectParameter 6 / 7 (+0xd8 / +0xd4) are the bounce multipliers; an
     // impact starts a wobble of the draw scale (wobActive/wobT/wobAmp0/wobCur = +0xc4/+0xc8/+0xd0/+0xcc), wobDX/wobDY is its
     // current offset from the object's own scale
+    bool noHitWobble = false;                        // Star Wars +0x150 (setObjectParameter 11): a bird-bird hit does not start this object's wobble
     float bounceAmp = 0, bounceFreq = 0;
     bool wobActive = false; float wobT = 0, wobAmp0 = 0, wobCur = 0, wobDX = 0, wobDY = 0;
     bool enableFlipping = false, flipBase = false;   // Rio ids 9 and 8: the sprite turns to face the way the object moves
@@ -122,6 +123,13 @@ struct PhysObject : FrameObject {
     float gravExt = 0;                               // id 35 (+0x178): extent of a directional field
     float gravMin = 0, gravMax = 0, gravRadius = -1; // ids 25, 26, 27 (+0x168, +0x16c, +0x170); radius <= -1: a directional field
     bool spaceFlagA = false, spaceActive19e = false; // Space ids 19 (+0x188) and 20 (+0x19e), read by the contact filter at 0x4624e0
+    // Angry Birds Star Wars (setObjectParameter 36, native_setBlockCollisionEnabled / setIgnoresScore / setKeepOrientation / setAffectedByForceMultipliers / setIsWater)
+    int groupIndex = 0;                              // id 36 (+0xf4): two objects with the same group above 0 never collide
+    bool blockCollision = true;                      // +0x154: false = collides only with the materials in objects.world[name].collisionMaterials
+    bool ignoresScore = false, keepOrientation = false, affectedByForceMult = false, isWater = false;   // +0x166, +0x164, +0x165, +0x163
+    float waterDensity = 0;                          // +0x168
+    bool killOn = false; float killTimer = 0;       // +0x15b, +0xec: when set, objects.world[name].strength becomes 0 and the object is dead after killTimer seconds
+    bool isCircle = false; float boxW = 0, boxH = 0; // +0x15c, +0xb0, +0xb4: the size the water code reads
     bool hidden = false;                             // Space id 33 (+0x1ab) = 0: isVisible false, not drawn
     float capSpeed = 0, capVx = 0, capVy = 0;        // v2.4 setSpeedCap: 0 = no limit, applied after every physics step
     bool zSet = false;                               // setObjectZOrder was used: the object is drawn by zOrder in every game (Rio always sorts by it)
@@ -132,6 +140,8 @@ class ContactHandle {
 public:
     virtual ~ContactHandle() {}
     virtual void SetEnabled(bool on) = 0;
+    // the first world contact point and the normal (b2Contact::GetWorldManifold); all zero when the contact has no points
+    virtual void WorldManifold(float& px, float& py, float& nx, float& ny) { px = py = nx = ny = 0; }
 };
 
 // Everything about a body that the tests look at.
@@ -152,6 +162,10 @@ public:
     bool startAsleep = false;
     // Angry Birds Space has its own setObjectParameter ids (0x47ac60) and its own contact filter (0x4624e0)
     bool spaceRules = false;
+    bool ShouldCollide(const PhysObject* a, const PhysObject* b) const { return ShouldCollideObjects(a, b); }   // the contact filter (for tests)
+    float waterForceMultiplier = 2.0f, birdWaterDrag = 0.4f, objectWaterDrag = 0, gameWorldScale = 1;   // game +0x3cc, +0x3d0, +0x3d4, +0x160 (defaults of the constructor at 0x43dedc)
+    bool starWarsRules = false;                      // Star Wars: the contact filter at 0x410e70 (spaceRules is set too)
+    std::function<std::vector<std::string>(const PhysObject&)> collisionMaterialsOf;   // objects.world[name].collisionMaterials, read by the filter for an object with blockCollision false
 
     virtual Box2DVersion Version() const = 0;
     // the skin of the boxes and polygons that are created from now on (Box2D 2.2.0 only; 0 for 2.1.1, which has none)
@@ -166,6 +180,8 @@ public:
     virtual float CreateCompound(const BodyDef& d, const std::vector<CompoundShape>& shapes, float damping) = 0;
     virtual float CreateCircle(const BodyDef& d) = 0;
     virtual float CreatePolygon(const BodyDef& d, const std::vector<float>& verts) = 0;
+    // createLineShape (Star Wars, 0x439640): a body of edge shapes, one for each pair of neighbouring vertices (Box2D 2.2 only; the 2.1 build makes a polygon)
+    virtual float CreateLine(const BodyDef& d, const std::vector<float>& verts) { return CreatePolygon(d, verts); }
 
     // Joints. The caller has already applied the table defaults (see JointDef in platform.h and the
     // list in ENGINE_SPEC.md). Returns false if an end object is missing (the original creates nothing).
@@ -189,6 +205,8 @@ public:
     void ApplyGravitySensors(float dt);
     // gravity of one object, independent of the world's (called from ApplyGravitySensors, before every step)
     void ApplyOwnGravity();
+    // 0x41e440: the force and drag of water (a kind 2 sensor with setIsWater) on an object inside it
+    void ApplyWater(PhysObject& w, PhysObject& o);
     bool SetOwnGravityVector(const std::string& n, float gx, float gy);
     bool SetOwnGravityScale(const std::string& n, float scale);
     bool ResetOwnGravity(const std::string& n);

@@ -52,7 +52,7 @@ public:
     virtual void Anchors(float& x1, float& y1, float& x2, float& y2) const = 0;
 };
 
-enum RollMaterial { kRollNone = 0, kRollWood = 1, kRollRock = 2, kRollLight = 3 };
+enum RollMaterial { kRollNone = 0, kRollWood = 1, kRollRock = 2, kRollLight = 3, kRollPropeller = 4 };
 
 // One entry of the game's object table (the original struct, only the fields this code uses).
 struct FrameObject {
@@ -61,6 +61,7 @@ struct FrameObject {
     int rollMaterial = kRollNone;     // +0x18
     bool isBird = false;              // +0x87
     bool recordVelocity = false;      // Space +0x189 (setRecordVelocity): xVel / yVel are published for this object too; the other games' objects always have it
+    bool ignoreMoving = false;        // Star Wars +0x151 (setObjectParameter 12): the object does not count for hasMovingObjects
     bool recordAngle = false;         // Space: a recorded object also publishes its angle
     bool rolls = false;               // +0x88  makes rolling noise
     float rollFactor = 0;             // +0x70
@@ -116,6 +117,7 @@ struct FrameState {
     bool versionReceived = false;     // Game+0x1c
     bool updateNoticePending = false; // Game+0x1d
     bool updateNoticeValue = false;   // Game+0x1e
+    bool starWarsSync = false;        // Star Wars (0x433xxx): hasMovingObjects ignores joints and flagged objects, hasMovingObjectsZeroTolerance is published
     bool stepOnEqual = false;         // Space (0x483xxx): the loop runs while accumulator >= step
     float physicsScale = 1;           // v2.2: physicsSpeedFactor. Only the physics steps see it (the accumulator grows by dt * physicsScale); Lua update(dt) is not scaled
     std::vector<FrameObject*> objects;     // the object hashtable

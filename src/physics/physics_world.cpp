@@ -166,6 +166,10 @@ void PhysicsWorld::SetAngularVelocity(const std::string& n, float w) {
 bool PhysicsWorld::BodyCommand(const std::string& n, int cmd, float a, float& result) {
     if (cmd == 8) { gravityForceMultiplier = a; return true; }
     if (cmd == 9) { result = gravityForceMultiplier; return true; }
+    if (cmd == 90) { waterForceMultiplier = a; return true; }          // setWaterForceMultiplier 0x40d490
+    if (cmd == 91) { result = waterForceMultiplier; return true; }     // getWaterForceMultiplier 0x40d4a0
+    if (cmd == 92) { birdWaterDrag = a; return true; }                 // 0x40d4b0
+    if (cmd == 93) { objectWaterDrag = a; return true; }               // 0x40d4c0
     PhysObject* o = Find(n);
     if (!o) return false;
     PhysBody& b = *o->pbody;
@@ -229,7 +233,24 @@ void PhysicsWorld::SetObjectParameter(const std::string& n, int id, float value)
         case 8: o->flipX = o->flipBase = (int)value == 1; break;
         case 9: o->enableFlipping = (int)value == 1; break;
         case 10: o->disableRotation = (int)value == 1; break;
+        case 11: if (starWarsRules) o->noHitWobble = (int)value == 1; break;   // Star Wars +0x150
+        case 12: if (starWarsRules) o->ignoreMoving = (int)value == 1; break;   // Star Wars +0x151
         case 15: o->disableImmovable = (int)value == 1; break;
+        case 6: if (starWarsRules) o->bounceAmp = value; break;    // Star Wars +0x108: the multiplier of the hit wobble (blocks' bounceAmplitudeMultiplier)
+        case 7: if (starWarsRules) o->bounceFreq = value; break;   // +0x104
+        case 36: o->groupIndex = (int)value; break;      // Star Wars: collisionGroupIndex (+0xf4)
+        case 16:                                         // Star Wars: ignoreClassicGravity, the body's gravity scale (+0x8c) is 0 for 1, else 1
+            if ((int)value == 1) { o->ownGravityMode = 2; o->ownGravityScale = 0; } else if (o->ownGravityMode == 2) o->ownGravityScale = 1;
+            break;
+        // the Star Wars natives that set one flag of the object record; the script layer maps them to these ids (200 and up are the engine's own)
+        case 200: o->blockCollision = (int)value == 1; break;     // native_setBlockCollisionEnabled (+0x154)
+        case 201: o->ignoresScore = (int)value == 1; break;       // native_setIgnoresScore (+0x166)
+        case 202: o->keepOrientation = (int)value == 1; break;    // native_setKeepOrientation (+0x164)
+        case 203: o->affectedByForceMult = (int)value == 1; break; // native_setAffectedByForceMultipliers (+0x165)
+        case 204: o->isWater = (int)value == 1; break;            // native_setIsWater (+0x163)
+        case 205: o->waterDensity = value; break;                 // native_setWaterDensity (+0x168)
+        case 206: o->isBird = (int)value == 1; break;             // native_setControlled (+0x155)
+        case 207: o->birdGravReduce = value; break;               // native_setTimeSinceCollision (+0x138)
         case 19: o->spaceFlagA = (int)value == 1; break;
         case 20: o->spaceActive19e = (int)value == 1; break;
         case 21: o->sensorKind = (int)value; break;
@@ -326,6 +347,54 @@ bool PhysicsWorld::GravityPull(const PhysObject& s, const PhysObject& t, float t
     return true;
 }
 
+// 0x41e440: water. `w` is the water sensor (+0x11c minimum, +0x120 maximum, +0x124 radius = ids 25..27, +0x15e = id 34), `o` the object in it.
+// The force points at the water's centre (a circle) or straight up (a box), is the buoyancy mass * 0.1 * (density of the object - density of the water)
+// scaled from the maximum at the surface to the minimum at full depth, fades out inside the top 1.5 world units of the water, and acts a little to
+// the side of the centre when the object leans (so that it rights itself); a drag of mass * coefficient * -velocity always applies.
+void PhysicsWorld::ApplyWater(PhysObject& w, PhysObject& o) {
+    const float g = gameWorldScale, PI_ = 3.14159265f;
+    float wMin = w.gravMin, wMax = w.gravMax, wRad = w.gravRadius;
+    float mass = o.pbody->Mass(), ang = o.pbody->Angle();
+    float dx = w.pbody->PosX() - o.pbody->PosX(), dy = w.pbody->PosY() - o.pbody->PosY();
+    float len = std::sqrt(dx * dx + dy * dy);
+    float fVar2 = std::min(wRad, len);
+    bool bird = o.isBird && o.birdGravReduce < 0;                       // controlled and no collision yet
+    float ux = dx, uy = dy;
+    if (len >= 1.1920929e-07f) { ux = 1.0f / len * dx; uy = 1.0f / len * dy; }
+    float fVar3 = wRad;
+    if (!w.isCircle) {                                                   // a box of water: straight up, depth below its top edge
+        fVar3 = w.boxH;
+        ux = 0; uy = 1;
+        float depth = (fVar3 * 0.5f + w.pbody->PosY()) - o.pbody->PosY();
+        if (depth <= 0) depth = 0;
+        fVar2 = std::min(depth, fVar3);
+    }
+    if (w.stopOnExit) { ux = 0; uy = 1; fVar2 = 0; }                     // +0x15e (id 34)
+    float F = mass * 0.1f * (o.waterDensity - w.waterDensity) * (wMax - (wMax - wMin) * (fVar2 / fVar3));
+    if (bird) F = waterForceMultiplier * F;
+    float band = std::min(g * 1.5f, fVar3);
+    float offX = 0, offY = 0;
+    if (fVar3 - band < fVar2 && !bird) {
+        float ratio = (fVar3 - fVar2) / band;
+        F = ratio * F;
+        float vx = std::cos(ang), vy = std::sin(ang);
+        if (o.boxW < o.boxH) { vx = std::cos(ang + PI_ * 0.5f); vy = std::sin(ang + PI_ * 0.5f); }
+        float dot = vx * ux + vy * uy;
+        offX = dot * vx * (1 - ratio); offY = dot * vy * (1 - ratio);
+    }
+    if (o.keepOrientation) { offX = std::cos(ang - PI_ * 0.5f) * 0.25f; offY = std::sin(ang - PI_ * 0.5f) * 0.25f; }
+    float size = g;
+    if (!o.isCircle) {                                                   // the aspect ratio of a box moves the push point further out
+        float lo = std::min(o.boxW, o.boxH), hi = std::max(o.boxW, o.boxH);
+        size = (lo > 0 ? hi / lo : 1.0f) * 0.25f * g;
+    }
+    float vx = o.pbody->VelX(), vy = o.pbody->VelY();
+    if (-g * 15.0f < uy * vy + ux * vx || bird)
+        o.pbody->ApplyForce(F * ux, F * uy, o.pbody->PosX() + size * offX, o.pbody->PosY() + size * offY);
+    float drag = (bird ? birdWaterDrag : objectWaterDrag) * mass;        // always, whatever the depth
+    o.pbody->ApplyForce(-vx * drag, -vy * drag, o.pbody->PosX(), o.pbody->PosY());
+}
+
 int PhysicsWorld::SensorPair(PhysObject* sen, PhysObject* other, bool enter) {
     if (enter) sensorPairs_.push_back({sen, other});
     else {
@@ -349,6 +418,8 @@ void PhysicsWorld::ApplyGravitySensors(float dt) {
         PhysObject& s = *sensorPairs_[i].first; PhysObject& t = *sensorPairs_[i].second;
         if (!s.pbody || !t.pbody || s.sensorKind != 2 || t.sensorKind == 5 || t.sensorKind == 7 || !t.pbody->IsAwake()) continue;
         if (t.pbody->IsStatic()) continue;
+        if (starWarsRules && !s.gravOn) continue;                       // 0x423270 only acts for a sensor with parameter 22 set
+        if (starWarsRules && s.isWater) { ApplyWater(s, t); continue; }
         if (s.gravMask > -1 && t.gravCat > -1 && (s.gravMask & t.gravCat) == 0) continue;
         float fx, fy;
         if (GravityPull(s, t, t.pbody->PosX(), t.pbody->PosY(), t.pbody->VelX(), t.pbody->VelY(), t.birdGravReduce, t.pbody->Mass(), fx, fy))
@@ -357,7 +428,8 @@ void PhysicsWorld::ApplyGravitySensors(float dt) {
     // 0x483537: the exe goes through its objects in name order and advances an object's timer right after that object's own turn, so the sensors
     // (names like BLOCK_SENSOR_...) have pulled the bird with the old value before it runs by one fixed step
     for (const auto& bo : objects_)
-        if (bo->isBird && bo->birdGravReduce >= 0) bo->birdGravReduce += dt;
+        if (starWarsRules) { if ((bo->isBird || bo->affectedByForceMult) && bo->birdGravReduce >= 0) bo->birdGravReduce += dt; }   // 0x432f5c: +0x138 grows while it is 0 or more for controlled / force-multiplied objects
+        else if (bo->isBird && bo->birdGravReduce >= 0) bo->birdGravReduce += dt;
 }
 
 // ---- gravity of one object. Box2D 2.2 applies the world's gravity to every body (b2Body::SetGravityScale only exists from 2.3), so an object
@@ -548,6 +620,7 @@ void PhysicsWorld::SetMaterial(const std::string& n, const std::string& material
     if (material.compare(0, 4, "wood") == 0) o->rollMaterial = kRollWood;
     if (material.compare(0, 4, "rock") == 0) o->rollMaterial = kRollRock;
     if (material.compare(0, 5, "light") == 0) o->rollMaterial = kRollLight;
+    if (starWarsRules && material == "propeller") o->rollMaterial = kRollPropeller;   // 0x42943x: only the exact name
 }
 
 void PhysicsWorld::SetSpriteName(const std::string& n, const std::string& sprite) {
@@ -586,6 +659,36 @@ void PhysicsWorld::ApplyVelocityChange(const VelocityChange& v) {
 // z_order 999 never collides with an object whose material is "immovable".
 bool PhysicsWorld::ShouldCollideObjects(const PhysObject* a, const PhysObject* b) const {
     if (!a || !b) return true;
+    if (starWarsRules) {
+        // Angry Birds Star Wars, 0x410e70 (fields: group +0xf4, kind +0x110, flag19 +0x13d, flag20 +0x157, immovable-off +0x152, collision +0x153, blockCollision +0x154, controlled +0x155)
+        auto t57 = [](const PhysObject* o) { return o->sensorKind == 5 || o->sensorKind == 7; };
+        if (a->groupIndex == b->groupIndex && a->groupIndex > 0 && b->groupIndex > 0) return false;
+        const bool anyA = a->spaceFlagA || b->spaceFlagA;
+        if (anyA && (t57(a) || t57(b))) return true;
+        if (!a->collision || !b->collision) return false;
+        if (a->sensorKind == 7 && b->isBird) return false;
+        if (b->sensorKind == 7 && a->isBird) return false;
+        if (anyA && (a->spaceActive19e || b->spaceActive19e)) return false;
+        if (t57(a) && t57(b)) return false;
+        const int ta = a->sensorKind, tb = b->sensorKind;
+        if ((ta == 6 || tb == 6) && (a->isBird || b->isBird)) return false;
+        if (a->disableImmovable && materialOf && materialOf(*b).compare(0, 9, "immovable") == 0) return false;
+        if (b->disableImmovable && materialOf && materialOf(*a).compare(0, 9, "immovable") == 0) return false;
+        if (!a->isBird && !b->isBird && ta != 6 && tb != 6) {
+            if (ta == 5 && tb != ta) return false;
+            if (tb == 5 && ta != tb) return false;
+        }
+        // an object with blockCollision false collides only with the materials in its collisionMaterials list
+        auto listed = [&](const PhysObject* owner, const PhysObject* other) {
+            if (!collisionMaterialsOf || !materialOf) return false;
+            const std::string m = materialOf(*other);
+            for (const std::string& s : collisionMaterialsOf(*owner)) if (s == m) return true;
+            return false;
+        };
+        if (!a->blockCollision) return listed(a, b);
+        if (!b->blockCollision) return listed(b, a);
+        return true;
+    }
     if (spaceRules) {
         // Angry Birds Space, 0x4624e0 (T is the object's +0x15c type: 5, 6 and 7 are special; ctl is the controllable byte +0x19c)
         auto t57 = [](const PhysObject* o) { return o->sensorKind == 5 || o->sensorKind == 7; };

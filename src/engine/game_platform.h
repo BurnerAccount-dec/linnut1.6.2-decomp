@@ -166,6 +166,7 @@ public:
     float CreateBox(const BodyDef& d) override { return Physics().CreateBox(d); }
     float CreateCircle(const BodyDef& d) override { return Physics().CreateCircle(d); }
     float CreatePolygon(const BodyDef& d, const std::vector<float>& v) override { return Physics().CreatePolygon(d, v); }
+    float CreateLine(const BodyDef& d, const std::vector<float>& v) override { return Physics().CreateLine(d, v); }
     float CreateCompound(const BodyDef& d, const std::vector<CompoundShape>& s, float damping) override { return Physics().CreateCompound(d, s, damping); }
     bool CreateJoint(JointDef& d) override { return Physics().CreateJoint(d); }
     void SetJointParameters(const JointParams& p) override { Physics().SetJointParameters(p); }
@@ -327,6 +328,8 @@ public:
 
 private:
     void OnContact(PhysObject& a, PhysObject& b, ContactHandle& contact);
+    void UpdateKillTimers(float dt);
+    void OnContactStarWars(PhysObject& a, PhysObject& b, ContactHandle& contact);   // 0x42f9d0
     class Host;                       // FrameHost: world step, Lua writes, (no audio / effects yet)
     // The persistent state set by setRenderState (0x408630): translation, scale, angle, pivot.
     struct RenderState {

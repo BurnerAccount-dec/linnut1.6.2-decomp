@@ -153,3 +153,24 @@ Second pass over the Rio exe (checked against the 2.2 code in `third_party/box2d
 ### z_order of objects (2.2.3)
 
 `PhysicsWorld::MoveObjectZ` (front: highest z + 1, at least 5; back: lowest z - 1) and `GamePlatform::DrawGroup(which)` / `GameDrawOrder()` (the four groups of `DrawGame` as lists, so the drawing and the Lua / console listing use the same sort) are new. `SyncWorldZ` (end of `lua_api.cpp`) writes the z into `objects.world[name].z_order`; `l_setObjectZOrder`, `l_moveObjectZ` and the console command `zorder` call it, so the table the scripts read never goes stale. `getObjectZOrder` returns nil for a missing object. Checked: Rio 1.4.2 Plane 1-10 and a beach level render pixel for pixel as before the refactor of `DrawGame`.
+
+## Angry Birds Star Wars (v2.7)
+
+Addresses are from `AngryBirdsStarWars.exe` (a different binary from the 1.6.2 one the older notes use).
+
+| Address | What it is | Where it is in the engine |
+|---|---|---|
+| 0x410e70 | contact filter (`ShouldCollide`): collision group index (+0xf4), material lists, kind 7 and flag 19 | `PhysicsWorld::ShouldCollide` |
+| 0x42f9d0 | `BeginContact`: sensors, bird-bird, bird-block, block-block damage, wobble, the `birdCollision` / `blockCollision` argument lists | `GamePlatform::OnContactStarWars` |
+| 0x41f370 / 0x419920 / 0x41f220 | `EndContact`, sensor enter, sensor exit | `GamePlatform` end-contact branch, `SpaceSensorTouch` |
+| 0x423270 → 0x41e440 | per-step gravity sensors and the water force | `PhysicsWorld::ApplyGravitySensors`, `ApplyWater` |
+| 0x433464, 0x433771 | the kill timers (+0x15b flag, +0xec timer) and the 0.88 × level-limit removal of kind 5 / 7 sensors | `GamePlatform::UpdateKillTimers` |
+| 0x433500–0x433f33 | the per-frame sync to Lua (`x`, `y`, `frozen`, `velocity`, `xVel`, `yVel`, `angle`, `sleeping`, the `hasMoving…` globals, the `setObjectParameter(name, 8, …)` flip) | `UpdateFrame`, `UpdateRioSquash` |
+| 0x428840 | `setObjectParameter` (jump table; ids in `docs/SCRIPTING.md`) | `PhysicsWorld::SetObjectParameter` |
+| 0x439640 / 0x4254d0 | `createLineShape` (the polygon creator with `b2EdgeShape` fixtures) | `PhysicsWorld::CreateLine` |
+| 0x415f90 | `renderGravityVisualsNative` | `space_natives.lua` |
+| 0x402770, 0x426f60, 0x4237a0 | aiming aid populate, `updateBirdTrajectoryTable`, `ClearSimulationTrajectory` | `GamePlatform::AimPopulate`, `BodyCommand` 22–24 |
+
+Object record fields used: +0x155 controlled, +0x15c is circle, +0x163 is water, +0x164 keep orientation, +0x165 affected by force multipliers, +0x166 ignores score, +0x168 water density, +0x138 time since collision, +0x108 / +0x104 wobble amplitude / frequency multipliers (ids 6 / 7), +0x150 no bird-bird wobble (11), +0x151 ignore for `hasMovingObjects` (12), +0x14d / +0x14e flip and enable flipping (8 / 9), +0x13e record velocity, +0x15e stop on exit (34), +0x110 sensor kind (21), +0x158 gravity on (22), +0x11c / +0x120 / +0x124 min force, max force and radius (25 / 26 / 27), +0x18 material (1 wood, 2 rock, 3 light, 4 propeller). Game fields: +0x160 world scale, +0x3bc force divisor (10), +0x3cc water force multiplier (2), +0x3d0 bird water drag (0.4), +0x3d4 object water drag (0), +0x434 / +0x438 / +0x43c / +0x440 level limits, +0x3c0 aiming aid on, +0x414 trajectory points.
+
+Still open: Cloud City's vertical placement and Hoth's space-theme backgrounds (need `AB_DRAWDBG` logs from the original game's scenes), the level-selection crash at 0xF8C76A with deathstar_1, and the `STREAM_1` editor block.

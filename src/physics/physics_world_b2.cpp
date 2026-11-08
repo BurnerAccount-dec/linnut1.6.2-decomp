@@ -177,6 +177,11 @@ class ContactRef : public ContactHandle {
 public:
     explicit ContactRef(b2Contact* c) : c_(c) {}
     void SetEnabled(bool on) override { c_->SetEnabled(on); }
+    void WorldManifold(float& px, float& py, float& nx, float& ny) override {
+        b2WorldManifold wm;
+        c_->GetWorldManifold(&wm);
+        px = wm.points[0].x; py = wm.points[0].y; nx = wm.normal.x; ny = wm.normal.y;
+    }
 
 private:
     b2Contact* c_;
@@ -393,6 +398,21 @@ public:
         return o->pbody->Mass();
     }
 
+#ifdef AB_BOX2D_V22
+    // 0x4254d0: one b2EdgeShape fixture for each pair of neighbouring vertices, created with the object's density, friction and restitution
+    float CreateLine(const BodyDef& d, const std::vector<float>& verts) override {
+        PhysObject* o = MakeObject(d, -1.0f, false);
+        b2Body* body = BodyOf(o);
+        for (size_t i = 0; i + 3 < verts.size(); i += 2) {
+            b2EdgeShape edge;
+            edge.Set(b2Vec2(verts[i], verts[i + 1]), b2Vec2(verts[i + 2], verts[i + 3]));
+            MakeFixture(body, o, edge, d);
+        }
+        AddObject(o, false);
+        return o->pbody->Mass();
+    }
+#endif
+
     // 0x40ecd0. The anchors follow the exe literally, including its quirk for distance joints with
     // coordType 1: the local anchor is (world point - body position), which ignores the body's rotation.
     bool CreateJoint(JointDef& d) override {
@@ -575,6 +595,7 @@ private:
     // the object and its Box2D body (b2BodyDef as the exe fills it)
     PhysObject* MakeObject(const BodyDef& d, float rollFactor, bool circle) {
         PhysObject* o = NewObject(d, rollFactor, circle);
+        o->isCircle = circle; o->boxW = d.w; o->boxH = d.h;
         b2BodyDef bd;
         bd.type = d.density != 0.0f ? b2_dynamicBody : b2_staticBody;
         bd.position.Set(d.x, d.y);

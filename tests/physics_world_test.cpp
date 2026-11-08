@@ -2,6 +2,7 @@
 // and a run through the real frame update. Every check runs against Box2D 2.1.1 and against 2.2.0.
 #include "physics/physics_world.h"
 #include <memory>
+#include <map>
 
 #include <algorithm>
 #include <vector>
@@ -429,7 +430,78 @@ static void RunAll(Box2DVersion version) {
     }
 }
 
+// The Star Wars contact filter (0x410e70): group index, kind 5 / 7 objects, and blockCollision with the material list
+// 0x41e440: a box of water pushes an object inside it straight up with the density difference, and slows it down with the drag
+static void StarWarsWater(Box2DVersion ver) {
+    auto w = MakePhysicsWorld(ver);
+    w->spaceRules = true; w->starWarsRules = true;
+    w->SetGravity(0, 0);
+    BodyDef dw = Def("water", 0, 0, 10, 10, 0), db = Def("ball", 0, 0, 1, 1, 1);
+    dw.collision = db.collision = true;
+    w->CreateBox(dw); w->CreateBox(db);
+    float r = 0;
+    w->BodyCommand("water", 7, 1, r);                 // a sensor
+    w->SetObjectParameter("water", 21, 2); w->SetObjectParameter("water", 22, 1);
+    w->SetObjectParameter("water", 204, 1); w->SetObjectParameter("water", 205, 1);
+    w->SetObjectParameter("water", 25, 0); w->SetObjectParameter("water", 26, 40);
+    w->SetObjectParameter("ball", 205, 3);            // 2 denser than the water: pushed up
+    w->objectWaterDrag = 0;
+    w->SensorPair(w->Find("water"), w->Find("ball"), true);   // the game reports the contact begin
+    for (int i = 0; i < 20; i++) { w->ApplyGravitySensors(1.0f / 30.0f); w->Step(1.0f / 30.0f, 10, 10); }
+    BodyInfo bi = w->Inspect("ball");
+    if (!(bi.velY > 0.01f)) std::printf("water velY %g velX %g pos %g\n", bi.velY, bi.velX, bi.posY);
+    CHECK(bi.velY > 0.01f);                           // it rises
+    CHECK(std::fabs(bi.velX) < 1e-4f);                // and only straight up
+}
+
+static void StarWarsFilter(Box2DVersion ver) {
+    auto w = MakePhysicsWorld(ver);
+    w->spaceRules = true; w->starWarsRules = true;
+    std::map<std::string, std::string> mat = {{"a", "wood"}, {"b", "stone"}, {"c", "ice"}};
+    w->materialOf = [&](const PhysObject& o) { return mat[o.name]; };
+    std::map<std::string, std::vector<std::string>> lists = {{"a", {"ice"}}};
+    w->collisionMaterialsOf = [&](const PhysObject& o) { return lists[o.name]; };
+    BodyDef da = Def("a", 0, 0, 1, 1, 1), db = Def("b", 5, 0, 1, 1, 1), dc = Def("c", 10, 0, 1, 1, 1);
+    da.collision = db.collision = dc.collision = true;
+    w->CreateBox(da); w->CreateBox(db); w->CreateBox(dc);
+    PhysObject *a = w->Find("a"), *b = w->Find("b"), *c = w->Find("c");
+    CHECK(w->ShouldCollide(a, b));                    // plain blocks collide
+    w->SetObjectParameter("a", 36, 3); w->SetObjectParameter("b", 36, 3);
+    CHECK(!w->ShouldCollide(a, b));                   // the same group above 0 does not
+    CHECK(w->ShouldCollide(a, c));                    // another group does
+    w->SetObjectParameter("a", 36, 0); w->SetObjectParameter("b", 36, 0);
+    w->SetObjectParameter("a", 200, 0);                      // a collides only with the materials in its list
+    CHECK(!w->ShouldCollide(a, b));                   // stone is not listed
+    CHECK(w->ShouldCollide(a, c));                    // ice is
+    w->SetObjectParameter("a", 200, 1);
+    CHECK(w->ShouldCollide(a, b));
+    w->SetObjectParameter("a", 21, 7); w->SetObjectParameter("b", 21, 7);
+    CHECK(!w->ShouldCollide(a, b));                   // two kind 7 objects never collide
+    w->SetObjectParameter("a", 19, 1);
+    CHECK(w->ShouldCollide(a, b));                    // flag 19 with a kind 7 object: always
+}
+
+// createLineShape (0x439640): a static chain of edges holds a ball up (Box2D 2.2 only; the 2.1 build falls back to a polygon)
+static void LineShape() {
+    auto w = MakePhysicsWorld(Box2DVersion::V22);
+    BodyDef g = Def("ground", 0, 0, 1, 1, 0);
+    g.collision = true;
+    w->CreateLine(g, {-5, 5, 0, 5, 5, 8});
+    BodyDef b = Def("ball", 0, 0, 0.5f, 0.5f, 1);
+    b.collision = true; b.controllable = true;
+    w->CreateCircle(b);
+    Host h(*w);
+    Run(*w, h, 3);
+    BodyInfo bi = w->Inspect("ball");
+    CHECK(bi.posY > 3.0f && bi.posY < 5.2f);          // it fell onto the line near y 5 and did not go through
+}
+
 int main() {
+    LineShape();
+    StarWarsFilter(Box2DVersion::V21);
+    StarWarsFilter(Box2DVersion::V22);
+    StarWarsWater(Box2DVersion::V21);
+    StarWarsWater(Box2DVersion::V22);
     RunAll(Box2DVersion::V21);
     RunAll(Box2DVersion::V22);
     if (failures == 0) std::printf("physics_world: all passed\n");

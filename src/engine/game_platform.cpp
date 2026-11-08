@@ -148,6 +148,87 @@ void PushBlockScore(lua_State* L) {
     lua_pushnil(L);
 }
 
+
+// ---- Angry Birds Star Wars contact helpers (0x42f9d0)
+bool EntryString(lua_State* L, int entry, const char* key, std::string& out) {
+    lua_getfield(L, entry, key);
+    bool ok = lua_type(L, -1) == LUA_TSTRING;
+    if (ok) out = lua_tostring(L, -1);
+    lua_pop(L, 1);
+    return ok;
+}
+
+// blockTable.damageFactors[entry.damageFactors][field][material], `def` when any step is missing
+float DamageFactorOf(lua_State* L, int entry, const char* field, const std::string& material, float def) {
+    int top = lua_gettop(L);
+    float r = def;
+    lua_getfield(L, entry, "damageFactors");
+    if (lua_type(L, -1) == LUA_TSTRING) {
+        lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+        lua_getfield(L, -1, "blockTable");
+        if (lua_istable(L, -1)) {
+            lua_getfield(L, -1, "damageFactors");
+            if (lua_istable(L, -1)) {
+                lua_pushvalue(L, top + 1);
+                lua_gettable(L, -2);
+                if (lua_istable(L, -1)) {
+                    lua_getfield(L, -1, field);
+                    if (lua_istable(L, -1)) {
+                        lua_getfield(L, -1, material.c_str());
+                        if (lua_type(L, -1) == LUA_TNUMBER) r = (float)lua_tonumber(L, -1);
+                    }
+                }
+            }
+        }
+    }
+    lua_settop(L, top);
+    return r;
+}
+
+// blockTable.blocks[entry.definition][key] as a string / number
+bool BlockDefField(lua_State* L, int entry, const char* key, std::string* str, float* num) {
+    int top = lua_gettop(L);
+    bool ok = false;
+    lua_getfield(L, entry, "definition");
+    if (lua_type(L, -1) == LUA_TSTRING) {
+        lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+        lua_getfield(L, -1, "blockTable");
+        if (lua_istable(L, -1)) {
+            lua_getfield(L, -1, "blocks");
+            if (lua_istable(L, -1)) {
+                lua_pushvalue(L, top + 1);
+                lua_gettable(L, -2);
+                if (lua_istable(L, -1)) {
+                    lua_getfield(L, -1, key);
+                    if (str && lua_type(L, -1) == LUA_TSTRING) { *str = lua_tostring(L, -1); ok = true; }
+                    if (num && lua_type(L, -1) == LUA_TNUMBER) { *num = (float)lua_tonumber(L, -1); ok = true; }
+                }
+            }
+        }
+    }
+    lua_settop(L, top);
+    return ok;
+}
+
+// A number from the script environment or from worldAttributes (the exe reads its config table at game +0x37c)
+float EnvConfigNumber(lua_State* L, const char* key, float def) {
+    int top = lua_gettop(L);
+    float r = def;
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    lua_getfield(L, -1, key);
+    if (lua_type(L, -1) == LUA_TNUMBER) r = (float)lua_tonumber(L, -1);
+    else {
+        lua_pop(L, 1);
+        lua_getfield(L, -1, "worldAttributes");
+        if (lua_istable(L, -1)) {
+            lua_getfield(L, -1, key);
+            if (lua_type(L, -1) == LUA_TNUMBER) r = (float)lua_tonumber(L, -1);
+        }
+    }
+    lua_settop(L, top);
+    return r;
+}
+
 }  // namespace
 
 GamePlatform::GamePlatform(const std::string& dataRoot) : dataRoot_(dataRoot) {}
@@ -171,6 +252,13 @@ PhysicsWorld& GamePlatform::Physics() {
     if (std::getenv("AB_PHYSDBG")) std::fprintf(stderr, "PHYS Box2D %s\n", physics_->Version() == Box2DVersion::V22 ? "2.2.0" : "2.1.1");
     physics_->onBeginContact = [this](PhysObject& a, PhysObject& b, ContactHandle& c) { OnContact(a, b, c); };
     physics_->onEndContact = [this](PhysObject& a, PhysObject& b) {
+        if (scripts_ && scripts_->IsStarWars()) {          // 0x41f370: both bodies wake up, sensors report a trigger exit, every contact reports exitCollision
+            if (a.pbody && !a.pbody->IsStatic()) a.pbody->SetAwake(true);
+            if (b.pbody && !b.pbody->IsStatic()) b.pbody->SetAwake(true);
+            if (a.isSensor || b.isSensor) { CallCollisionPair("exitTriggerCollision", a.name, b.name); SpaceSensorTouch(a, b, false); }
+            CallCollisionPair("exitCollision", a.name, b.name);
+            return;
+        }
         if (!scripts_ || !(a.isSensor || b.isSensor)) return;
         bool space = scripts_->IsSpace();
         if (space) SpaceSensorTouch(a, b, false);
@@ -189,6 +277,21 @@ PhysicsWorld& GamePlatform::Physics() {
         }
         lua_pop(L, 1);
         return material;
+    };
+    physics_->starWarsRules = scripts_ && scripts_->IsStarWars();
+    // the contact filter of an object with blockCollision false reads objects.world[name].collisionMaterials live
+    physics_->collisionMaterialsOf = [this](const PhysObject& o) {
+        std::vector<std::string> list;
+        if (!scripts_) return list;
+        lua_State* L = scripts_->State();
+        PushWorldEntry(L, o.name);
+        if (lua_istable(L, -1)) {
+            lua_getfield(L, -1, "collisionMaterials");
+            if (lua_istable(L, -1)) for (int k = 1; k <= (int)lua_objlen(L, -1); k++) { lua_rawgeti(L, -1, k); if (lua_type(L, -1) == LUA_TSTRING) list.push_back(lua_tostring(L, -1)); lua_pop(L, 1); }
+            lua_pop(L, 1);
+        }
+        lua_pop(L, 1);
+        return list;
     };
     return *physics_;
 }
@@ -238,6 +341,7 @@ void GamePlatform::RunFrame(float dt) {
         if (t.wrapH > 0) { if (t.y > t.wrapH) t.y -= 2 * t.wrapH; else if (t.y < -t.wrapH) t.y += 2 * t.wrapH; }
         if (t.scaleSpeed != 0 && t.scaleX + t.scaleSpeed * dt > 0) { t.scaleX += t.scaleSpeed * dt; t.scaleY += t.scaleSpeed * dt; }
     }
+    Physics().Frame().starWarsSync = scripts_ && scripts_->IsStarWars();
     Physics().Frame().stepOnEqual = scripts_ && scripts_->IsSpace();
     std::string audioError = audio_.TakeError();
     if (!audioError.empty()) Print("audio: " + audioError);
@@ -327,6 +431,8 @@ void GamePlatform::RunFrame(float dt) {
                             "W.isEpisodePurchased=function() return true end; W.isEggsteroidLevelUnlocked=function() return true end end");
     if (scripts_ && scripts_->IsSpace() && dt > 0) { UpdateAimingAid(dt); StepThemeAnimations(dt); }
     else if (scripts_ && dt > 0 && (aimEnabled_ || !aimDots_.empty())) UpdateAimingAid(dt);   // Classic: extra_scripts.lua drives the aiming aid
+    if (scripts_ && scripts_->IsStarWars() && dt > 0) UpdateKillTimers(dt);
+    if (scripts_ && scripts_->IsStarWars() && dt > 0 && Physics().Frame().running) UpdateRioSquash(dt);   // 0x433xxx: the same hit wobble as Rio's
     if (scripts_ && scripts_->IsRio() && dt > 0) {
         if (Physics().Frame().running) UpdateRioGettingUp(dt);
         SelectRioAnimations(dt);
@@ -640,6 +746,7 @@ void GamePlatform::SpaceSensorTouch(PhysObject& pa, PhysObject& pb, bool enter) 
         lua_State* L = scripts_->State();
         int top = lua_gettop(L);
         if (enter) {                                                     // 0x46a500: kinds 2 and 3 wake the object and list the sensor; kind 2 sets insideGravity
+            if (scripts_->IsStarWars() && sen->sensorKind == 4 && !other->isSensor) { sen->killOn = true; continue; }   // 0x419920: a kind 4 sensor is spent by the first touch
             if (sen->sensorKind != 2 && sen->sensorKind != 3) continue;
             if (other->pbody && !other->pbody->IsStatic()) other->pbody->SetAwake(true);
             physics_->SensorPair(sen, other, true);
@@ -660,6 +767,7 @@ void GamePlatform::SpaceSensorTouch(PhysObject& pa, PhysObject& pb, bool enter) 
                 } else if (other->pbody && (other->stopOnExit || other->drawWithBirds)) {
                     if (!other->stopOnExit) physics_->SetVelocity(other->name, 0, 0);   // parameter 1 (+0x1a4) also stops the object
                     other->pbody->SetLinearDamping(100.0f);
+                    if (other->stopOnExit && scripts_->IsStarWars()) other->killOn = true;   // 0x41f220: and starts its destroy timer
                 }
             }
         }
@@ -667,7 +775,191 @@ void GamePlatform::SpaceSensorTouch(PhysObject& pa, PhysObject& pb, bool enter) 
     }
 }
 
+// Angry Birds Star Wars, the contact handler at 0x42f9d0 (Box2D BeginContact). Differences from the older games' 0x40b670: the force divides by
+// game +0x3bc (10) after being scaled by the config's forceDamageMultiplier, a block hit by a bird takes the momentum difference of the two, damaging
+// sensors (kinds 5, 6, 7) hurt blocks with their definition's `damage`, objects with ignoresScore deal no score, HOMING birds do a fifth of the damage
+// until they have collided, and birdCollision / blockCollision get the contact point and normal as well.
+void GamePlatform::OnContactStarWars(PhysObject& pa, PhysObject& pb, ContactHandle& contact) {
+    lua_State* L = scripts_->State();
+    int top = lua_gettop(L);
+    const float fm = EnvConfigNumber(L, "forceDamageMultiplier", 1.0f);
+    const float divisor = 10.0f;                                     // game +0x3bc
+    PhysObject* A = &pa; PhysObject* B = &pb;
+    bool sensorMode = false, sensor57 = false;
+    float sensorDamage = 0;
+    if (pa.isSensor || pb.isSensor) {
+        // 0x419920 for (A, B) and then (B, A): kinds 2 and 3 pull / wake, kinds 5, 6, 7 hurt (unless the other has parameter 20)
+        CallCollisionPair("enterCollision", pa.name, pb.name);
+        SpaceSensorTouch(pa, pb, true);
+        PhysObject* pr[2][2] = {{A, B}, {B, A}};
+        bool any = false;
+        for (auto& p : pr) {
+            PhysObject* sen = p[0]; PhysObject* oth = p[1];
+            if (!sen->isSensor) continue;
+            const bool hurts = (sen->sensorKind == 5 || sen->sensorKind == 6 || sen->sensorKind == 7) && !oth->spaceActive19e;
+            if (!hurts) continue;
+            any = true;
+            PushWorldEntry(L, sen->name);
+            float d = 0;
+            if (lua_istable(L, -1)) BlockDefField(L, lua_gettop(L), "damage", nullptr, &d);
+            lua_pop(L, 1);
+            sensorDamage = d;
+            sensor57 = sen->sensorKind == 5 || sen->sensorKind == 7;
+        }
+        if (!any) { lua_settop(L, top); return; }
+        sensorMode = true;
+    }
+    float wm[4];
+    contact.WorldManifold(wm[0], wm[1], wm[2], wm[3]);
+    // the hit wobble (min(force * 0.02, 0.1)): an object with a bounce multiplier (parameter 6) is set going when the wobble it has is smaller
+    auto wobble = [](PhysObject* o, float force, bool needMultiplier) {
+        const float f = std::min(force * 0.02f, 0.1f);
+        if ((!needMultiplier || o->bounceAmp > 0) && o->wobCur < f) { o->wobAmp0 = f; o->wobActive = true; }
+    };
+    PushWorldEntry(L, A->name);
+    PushWorldEntry(L, B->name);
+    const int ia = top + 1, ib = top + 2;
+    if (!lua_istable(L, ia) || !lua_istable(L, ib)) { lua_settop(L, top); return; }
+    PhysBody& bA = *A->pbody; PhysBody& bB = *B->pbody;
+    const bool cA = A->isBird, cB = B->isBird;
+
+    if (cA && cB) {                                                  // bird against bird: the faster one decides
+        const PhysBody& f = (bA.VelX() * bA.VelX() + bA.VelY() * bA.VelY() <= bB.VelX() * bB.VelX() + bB.VelY() * bB.VelY()) ? bB : bA;
+        float force = std::sqrt(f.VelX() * f.VelX() + f.VelY() * f.VelY()) * f.Mass() / divisor;
+        lua_settop(L, top);
+        // 0x42fe61: both birds start the hit wobble (min(force * 0.02, 0.1)) unless parameter 11 is set, when theirs is smaller
+        for (PhysObject* o : {A, B}) if (!o->noHitWobble) wobble(o, force, false);
+        birdCollisions++;
+        scripts_->BirdCollisionSW(A->name, B->name, force, 0, wm);
+        return;
+    }
+
+    std::string matA, matB;
+    EntryString(L, ia, "material", matA); EntryString(L, ib, "material", matB);
+
+    if (cA || cB) {                                                  // a bird against a block
+        PhysObject* bird = cA ? A : B; PhysObject* block = cA ? B : A;
+        const int ibird = cA ? ia : ib, iblock = cA ? ib : ia;
+        const std::string& blockMat = cA ? matB : matA;
+        float dm = DamageFactorOf(L, ibird, "damageMultiplier", blockMat, 1.0f);
+        float vm = DamageFactorOf(L, ibird, "velocityMultiplier", blockMat, 1.0f);
+        lua_getfield(L, ibird, "powerupDamageMultiplier");
+        if (lua_type(L, -1) == LUA_TNUMBER) dm *= (float)lua_tonumber(L, -1);
+        lua_pop(L, 1);
+        lua_getfield(L, ibird, "useLegacyCollisionPath");
+        const bool legacy = lua_toboolean(L, -1) != 0;
+        lua_pop(L, 1);
+        PhysBody& pbird = *bird->pbody; PhysBody& pblock = *block->pbody;
+        const float bx = fm * pblock.Mass() * pblock.VelX(), by = fm * pblock.Mass() * pblock.VelY();
+        const float k = fm * dm * pbird.Mass();
+        const float dpx = k * pbird.VelX() - bx, dpy = k * pbird.VelY() - by;
+        const float force = std::sqrt(dpx * dpx + dpy * dpy) / divisor;
+        float dealt = 0;
+        PushWorldEntry(L, block->name);                              // objects.world[block]
+        const int iw = lua_gettop(L);
+        if (lua_istable(L, iw)) {
+            float strength = 0, defence = 0;
+            if (GetNumber(L, iw, "strength", strength)) {
+                GetNumber(L, iw, "defence", defence);
+                float excess = force - defence;
+                std::string spec; BlockDefField(L, ibird, "specialty", &spec, nullptr);
+                lua_getfield(L, ibird, "hasCollided");
+                const bool hasCollided = lua_toboolean(L, -1) != 0;
+                lua_pop(L, 1);
+                if (spec == "HOMING" && !hasCollided) excess *= 0.2f;
+                dealt = excess;
+                if (excess > 0) {
+                    float remaining = strength - excess;
+                    lua_pushnumber(L, remaining); lua_setfield(L, iw, "strength");
+                    if (remaining <= 0) {
+                        lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+                        lua_getfield(L, -1, "deadBlocks");
+                        if (lua_istable(L, -1)) { lua_pushvalue(L, iw); lua_setfield(L, -2, block->name.c_str()); }
+                        lua_pop(L, 2);
+                        if (legacy) {
+                            float ratio = ((-remaining / pbird.Mass()) / force) * divisor * 1.75f;
+                            if (ratio > 1.0f) ratio = 1.0f;
+                            VelocityChange vc; vc.name = bird->name; vc.velocity = {pbird.VelX() * ratio, pbird.VelY() * ratio}; vc.immediate = true;
+                            Physics().ApplyVelocityChange(vc);
+                        } else {
+                            float ratio = ((force - strength) / force) * vm;
+                            if (ratio > 1.0f) ratio = 1.0f;
+                            VelocityChange vc; vc.name = bird->name; vc.velocity = {pbird.VelX() * ratio, pbird.VelY() * ratio}; vc.immediate = false;
+                            Physics().ApplyVelocityChange(vc);
+                        }
+                        contact.SetEnabled(false);
+                        dealt = strength;
+                    }
+                }
+            }
+        }
+        lua_settop(L, top);
+        wobble(bird, force, false); wobble(block, force, true);
+        if (bird->birdGravReduce < 0) bird->birdGravReduce = 0;     // the first collision starts the bird's gravity timer (0x431154)
+        birdCollisions++;
+        scripts_->BirdCollisionSW(bird->name, block->name, force, std::floor(dealt), wm);
+        return;
+    }
+
+    // block against block (or a damaging sensor against a block)
+    if (sensor57) { lua_settop(L, top); return; }
+    float force;
+    if (sensorMode) force = sensorDamage;
+    else {
+        const float dx = fm * (bA.Mass() * bA.VelX() - bB.Mass() * bB.VelX()), dy = fm * (bA.Mass() * bA.VelY() - bB.Mass() * bB.VelY());
+        force = std::sqrt(dx * dx + dy * dy) / divisor;
+    }
+    float scoreBefore = 0;
+    PushBlockScore(L);
+    if (lua_istable(L, -1)) GetNumber(L, lua_gettop(L), "score", scoreBefore);
+    lua_pop(L, 1);
+    const float factorA = DamageFactorOf(L, ib, "damageMultiplier", matA, 1.0f);   // B's set, keyed by A's material: what A takes
+    const float factorB = DamageFactorOf(L, ia, "damageMultiplier", matB, 1.0f);   // A's set, keyed by B's material: what B takes
+    float total = 0, lastExcess = 0;
+    bool okA = true, okB = true;
+    auto hit = [&](PhysObject* o, int idx, float factor, bool& ok) {
+        float strength = 0, defence = 0;
+        if (!GetNumber(L, idx, "strength", strength)) return;
+        GetNumber(L, idx, "defence", defence);
+        if (!(defence > force * factor)) {
+            // not blocked by the defence
+        } else { ok = false; return; }
+        float excess = force * factor - defence;
+        lastExcess = excess;
+        float remaining = strength - std::floor(excess);
+        lua_pushnumber(L, remaining); lua_setfield(L, idx, "strength");
+        float dealt;
+        if (remaining <= 0) {
+            lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+            lua_getfield(L, -1, "deadBlocks");
+            if (lua_istable(L, -1)) { lua_pushvalue(L, idx); lua_setfield(L, -2, o->name.c_str()); }
+            lua_pop(L, 2);
+            dealt = strength;
+        } else dealt = force - defence;
+        total += dealt;
+        if (o->ignoresScore) total = 0;
+    };
+    hit(A, ia, factorA, okA);
+    hit(B, ib, factorB, okB);
+    const bool wasDamageDone = okA || okB;
+    wobble(B, force, true); wobble(A, force, true);
+    lua_settop(L, top);
+    blockCollisions++;
+    scripts_->BlockCollisionSW(A->name, B->name, force, wasDamageDone, std::floor(lastExcess), wm);
+    if (total > 0) {
+        const float add = (float)(int)EnvConfigNumber(L, "scoreDamageMultiplier", 5.0f) * std::floor(total);
+        PushBlockScore(L);
+        if (lua_istable(L, -1)) { lua_pushnumber(L, scoreBefore + add); lua_setfield(L, -2, "score"); }
+        lua_settop(L, top);
+        lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+        lua_getfield(L, -1, "addScoreToBird");
+        if (lua_isfunction(L, -1)) { lua_pushnumber(L, add); if (lua_pcall(L, 1, 0, 0) != 0) lua_pop(L, 1); }
+        lua_settop(L, top);
+    }
+}
+
 void GamePlatform::OnContact(PhysObject& pa, PhysObject& pb, ContactHandle& contact) {
+    if (scripts_ && scripts_->IsStarWars()) { OnContactStarWars(pa, pb, contact); return; }
     // v2.5: a contact with a sensor goes to the global enterCollision(a, b) / exitCollision(a, b) in every game whose script defines one of them (Space always)
     if (scripts_ && (pa.isSensor || pb.isSensor) && (scripts_->IsSpace() || HasScriptFunction("enterCollision") || HasScriptFunction("exitCollision"))) {
         if (scripts_->IsSpace()) SpaceSensorTouch(pa, pb, true);
@@ -1703,7 +1995,7 @@ void GamePlatform::SetTheme(const std::string& themeArg) {
                     for (int i = 1; i <= n; i++) {
                         lua_rawgeti(L, -1, i);
                         if (lua_istable(L, -1)) {
-                            if (newTheme_) {   // NEW_THEME_SYSTEM: the foreground layers go through the same routine as the background (0x44c1b0, vector 0x264)
+                            if ((scripts_ && scripts_->IsStarWars()) ? swTheme_ : newTheme_) {   // NEW_THEME_SYSTEM(_FOREGROUND): the foreground layers go through the same routine as the background (0x44c1b0, vector 0x264)
                                 lua_getfield(L, -1, "sprite");
                                 if (lua_isstring(L, -1)) {
                                     int lt = lua_gettop(L) - 1;
@@ -1735,6 +2027,9 @@ void GamePlatform::SetTheme(const std::string& themeArg) {
                                 }
                                 lua_pop(L, 1);
                             }
+                            // 0x44b9xx: with NEW_THEME_SYSTEM_FOREGROUND the foreground layers only go to the new-system vector (0x264) and the positional
+                            // loop (sprite sheet, sprite, speed, scale, auto-scroll) is skipped; without it only the positional loop runs
+                            if (scripts_ && scripts_->IsStarWars() && swTheme_) { lua_pop(L, 1); continue; }
                             // Star Wars' newer themes (Cloud City) name the fields: sprite, scale, zDistance, velX, offsetY, downFillColor
                             lua_getfield(L, -1, "particles");
                             if (lua_isstring(L, -1)) { std::string pn = lua_tostring(L, -1); lua_pop(L, 1); float idf = 0; GetNumber(L, lua_gettop(L), "spawnerId", idf); fgParticles_[(int)idf] = pn; lua_getfield(L, -1, "sprite"); }
@@ -1765,7 +2060,7 @@ void GamePlatform::SetTheme(const std::string& themeArg) {
                                 fgSpeed_.push_back(lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : 1.0f);
                                 lua_pop(L, 1);
                                 lua_rawgeti(L, -1, 4);
-                                fgScale_.push_back(lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : 1.5f);
+                                fgScale_.push_back(lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : (scripts_ && scripts_->IsStarWars() ? 1.0f : 1.5f));   // 0x44b9xx: index 4 defaults to 1
                                 lua_pop(L, 1);
                                 lua_rawgeti(L, -1, 5);
                                 fgAuto_.push_back(lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : 0.0f);
@@ -1848,8 +2143,8 @@ void GamePlatform::UpdateNewThemeLayers(std::vector<BgLayer>& layers, float dt) 
         float f = layer.zDist + f4 * k;
         float halfW = 0.5f * f * layer.scaleX * layer.lastW / ws, halfH = 0.5f * f * layer.scaleY * layer.lastH / ws;
         if (halfW <= 0 || halfH <= 0) continue;
-        float shiftX = layer.scaleX * layer.lastW * (1.0f + std::trunc((right - left) / (2.0f * halfW)));
-        float shiftY = layer.scaleY * layer.lastH * (1.0f + std::trunc((bottom - topW) / (2.0f * halfH)));
+        float shiftX = layer.scaleX * layer.lastW * (1.0f + std::trunc((right - left) / (layer.scaleX * layer.lastW) * S));   // 0x44b200: whole copies of the layer width over the box, times the reference scale
+        float shiftY = layer.scaleY * layer.lastH * (1.0f + std::trunc((bottom - topW) / (layer.scaleY * layer.lastH) * S));
         if (layer.lastOutX - halfW > right && layer.velX > 0) layer.posX -= shiftX;
         else if (left > layer.lastOutX + halfW && layer.velX < 0) layer.posX += shiftX;
         else if (topW > layer.lastOutY + halfH && layer.velY < 0) layer.posY += shiftY;
@@ -1928,10 +2223,22 @@ void GamePlatform::DrawNewThemeLayers(std::vector<BgLayer>& layers, int layerBas
     if (GetNumber(L, env, "bottomLimitWorld", lim) && lim > bottom) bottom = lim;
     lua_settop(L, top);
     const float f4 = ws / S;
-    const float stx = camX - ntRef_.refX, sty = camY - ntRef_.refY;
+    // 0x44c1b0: the foreground (mode 0) takes the world y of the screen's top edge as its reference y every frame, so it does not move vertically with the camera
+    const float refYuse = (&layers == &ntFg_) ? camY : ntRef_.refY;
+    const float stx = camX - ntRef_.refX, sty = camY - refYuse;
     for (size_t i = 0; i < layers.size(); i++) {
         BgLayer& layer = layers[i];
         const float z = layer.zDist;
+        // 0x44adb0 + 0x44a800: a layer with spawnParameters puts its rock on a random spot of the screen area (screenX/Y/W/H) and then moves it by
+        // (random - 0.5) * worldW / worldH of the level's box; "amount" and "xSpeedVariance" are read by the exe but never used
+        if (!layer.spawnList.empty() && !layer.spawned) {
+            layer.spawned = true;
+            auto rnd = []() { return (float)std::rand() / (float)RAND_MAX; };
+            layer.offX = layer.spawnSX - layer.spawnSW * 0.5f + layer.spawnSW * rnd();
+            layer.offY = layer.spawnSY - layer.spawnSH * 0.5f + layer.spawnSH * rnd();
+            if (layer.spawnWW != 0) layer.offX -= (rnd() - 0.5f) * layer.spawnWW * (right - left);
+            if (layer.spawnWH != 0) layer.offY -= (rnd() - 0.5f) * layer.spawnWH * (bottom - topW);
+        }
         // 0x44a030: the on-screen size factor
         const float f = z + f4 * (1.0f - z);
         // one instance of a sprite whose pivot sits at (posX, posY) in the layer's own coordinates (0x44a1a0)
@@ -1941,7 +2248,7 @@ void GamePlatform::DrawNewThemeLayers(std::vector<BgLayer>& layers, int layerBas
             if (flags & 0x40) shX = stx;
             if (flags & 0x20) shY = sty;
             float ox = shX + ntRef_.refX + z * (p5 / f4) + p5 * (1.0f - z);
-            float oy = shY + ntRef_.refY + p6 * (1.0f - z) + z * (p6 / f4);
+            float oy = shY + refYuse + p6 * (1.0f - z) + z * (p6 / f4);
             cx = (ox - camX) * ws; cy = (oy - camY) * ws;
         };
         auto drawAt = [&](const std::string& name, float cx, float cy, float szx, float szy) {
@@ -1949,32 +2256,6 @@ void GamePlatform::DrawNewThemeLayers(std::vector<BgLayer>& layers, int layerBas
             state_.sx = szx; state_.sy = szy; state_.tx = cx / szx; state_.ty = cy / szy;
             ResDrawSprite(name, 0, 0, 1, 1, false, 0, 0);
         };
-        if (layer.spawnAmount > 0 && !layer.spawnList.empty()) {
-            // 0x44adb0 / 0x44a800: the rocks of a sprite-list layer are scattered once over the level's box (screen area plus the level limits)
-            const float boxW = std::max(1.0f, (right - left) * S * (1.0f + layer.spawnWW)), boxH = std::max(1.0f, (bottom - topW) * S * (1.0f + layer.spawnWH));
-            if (!layer.spawned) {
-                layer.spawned = true;
-                unsigned seed = 12345u + (unsigned)i * 7919u + (unsigned)layer.spawnAmount;
-                auto rnd = [&]() { seed = seed * 1664525u + 1013904223u; return (float)((seed >> 8) & 0xFFFFFF) / 16777216.0f; };
-                for (int n = 0; n < layer.spawnAmount && n < 2000; n++) {
-                    float x = (rnd() - 0.5f) * boxW, y = (rnd() - 0.5f) * boxH;
-                    layer.inst.push_back({x, y, (float)((int)(rnd() * layer.spawnList.size()) % (int)layer.spawnList.size())});
-                }
-            }
-            layer.lastW = 0; layer.lastH = 0;
-            for (const auto& in : layer.inst) {
-                const std::string& nm = layer.spawnList[(size_t)in[2]];
-                const Sprite* rs = sprites_.Find(nm);
-                if (!rs) continue;
-                float ix = std::fmod(in[0] + layer.posX + boxW * 0.5f, boxW); if (ix < 0) ix += boxW; ix -= boxW * 0.5f;
-                float iy = std::fmod(in[1] + layer.posY + boxH * 0.5f, boxH); if (iy < 0) iy += boxH; iy -= boxH * 0.5f;
-                float ex = 0, ey = 0;
-                place((float)rs->w, (float)rs->h, (float)rs->pivotX, (float)rs->pivotY, ix + layer.offX, iy + layer.offY, layer.flags, ex, ey);
-                if (ex < -rs->w * (f * layer.scaleX) || ex > sw + rs->w * (f * layer.scaleX)) continue;
-                drawAt(nm, ex, ey, f * layer.scaleX, f * layer.scaleY);
-            }
-            continue;
-        }
         const Sprite* sp = layer.empty ? nullptr : sprites_.Find(layer.sprite);
         const CompoSprite* compo = (!sp && !layer.empty) ? sprites_.FindCompo(layer.sprite) : nullptr;
         int cw = 0, ch = 0, cox = 0, coy = 0;
@@ -1983,10 +2264,9 @@ void GamePlatform::DrawNewThemeLayers(std::vector<BgLayer>& layers, int layerBas
         const float pivX = sp ? (float)sp->pivotX : (float)cox, pivY = sp ? (float)sp->pivotY : (float)coy;
         const float szx = f * layer.scaleX, szy = f * layer.scaleY;
         float cx = 0, cy = 0;
-        float posYeff = layer.posY;
-        // 0x44bc00: a layer with relativeY is put at (H * relativeY - H / 2) / (reference scale ratio)
-        if (layer.relY < 3.0e38f) posYeff = ((float)screenHeight_ * layer.relY - (float)screenHeight_ * 0.5f);
-        place(w, h, pivX, pivY, layer.posX + layer.offX, posYeff + layer.offY, layer.flags, cx, cy);
+        // 0x44b820 (first call): a layer with relativeY gets its y offset (+0x7c) set to (H * relativeY - H / 2) / ST4c, replacing its offsetY
+        const float offYeff = layer.relY < 3.0e38f ? ((float)screenHeight_ * layer.relY - (float)screenHeight_ * 0.5f) : layer.offY;
+        place(w, h, pivX, pivY, layer.posX + layer.offX, layer.posY + offYeff, layer.flags, cx, cy);
         layer.lastOutX = camX + cx / ws; layer.lastOutY = camY + cy / ws; layer.lastW = w; layer.lastH = h;
         if (std::getenv("AB_DRAWDBG")) { static int dn = 0; if (dn++ < 60) std::fprintf(stderr, "NTL %zu %s w=%g h=%g piv=%g,%g z=%g f=%g size=%g,%g pos=%g,%g flags=%x -> screen %g,%g cam=%g,%g ws=%g\n", i, layer.sprite.c_str(), w, h, pivX, pivY, z, f, szx, szy, layer.posX + layer.offX, layer.posY + layer.offY, layer.flags, cx, cy, camX, camY, ws); }
         if ((sp || compo) && szx > 0 && szy > 0 && w > 0 && h > 0) {   // 0x44c1b0: the colour above / below the layer's edge (0x449ea0)
@@ -2117,6 +2397,7 @@ void GamePlatform::SetThemeOffsetY(float v) {
         float add = hasElements || screenHeight_ <= 0 ? v : v * 768.0f / (float)screenHeight_;
         layer.offY = layer.baseOffY + add;
         if (newTheme_) layer.posY = 0;     // 0x412760 writes the layer's +0x7c (posY) itself
+        layer.relY = 3.4028235e38f;        // and it replaces what relativeY had put there
     }
 }
 
@@ -2424,6 +2705,7 @@ bool GamePlatform::BodyCommand(const std::string& n, int cmd, float a, float& re
     if (cmd < 20 || cmd > 24) return Physics().BodyCommand(n, cmd, a, result);
     if (cmd == 20) aimEnabled_ = a != 0;
     else if (cmd == 21) { aimSprite_ = n; aimScale_ = a > 0 ? a : 1; }
+    else if (cmd == 22) { if (scripts_ && scripts_->IsStarWars()) AimPopulate(); }   // Star Wars populateAimingAid (0x402770): the dots laid out along the stored path
     else if (cmd == 23) { aimDots_.clear(); aimPts_.clear(); aimOn_ = false; }   // 0x45e230
     else if (cmd == 24) {
         std::vector<std::pair<float, float>> pts;
@@ -2904,10 +3186,43 @@ void GamePlatform::UpdateRioBirdFaces(float dt) {
 }  // namespace ab
 
 namespace ab {
+// Star Wars (0x433464): an object with its destroy flag set counts its timer down every frame; at zero its strength is 0 and it is dead
+void GamePlatform::UpdateKillTimers(float dt) {
+    std::vector<PhysObject*> due;
+    const auto& fr = Physics().Frame();
+    for (auto& o : Physics().Objects()) {
+        // 0x433771: sensors of kind 5 and 7 that drift past 0.88 times a level limit are marked for removal at once
+        if ((o->sensorKind == 5 || o->sensorKind == 7) &&
+            (o->interpY > 0.88 * fr.levelMaxY || o->interpX < 0.88 * fr.levelMinX || o->interpX > 0.88 * fr.levelMaxX || o->interpY < 0.88 * fr.levelMinY)) {
+            if (!o->killOn) o->killTimer = 0;
+            o->killOn = true;
+        }
+        if (!o->killOn) continue;
+        o->killTimer -= dt;
+        if (o->killTimer <= 0) { o->killOn = false; due.push_back(o.get()); }
+    }
+    lua_State* L = scripts_->State();
+    int top = lua_gettop(L);
+    for (PhysObject* o : due) {
+        PushWorldEntry(L, o->name);
+        if (!lua_istable(L, -1)) { lua_settop(L, top); continue; }
+        lua_pushnumber(L, 0); lua_setfield(L, -2, "strength");
+        lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+        lua_getfield(L, -1, "deadBlocks");
+        if (lua_istable(L, -1)) { lua_pushvalue(L, top + 1); lua_setfield(L, -2, o->name.c_str()); }
+        lua_settop(L, top);
+    }
+}
+
 // Rio, the world update at 0x40a8xx / 0x40b8xx: the wobble that a hit starts in an object's draw scale, and the turning
 // of the objects that face the way they move
 void GamePlatform::UpdateRioSquash(float dt) {
     static const bool dbg = std::getenv("AB_WOBDBG") != nullptr;
+    const bool sw = scripts_ && scripts_->IsStarWars();
+    std::vector<const PhysObject*> byName;           // Star Wars shifts each object's phase by its place (name order) times a quarter turn
+    if (sw) {
+        for (auto& o : Physics().Objects()) if (o->wobActive) { byName.clear(); for (auto& q : Physics().Objects()) byName.push_back(q.get()); std::sort(byName.begin(), byName.end(), [](const PhysObject* a, const PhysObject* b) { return a->name < b->name; }); break; }
+    }
     for (auto& o : Physics().Objects()) {
         if (dbg && o->wobActive && o->wobT == 0) std::fprintf(stderr, "DBG wobble %s amp0=%.3f mult=%.2f\n", o->name.c_str(), o->wobAmp0, o->bounceAmp);
         if (o->wobActive) {
@@ -2917,6 +3232,7 @@ void GamePlatform::UpdateRioSquash(float dt) {
             o->wobCur = cur;
             if (cur > 0.01f) {
                 float phase = o->wobT * (cur * 100.0f + o->bounceFreq * 5.0f);
+                if (sw) phase += (float)(std::lower_bound(byName.begin(), byName.end(), o.get(), [](const PhysObject* a, const PhysObject* b) { return a->name < b->name; }) - byName.begin()) * 1.5707964f;
                 o->wobDX = std::sin(phase) * cur;
                 o->wobDY = std::sin(phase + 3.1415927f) * cur;
             } else {
@@ -2925,7 +3241,8 @@ void GamePlatform::UpdateRioSquash(float dt) {
         }
         if (o->enableFlipping) {        // Luiz and the marmosets face the way they move (their sprites face left)
             float vx = o->pbody->VelX();
-            if (std::fabs(vx) > 3.0f) o->flipX = o->flipBase != (vx > 0);
+            if (sw) { if (std::fabs(vx) > 3.0f && o->pbody->IsAwake()) o->flipX = o->flipBase = (vx >= 0.0f); }   // Star Wars (0x433aef) calls setObjectParameter(name, 8, vx >= 0)
+            else if (std::fabs(vx) > 3.0f) o->flipX = o->flipBase != (vx > 0);
         }
     }
 }
