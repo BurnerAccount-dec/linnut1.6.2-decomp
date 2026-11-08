@@ -165,6 +165,7 @@ public:
     virtual void SetWorldGravity(float x, float y) { (void)x; (void)y; }
     virtual void GetWorldGravity(float& x, float& y) { x = 0; y = -10; }
     virtual void ClearParticles() {}
+    virtual void ClearMenuParticles() {}   // particles.clear("menu"): only the menu list; the level list (the confetti) stays
     virtual void SetPhysicsEnabled(bool on) { physicsEnabled_ = on; }
     virtual void SetStartingCameraValue(bool) {}   // Star Wars setStartingCameraValue (0x40d8e0): sets the flag "the background's reference camera has been taken"
     virtual void SetThemeOffsetY(float) {}   // Space setThemeOffsetY(theme, v) (0x466e40)

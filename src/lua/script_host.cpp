@@ -102,6 +102,7 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
     lua_pop(L_, 1);
 
     SetString("scriptPath", config_.scriptPath);
+    if (!config_.commonScriptPath.empty()) SetString("commonScriptPath", config_.commonScriptPath);
     if (IsSpaceDataFolder()) {          // Angry Birds Space (the PC game, or a single-folder build)
         if (!config_.commonScriptPath.empty()) SetString("commonScriptPath", config_.commonScriptPath);
         lua_getfield(L_, LUA_REGISTRYINDEX, "ab.env");
@@ -120,6 +121,9 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
     // Seasons 4.x (settingsWrapper.lua builds "installationId_" .. uniqueInstallationId) and the later scripts read these globals from the exe:
     // the id of this install, and the `native` table of the platform services (apprater, ...). A service the PC exe does not have is simply a missing field.
     SetString("uniqueInstallationId", "angrybirdsengine");
+    SetString("uniqueDeviceId", "angrybirdsengine");
+    lua_pushstring(L_, "angrybirdsengine"); lua_setfield(L_, LUA_GLOBALSINDEX, "uniqueDeviceId");
+    lua_pushstring(L_, "angrybirdsengine"); lua_setfield(L_, LUA_GLOBALSINDEX, "uniqueInstallationId");   // also as _G.uniqueInstallationId
     // The `engine` table every script can use (see docs/SCRIPTING.md, "Changing the engine from Lua"): the pristine natives, a list of their names and
     // events the engine raises (update, levelLoaded, objectCreated, objectRemoved). It is made before any game script runs.
     RunString(
@@ -128,7 +132,7 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
         "local original, resOriginal, handlers = {}, {}, {}\n"
         "for k, v in G.pairs(env) do if G.type(v) == 'function' then original[k] = v end end\n"
         "if G.type(env.res) == 'table' then for k, v in G.pairs(env.res) do if G.type(v) == 'function' then resOriginal[k] = v end end end\n"
-        "local engine = {version = '2.9', original = original, resOriginal = resOriginal, hookCount = 0}\n"
+        "local engine = {version = '3.0', original = original, resOriginal = resOriginal, hookCount = 0}\n"
         "engine.tuningDefaults = {['sw.forceDivisor']=10,['sw.homingDamage']=0.2,['sw.wobbleFactor']=0.02,['sw.wobbleMax']=0.1,['sw.removeLimit']=0.88,['rio.wobbleFactor']=0.02,['rio.wobbleMax']=0.1,['zoom.stepIn']=0.2,['zoom.stepOut']=0.1,['zoom.duration']=0.5,['solver.velocityThreshold']=1,['solver.baumgarte']=0.2,['solver.maxRotation']=1.5707964,['solver.angularSleepTolerance']=0.034906585,['solver.maxLinearCorrection']=0.2,['solver.linearSlop']=0.05,['solver.timeToSleep']=0.25,['solver.sleepTolerance']=0.1,['water.buoyancy']=0.1,['water.band']=1.5,['water.keepOrientationOffset']=0.25,['water.boxPushFactor']=0.25,['water.pushSpeedLimit']=15,['gravity.revertFactor']=-0.1,['particle.amountScale']=1,['particle.speedScale']=1,['particle.lifeScale']=1,['particle.sizeScale']=1,['particle.gravityScale']=1,['classic.blockForce']=0.1,['classic.blockScore']=10,['classic.birdForceDivisor']=10,['classic.legacyVelocityFactor']=1.75,['gravity.birdDecay']=1.3,['wobble.duration']=1,['wobble.maxScale']=4,['wobble.cutoff']=0.01,['wobble.frequency']=100,['wobble.baseFrequency']=5,['flip.speed']=3,['moving.tolerance']=0.5,['moving.zeroTolerance']=0.001,['background.skip']=0,['foreground.skip']=0}\n"
         "function engine.natives(includeRes)\n"
         "    local names = {}\n"
@@ -161,9 +165,17 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
         "end\n"
         "env.engine = engine\n");
     GetEnvField("native");
-    if (!lua_istable(L_, -1)) { lua_pop(L_, 1); NewGlobalTable("native"); } else lua_pop(L_, 1);
+    if (!lua_istable(L_, -1)) { lua_pop(L_, 1); NewGlobalTable("native"); GetEnvField("native"); }
+    // Seasons 4.x reads it as `_G.native.xxx` (createStartUpAssets), `_G` being the real global table, so the same table is put there too
+    lua_setfield(L_, LUA_GLOBALSINDEX, "native");
     GetEnvField("tuning");
     if (!lua_istable(L_, -1)) { lua_pop(L_, 1); NewGlobalTable("tuning"); } else lua_pop(L_, 1);
+    GetEnvField("nuked");        // 2.0.0 (Android): the save files the exe found corrupted and replaced (none here)
+    if (!lua_istable(L_, -1)) { lua_pop(L_, 1); NewGlobalTable("nuked"); } else lua_pop(L_, 1);
+    if (!IsSpaceDataFolder()) {          // (Space asserts that the engine leaves it undefined)
+    lua_pushboolean(L_, 0);              // the scripts read isHDVersion as a plain variable (Android 2.0.0 picks its 1280x800 images when it is true)
+    SetEnvField("isHDVersion");
+    }
     lua_pushboolean(L_, config_.isLiteVersion);
     SetEnvField("isLiteVersion");
     lua_pushboolean(L_, config_.showCursor);
@@ -270,7 +282,7 @@ void ScriptHost::NewGlobalTable(const char* name) {
 // (encrypted) files, one assignment per entry (`Level27 = {...}`). The file runs in a table of its own and
 // that table, or the table inside it, becomes the global. A missing file means an empty table.
 bool ScriptHost::IsSpaceDataFolder() const {
-    if (!config_.commonScriptPath.empty()) return true;
+    if (!config_.commonScriptPath.empty()) return !config_.seasons4;
     std::vector<uint8_t> bytes;            // a Space build that keeps everything in one scripts folder still has blocks_planets.lua
     return ab::ReadLuaFile(config_.scriptPath + "/blocks_planets.lua", bytes) && !bytes.empty();
 }
@@ -329,7 +341,7 @@ bool ScriptHost::LoadScripts() {
         } else { std::fprintf(stderr, "space editor: %s\n", lua_tostring(L_, -1)); lua_pop(L_, 1); }
         lua_pop(L_, 1);
     };
-    if (!config_.commonScriptPath.empty()) {
+    if (!config_.commonScriptPath.empty() && !config_.seasons4) {
         space_ = true;
         starWars_ = true;
         if (!LoadTableFile(L_, "starTable", config_.scriptPath + "/starLimits.lua", &error_)) return false;   // the star limits per level
@@ -345,9 +357,13 @@ bool ScriptHost::LoadScripts() {
         if (ok) installSpaceEditor();
         return ok;
     }   // Space: its gamelogic.lua loads the rest
-    const char* files[] = {"/loadlist.lua", "/gamelogic.lua"};
-    for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
-        if (!RunFile(config_.scriptPath + files[i])) return false;
+    if (config_.seasons4) {      // Seasons 4.x: scripts_common/gamelogic.lua pulls the rest in with requireFile
+        if (!RunFile(config_.commonScriptPath + "/gamelogic.lua")) return false;
+    } else {
+        const char* files[] = {"/loadlist.lua", "/gamelogic.lua"};
+        for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
+            if (!RunFile(config_.scriptPath + files[i])) return false;
+        }
     }
     // starLimits.lua, blocks.lua and particles.lua are data files: each fills its own table
     if (!LoadTableFile(L_, "starTable", config_.scriptPath + "/starLimits.lua", &error_)) return false;
@@ -468,15 +484,18 @@ bool ScriptHost::LoadScripts() {
     // are all behind `not releaseBuild` or cheatsEnabled. releaseBuild itself must stay true: false unlocks every level and episode
     // (resetSettings, the level select). So the cheats are switched on, and the two per-frame functions that read the debug keys run
     // in an environment where releaseBuild reads false and everything else reads and writes the real globals.
-    if (!std::getenv("AB_NODEBUGKEYS")) RunString(
+    if (!std::getenv("AB_NODEBUGKEYS")) RunString((std::string(
         "local env = _G.getfenv(1)\n"
-        "env.cheatsEnabled = true\n"
-        "env.showEditor = true\n"
+        "env.cheatsEnabled = true\n") +
+        // initSubsystems builds the `Editor` class when showEditor is set; a data folder without the editor (an Android .apk) has no such class
+        "local init = env.initSubsystems\n"
+        "if not (env.Editor == nil and _G.type(init) == \"function\" and _G.string.find(_G.string.dump(init), \"Editor\", 1, true)) then env.showEditor = true end\n" +
+        std::string(
         "local view = _G.setmetatable({releaseBuild = false}, {__index = env, __newindex = env})\n"
         "for _, name in _G.ipairs({\"update\", \"updateGame\"}) do\n"
         "    if _G.type(env[name]) == \"function\" then _G.setfenv(env[name], view) end\n"
         "end\n"
-        "env.__abview = view\n");
+        "env.__abview = view\n")).c_str());
     // the view is kept for loadLuaFile: Angry Birds 2.0.0 builds the main menu's EDITOR button (MainMenu.init) and places it
     // (MainMenu.layout) only when releaseBuild is false, and main_menu.lua is loaded after this point
     lua_getfield(L_, LUA_REGISTRYINDEX, "ab.env");

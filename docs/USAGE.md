@@ -15,6 +15,10 @@ It works the same for Seasons and for 2.0.0, just from their own folders. You ca
 
 You can also put the exe next to the game's `data` folder, where the original exe sits. Do not name it `angrybirds.exe`: Windows treats that as the original's name and would overwrite it.
 
+### Opening an Android .apk or iPhone .ipa
+
+Drag an `.apk` (Android) or `.ipa` (iPhone) file onto `AngryBirdsEngine.exe`, choose the exe in "Open with", or run `AngryBirdsEngine.exe C:\path\AngryBirds_1.3.5.apk`. The first time, the engine unpacks the game's data (an .apk's `assets/data`, an .ipa's `Payload/<name>.app/data_iphone`) into `%LOCALAPPDATA%\AngryBirdsEngine\apk\<file name>\data` (a few seconds; the next start reuses it, delete the folder to unpack again) and starts the game from there. The `config.lua` it writes next to that data (window size, `deviceModel = "android"` or `"iphone"`, `isLiteVersion` for the Lite iPhone game, folder names, `product` for the save folder) can be edited. Only the game's data is used; the native code is not run. iPhone textures in PVRTC format are decoded when loaded. Checked with Angry Birds 1.3.5 and 2.1.0 (.apk) and Angry Birds Free 1.0.0 (.ipa): menus, level select and a level.
+
 ### Options
 
 - `--scripts <folder>`, `--data <folder>`: where the scripts and data are.

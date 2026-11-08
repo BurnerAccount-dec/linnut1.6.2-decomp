@@ -1,4 +1,5 @@
 #include "engine/font.h"
+#include <cstring>
 
 namespace ab {
 
@@ -89,7 +90,35 @@ bool ParseBitmapFont(const std::vector<uint8_t>& bytes, BitmapFont& out, std::st
     return r.ok ? true : Fail(error, "font file is cut short");
 }
 
+// The Android builds (1.3.x) keep their texts in an older layout without the KA3D header: 5 bytes, the number of locales, the locale names
+// (u16 length + text), the number of ids, the ids, then one u32 offset per locale (counted from the end of the first of them) and, at each
+// offset, one u16-length string per id. The first locale (en_EN) is used.
+static bool ParseLegacyTextGroup(const std::vector<uint8_t>& b, TextGroup& out) {
+    auto u16 = [&](size_t at) { return at + 2 <= b.size() ? ((unsigned)b[at] << 8 | b[at + 1]) : 0u; };
+    auto u32 = [&](size_t at) { return at + 4 <= b.size() ? ((uint32_t)b[at] << 24 | (uint32_t)b[at + 1] << 16 | (uint32_t)b[at + 2] << 8 | b[at + 3]) : 0u; };
+    if (b.size() < 16) return false;
+    size_t p = 6;
+    for (unsigned i = 0; i < b[5]; i++) { p += 2 + u16(p); if (p > b.size()) return false; }
+    unsigned count = u16(p); p += 2;
+    std::vector<std::string> ids;
+    for (unsigned i = 0; i < count; i++) {
+        unsigned n = u16(p); p += 2;
+        if (p + n > b.size()) return false;
+        ids.push_back(std::string((const char*)&b[p], n)); p += n;
+    }
+    if (b[5] == 0) return false;
+    size_t at = p + 4 + u32(p);
+    out.strings.clear();
+    for (size_t i = 0; i < ids.size(); i++) {
+        unsigned n = u16(at); at += 2;
+        if (at + n > b.size()) return false;
+        out.strings[ids[i]] = std::string((const char*)&b[at], n); at += n;
+    }
+    return true;
+}
+
 bool ParseTextGroup(const std::vector<uint8_t>& bytes, TextGroup& out, std::string* error) {
+    if (bytes.size() > 16 && std::memcmp(bytes.data(), "KA3D", 4) != 0 && ParseLegacyTextGroup(bytes, out)) return true;
     Reader r(bytes);
     if (r.Bytes(4) != "KA3D") return Fail(error, "not a KA3D file");
     r.U32();

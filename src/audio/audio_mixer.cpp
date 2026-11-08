@@ -132,8 +132,14 @@ void AudioMixer::AddPcmClip(const std::string& name, int rate, int channels, con
     if (channels < 1 || rate < 1) return;
     auto clip = std::make_shared<AudioClip>();
     clip->channels = channels; clip->rate = rate; clip->samples = samples;
-    int target;
-    { std::lock_guard<std::mutex> l(m_); target = rate_; }
+    int target, outCh;
+    { std::lock_guard<std::mutex> l(m_); target = rate_; outCh = channels_; }
+    if (outCh == 1 && channels == 2) {            // v3.0: the iPhone game mixes in mono (createAudioOutput(1, 16, 16000)): a stereo clip is mixed down, or it plays at half speed
+        std::vector<int16_t> mono(samples.size() / 2);
+        for (size_t i = 0; i < mono.size(); i++) mono[i] = (int16_t)(((int)samples[i * 2] + (int)samples[i * 2 + 1]) / 2);
+        clip->samples.swap(mono); clip->channels = 1;
+        return AddPcmClip(name, rate, 1, clip->samples);
+    }
     if (rate != target) {
         size_t inFrames = samples.size() / channels, outFrames = (size_t)((double)inFrames * target / rate);
         std::vector<int16_t> r(outFrames * channels);

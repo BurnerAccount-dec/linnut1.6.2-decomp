@@ -79,7 +79,7 @@ add_library(ab_lua src/lua/aes.cpp src/lua/sevenzip.cpp src/lua/dec_folder.cpp s
 target_include_directories(ab_lua PUBLIC src)
 target_link_libraries(ab_lua PUBLIC lua51 ab_game)
 
-add_library(ab_engine src/engine/game_platform.cpp src/engine/level_writer.cpp src/engine/sprite_sheet.cpp src/engine/png_decoder.cpp src/engine/font.cpp src/engine/render_soft.cpp)
+add_library(ab_engine src/engine/game_platform.cpp src/engine/level_writer.cpp src/engine/sprite_sheet.cpp src/engine/png_decoder.cpp src/engine/apk_extract.cpp src/engine/font.cpp src/engine/render_soft.cpp)
 target_include_directories(ab_engine PUBLIC src)
 target_link_libraries(ab_engine PUBLIC ab_lua ab_physics ab_audio ab_video)
 

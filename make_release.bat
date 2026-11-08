@@ -8,7 +8,14 @@ if exist C:\abbuild rmdir /s /q C:\abbuild
 git clone "%~dp0." C:\abbuild || goto fail
 cd /d C:\abbuild || goto fail
 
-cmake -S . -B build -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded || goto fail
+rem SDL2 is normally downloaded from GitHub. If SDL2-2.30.9.tar.gz lies next to this bat, it is unpacked to C:\abbuild_sdl2 and used instead (no personal path in it).
+if exist "%~dp0SDL2-2.30.9.tar.gz" if not exist C:\abbuild_sdl2\CMakeLists.txt (
+  mkdir C:\abbuild_sdl2
+  tar -xf "%~dp0SDL2-2.30.9.tar.gz" -C C:\abbuild_sdl2 --strip-components=1
+)
+set SDLOPT=
+if exist C:\abbuild_sdl2\CMakeLists.txt set SDLOPT=-DFETCHCONTENT_SOURCE_DIR_SDL2=C:/abbuild_sdl2
+cmake -S . -B build -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded %SDLOPT% || goto fail
 cmake --build build --config Release --target angrybirds || goto fail
 if not exist build\Release\AngryBirdsEngine.exe goto fail
 
@@ -25,11 +32,11 @@ copy third_party\minimp3\LICENSE dist\LICENSE-minimp3.txt || goto fail
 copy third_party\h264bsd\LICENSE.md dist\LICENSE-h264bsd.txt || goto fail
 xcopy /e /i /y tools dist\tools || goto fail
 xcopy /e /i /y extras dist\extras || goto fail
-powershell -NoProfile -Command "Compress-Archive -Force -Path dist\* -DestinationPath AngryBirdsEngine-v2.9.zip" || goto fail
+powershell -NoProfile -Command "Compress-Archive -Force -Path dist\* -DestinationPath AngryBirdsEngine-v3.0.zip" || goto fail
 
 echo.
 echo DONE. The exe is clean. Upload this file to the GitHub release:
-echo   C:\abbuild\AngryBirdsEngine-v2.9.zip
+echo   C:\abbuild\AngryBirdsEngine-v3.0.zip
 exit /b 0
 
 :personal

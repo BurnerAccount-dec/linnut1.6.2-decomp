@@ -1,4 +1,1 @@
-build/
-settings.lua
-highscores.lua
-tests/data/
+/SDL2-2.30.9.tar.gz

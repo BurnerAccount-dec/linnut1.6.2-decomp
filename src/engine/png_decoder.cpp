@@ -1,4 +1,5 @@
 #include "engine/png_decoder.h"
+#include "engine/apk_extract.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -89,7 +90,7 @@ bool InflateBlock(BitReader& br, std::vector<uint8_t>& out, const Huffman& lit, 
     }
 }
 
-bool Inflate(const uint8_t* data, size_t size, std::vector<uint8_t>& out) {
+bool InflateRaw(const uint8_t* data, size_t size, std::vector<uint8_t>& out) {
     BitReader br{data, size};
     int last;
     do {
@@ -160,6 +161,8 @@ int Paeth(int a, int b, int c) {
 
 }  // namespace
 
+bool Inflate(const uint8_t* data, size_t size, std::vector<uint8_t>& out) { return InflateRaw(data, size, out); }
+
 bool DecodePng(const std::vector<uint8_t>& f, Image& out, std::string* error) {
     auto fail = [&](const char* m) { if (error) *error = m; return false; };
     static const uint8_t sig[8] = {137, 80, 78, 71, 13, 10, 26, 10};
@@ -201,7 +204,7 @@ bool DecodePng(const std::vector<uint8_t>& f, Image& out, std::string* error) {
     if (idat.size() < 6) return fail("no image data");
     std::vector<uint8_t> raw;
     raw.reserve((size_t)(width * channels + 1) * height);
-    if (!Inflate(idat.data() + 2, idat.size() - 2, raw)) return fail("bad compressed data");   // 2 bytes of zlib header
+    if (!InflateRaw(idat.data() + 2, idat.size() - 2, raw)) return fail("bad compressed data");   // 2 bytes of zlib header
     size_t stride = (size_t)width * channels;
     if (raw.size() < (stride + 1) * height) return fail("image data too short");
 
@@ -254,13 +257,104 @@ bool DecodePng(const std::vector<uint8_t>& f, Image& out, std::string* error) {
     return true;
 }
 
+// PVRTC 4 bits per pixel (iPhone builds, format 0x19; 0x18 is the 2 bit variant, not read). The blocks of 4x4 pixels sit in Morton order;
+// every block holds two colours (A and B) and 2 bit weights per pixel; the colours of the neighbouring blocks are blended across the block.
+bool DecodePvrtc4(const std::vector<uint8_t>& file, uint32_t width, uint32_t height, Image& out, std::string* error) {
+    const uint32_t bw = std::max<uint32_t>(2, width / 4), bh = std::max<uint32_t>(2, height / 4);
+    if ((bw & (bw - 1)) || (bh & (bh - 1)) || file.size() < 52 + (size_t)bw * bh * 8) { if (error) *error = ".pvr: PVRTC texture is not a power of two or truncated"; return false; }
+    auto word = [&](uint32_t bx, uint32_t by) -> const uint8_t* {
+        uint32_t minD = std::min(bw, bh), idx = 0, dst = 1;
+        for (uint32_t src = 1; src < minD; src <<= 1) { if (by & src) idx |= dst; dst <<= 1; if (bx & src) idx |= dst; dst <<= 1; }
+        idx += (std::max(bx, by) / minD) * minD * minD;
+        return &file[52 + (size_t)idx * 8];
+    };
+    struct Col { int r, g, b, a; };
+    auto colors = [&](const uint8_t* w, Col& A, Col& B) {
+        uint32_t c = (uint32_t)w[4] | (uint32_t)w[5] << 8 | (uint32_t)w[6] << 16 | (uint32_t)w[7] << 24;
+        auto e5 = [](int v) { return (v << 3) | (v >> 2); };
+        auto e4 = [](int v) { return v * 17; };
+        auto e3 = [](int v) { return (v << 5) | (v << 2) | (v >> 1); };
+        uint32_t lo = c & 0xFFFF, hi = c >> 16;
+        if (lo & 0x8000) { A = {e5((lo >> 10) & 31), e5((lo >> 5) & 31), e5(((lo >> 1) & 15) << 1 | ((lo >> 4) & 1)), 255}; }
+        else A = {e4((lo >> 8) & 15), e4((lo >> 4) & 15), e3((lo >> 1) & 7), e3((lo >> 12) & 7)};
+        if (hi & 0x8000) { B = {e5((hi >> 10) & 31), e5((hi >> 5) & 31), e5(hi & 31), 255}; }
+        else B = {e4((hi >> 8) & 15), e4((hi >> 4) & 15), e4(hi & 15), e3((hi >> 12) & 7)};
+    };
+    out.width = (int)width; out.height = (int)height;
+    out.rgba.assign((size_t)width * height * 4, 255);
+    for (uint32_t by = 0; by < bh; by++) for (uint32_t bx = 0; bx < bw; bx++) {
+        const uint8_t* w = word(bx, by);
+        const uint32_t mod = (uint32_t)w[0] | (uint32_t)w[1] << 8 | (uint32_t)w[2] << 16 | (uint32_t)w[3] << 24;
+        const bool mode1 = (mod & 1) != 0;
+        for (int y = 0; y < 4; y++) for (int x = 0; x < 4; x++) {
+            // the four blocks around this pixel (the colours sit two pixels in from the block's corner)
+            const int ox = x < 2 ? -1 : 0, oy = y < 2 ? -1 : 0;
+            const int fx = (x + 2) & 3, fy = (y + 2) & 3;
+            Col A[4], B[4];
+            for (int k = 0; k < 4; k++) colors(word((bx + ox + (k & 1) + bw) % bw, (by + oy + (k >> 1) + bh) % bh), A[k], B[k]);
+            auto blend = [&](Col* c) {
+                Col r;
+                int wt[4] = {(4 - fx) * (4 - fy), fx * (4 - fy), (4 - fx) * fy, fx * fy};
+                r.r = r.g = r.b = r.a = 0;
+                for (int k = 0; k < 4; k++) { r.r += c[k].r * wt[k]; r.g += c[k].g * wt[k]; r.b += c[k].b * wt[k]; r.a += c[k].a * wt[k]; }
+                r.r /= 16; r.g /= 16; r.b /= 16; r.a /= 16;
+                return r;
+            };
+            Col a = blend(A), b = blend(B);
+            const int m = (mod >> ((y * 4 + x) * 2)) & 3;
+            static const int w0[4] = {0, 3, 5, 8}, w1[4] = {0, 4, 4, 8};
+            const int wt = mode1 ? w1[m] : w0[m];
+            uint8_t* d = &out.rgba[((size_t)(by * 4 + y) * width + bx * 4 + x) * 4];
+            d[0] = (uint8_t)((a.r * (8 - wt) + b.r * wt) / 8); d[1] = (uint8_t)((a.g * (8 - wt) + b.g * wt) / 8);
+            d[2] = (uint8_t)((a.b * (8 - wt) + b.b * wt) / 8); d[3] = (uint8_t)((a.a * (8 - wt) + b.a * wt) / 8);
+        }
+    }
+    return true;
+}
+
 // 2.0.0 keeps some textures (all its fonts) as PowerVR v2 files: a 52 byte header, then the pixels. Only
 // the plain 16 and 32 bit formats are read (4444, 5551, 565, 8888), top row first, not twiddled.
 bool DecodePvr(const std::vector<uint8_t>& file, Image& out, std::string* error) {
     auto u32 = [&](size_t at) { return (uint32_t)file[at] | (uint32_t)file[at + 1] << 8 | (uint32_t)file[at + 2] << 16 | (uint32_t)file[at + 3] << 24; };
     uint32_t height = u32(4), width = u32(8), flags = u32(16), format = flags & 0xFF;
     if (width == 0 || height == 0 || width > 8192 || height > 8192) { if (error) *error = "bad .pvr size"; return false; }
+    if (format == 0x19) return DecodePvrtc4(file, width, height, out, error);
     if (flags & 0x200) { if (error) *error = ".pvr: twiddled textures are not supported"; return false; }
+    if (format == 0x36) {      // ETC1 (Android builds): 4x4 blocks of 8 bytes, 4 bits per pixel, opaque; only the first (largest) level is read
+        const size_t bw = (width + 3) / 4, bh = (height + 3) / 4;
+        if (file.size() < 52 + bw * bh * 8) { if (error) *error = "truncated .pvr"; return false; }
+        static const int mod[8][4] = {{2, 8, -2, -8}, {5, 17, -5, -17}, {9, 29, -9, -29}, {13, 42, -13, -42}, {18, 60, -18, -60}, {24, 80, -24, -80}, {33, 106, -33, -106}, {47, 183, -47, -183}};
+        auto clamp = [](int v) { return (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v); };
+        out.width = (int)width; out.height = (int)height;
+        out.rgba.assign((size_t)width * height * 4, 255);
+        for (size_t by = 0; by < bh; by++) for (size_t bx = 0; bx < bw; bx++) {
+            const uint8_t* b = &file[52 + (by * bw + bx) * 8];
+            const bool diff = (b[3] & 2) != 0, flip = (b[3] & 1) != 0;
+            int c[2][3];
+            if (diff) {
+                for (int k = 0; k < 3; k++) {
+                    int base = b[k] >> 3, d = b[k] & 7; if (d > 3) d -= 8;
+                    int c2 = base + d;
+                    c[0][k] = (base << 3) | (base >> 2); c[1][k] = ((c2 & 31) << 3) | ((c2 & 31) >> 2);
+                }
+            } else {
+                for (int k = 0; k < 3; k++) { c[0][k] = (b[k] >> 4) * 17; c[1][k] = (b[k] & 15) * 17; }
+            }
+            const int table[2] = {(b[3] >> 5) & 7, (b[3] >> 2) & 7};
+            const uint32_t bits = (uint32_t)b[4] << 24 | (uint32_t)b[5] << 16 | (uint32_t)b[6] << 8 | b[7];
+            for (int y = 0; y < 4; y++) for (int x = 0; x < 4; x++) {
+                size_t px = bx * 4 + x, py = by * 4 + y;
+                if (px >= width || py >= height) continue;
+                const int sub = flip ? (y >= 2) : (x >= 2);
+                const int k = x * 4 + y;
+                const int idx = (((bits >> (k + 16)) & 1) << 1) | ((bits >> k) & 1);
+                const int m = mod[table[sub]][idx];
+                uint8_t* d = &out.rgba[(py * width + px) * 4];
+                d[0] = clamp(c[sub][0] + m); d[1] = clamp(c[sub][1] + m); d[2] = clamp(c[sub][2] + m); d[3] = 255;
+            }
+        }
+        return true;
+    }
     size_t bytesPerPixel = format == 0x12 ? 4 : 2;
     if (format != 0x10 && format != 0x11 && format != 0x12 && format != 0x13) {
         if (error) *error = ".pvr: pixel format " + std::to_string(format) + " is not supported (only 4444, 5551, 8888 and 565)";

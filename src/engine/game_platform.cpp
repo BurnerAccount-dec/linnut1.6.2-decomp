@@ -1372,7 +1372,12 @@ const GamePlatform::TextureInfo* GamePlatform::TextureFile(const std::string& pa
     TextureInfo info;
     Image image;
     std::string error;
-    if (LoadPngFile(path, image, &error)) {
+    bool loaded = LoadPngFile(path, image, &error);
+    if (!loaded && path.size() > 4 && path.compare(path.size() - 4, 4, ".png") == 0) {   // the Android builds keep their images as .pvr (a tiling texture is asked for as .png)
+        std::string alt = path.substr(0, path.size() - 4) + ".pvr", altError;
+        if (LoadPngFile(alt, image, &altError)) loaded = true; else if (altError.find("cannot open") == std::string::npos) error = altError;
+    }
+    if (loaded) {
         info.handle = backend_->CreateTexture(image, repeat);
         handleSource_[info.handle] = {path, repeat};
         info.width = image.width;
@@ -3765,6 +3770,21 @@ void GamePlatform::PlayVideo(const std::string& path) {
             std::vector<int16_t> pcm;
             int rate = 0, channels = 0;
             if (audio_.Created() && DecodeVideoAudio(full, pcm, rate, channels, &error)) {
+                // v3.0: the sound must last as long as the picture. When the decoder's own numbers (sample rate, channels) do not fit the video's length
+                // by more than 10% (the AAC track of the Lite teaser played too slowly), the nearest rate and channel count that do fit are used instead.
+                const double want = video_->Duration();
+                auto lasts = [&](int r, int c) { return (double)pcm.size() / c / r; };
+                if (want > 1.0 && std::fabs(lasts(rate, channels) - want) > want * 0.1) {
+                    double bestErr = 1e9; int bestRate = rate, bestCh = channels;
+                    for (int c = 1; c <= 2; c++) for (int r : {rate, 22050, 24000, 32000, 44100, 48000}) {
+                        double err = std::fabs(lasts(r, c) - want);
+                        if (err < bestErr) { bestErr = err; bestRate = r; bestCh = c; }
+                    }
+                    if (bestErr > want * 0.1) { bestRate = (int)((double)pcm.size() / bestCh / want); }      // none fits: stretch to the picture's length
+                    std::printf("playVideo: the sound said %d Hz, %d channels (%.1f s) for a %.1f s video; playing it as %d Hz, %d channels\n", rate, channels, lasts(rate, channels), want, bestRate, bestCh);
+                    std::fflush(stdout);
+                    rate = bestRate; channels = bestCh;
+                }
                 audio_.AddPcmClip("__video", rate, channels, pcm);
                 audio_.Start();
                 audio_.Play("__video", 1.0f, false, kAudioTracks - 1);

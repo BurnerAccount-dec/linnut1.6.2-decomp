@@ -25,6 +25,7 @@ struct BootConfig {
     float screenWidth = 1024, screenHeight = 768;
     bool isLiteVersion = false;
     bool isBetaVersion = false;
+    bool seasons4 = false;                     // Seasons 4.x: commonScriptPath holds gamelogic.lua like Space / Star Wars, but it is neither of them
     bool showCursor = true;                    // config.lua: false means the game draws its own cursor (Seasons 2.2.0 reads the global showCursor)
 };
 

@@ -170,6 +170,38 @@ int l_getLoadStatus(lua_State* L) {
 
 int l_throwException(lua_State* L) { P(L)->Print("script exception: " + S(L, 1)); return 0; }
 
+// requireFile(name): Seasons 4.x. Runs script file `name` once (a second call with the same name does nothing), looked up in the game's script folder
+// first and then in the common one (config.lua scriptPath / commonScriptPath); the file runs in the script environment like the main scripts.
+int l_requireFile(lua_State* L) {
+    const std::string name = S(L, 1);
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.required");
+    if (!lua_istable(L, -1)) { lua_pop(L, 1); lua_newtable(L); lua_pushvalue(L, -1); lua_setfield(L, LUA_REGISTRYINDEX, "ab.required"); }
+    lua_getfield(L, -1, name.c_str());
+    if (lua_toboolean(L, -1)) return 0;
+    lua_pop(L, 1);
+    lua_pushboolean(L, 1); lua_setfield(L, -2, name.c_str());
+    lua_pop(L, 1);
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    std::string dirs[2];
+    lua_getfield(L, -1, "scriptPath");       if (lua_isstring(L, -1)) dirs[0] = lua_tostring(L, -1); lua_pop(L, 1);
+    lua_getfield(L, -1, "commonScriptPath"); if (lua_isstring(L, -1)) dirs[1] = lua_tostring(L, -1); lua_pop(L, 1);
+    lua_pop(L, 1);
+    std::vector<uint8_t> bytes;
+    std::string path;
+    for (const std::string& d : dirs) {
+        if (d.empty()) continue;
+        path = d + "/" + name;
+        if (ab::ReadLuaFile(path, bytes) && !bytes.empty()) break;
+        bytes.clear();
+    }
+    if (bytes.empty()) return luaL_error(L, "requireFile: cannot find %s", name.c_str());
+    if (luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), ("@" + path).c_str()) != 0) return lua_error(L);
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    lua_setfenv(L, -2);
+    lua_call(L, 0, 0);
+    return 0;
+}
+
 int l_loadLuaFileToObject(lua_State* L) {
     // loadLuaFileToObject(path, object, name): runs the file in a table of its own that falls back to
     // `object` for names it does not define, then stores that table as object[name]
@@ -609,6 +641,21 @@ int l_loadLevel(lua_State* L) {
     int loaded = 1;
     std::string loadError = "No such file or directory";
     if (file.find(".temp") == std::string::npos || !P(L)->FindSavedLevel(file, bytes)) ab::ReadLuaFile(path, bytes);   // the editor's TAB copy comes from memory
+    if (bytes.empty() && file.find(".temp") == std::string::npos) {
+        // v3.0: the level is not in the folder that was asked for (the editor lists the Lite levels under levels/pack1, the iPhone Lite game keeps them in
+        // levels/packLite): the other level folders beside it are tried with the same file name
+        size_t cut = file.find_last_of("/\\");
+        size_t cut2 = cut == std::string::npos || cut == 0 ? std::string::npos : file.find_last_of("/\\", cut - 1);
+        if (cut != std::string::npos && cut2 != std::string::npos) {
+            const std::string root = file.substr(0, cut2 + 1), name = file.substr(cut + 1);
+            for (const char* pack : {"packLite", "pack1", "pack2", "pack3", "pack4", "pack5", "pack6", "pack7", "pack8", "pack9", "packFull", "packSeasons", "pack"}) {
+                std::string alt = P(L)->ResolveDataFile(root + pack + "/" + name);
+                if (alt == path) continue;
+                ab::ReadLuaFile(alt, bytes);
+                if (!bytes.empty()) { path = alt; break; }
+            }
+        }
+    }
     if (const char* dump = std::getenv("AB_DUMPLEVEL")) { if (FILE* f = std::fopen((std::string(dump) + "." + file.substr(file.find_last_of("/\\") + 1)).c_str(), "wb")) { std::fwrite(bytes.data(), 1, bytes.size(), f); std::fclose(f); } }   // debug: the decrypted level text
     if (!bytes.empty()) {
         loaded = luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), path.c_str());
@@ -617,6 +664,15 @@ int l_loadLevel(lua_State* L) {
     if (loaded == 0) {
         lua_pushvalue(L, -2);
         lua_setfenv(L, -2);
+        // Seasons 4.x data files (blocks.lua) read the game's `gamelua` table; reading it does not add it to the table the file fills
+        if (!lua_getmetatable(L, -2)) {
+            lua_newtable(L);
+            luaL_loadstring(L, "local g = ...; return function(t, k) if k == 'gamelua' then return g end end");
+            lua_getfield(L, LUA_REGISTRYINDEX, "ab.env"); lua_getfield(L, -1, "gamelua"); lua_remove(L, -2);
+            lua_call(L, 1, 1);
+            lua_setfield(L, -2, "__index");
+            lua_setmetatable(L, -3);
+        } else lua_pop(L, 1);
         if (lua_pcall(L, 0, 0, 0) == 0) ok = true;
         else { P(L)->Print("loadLevel: " + std::string(lua_tostring(L, -1))); lua_pop(L, 1); }
     } else {
@@ -2384,6 +2440,7 @@ bool RioMode(lua_State* L) {
     lua_pop(L, 2);
     return rio;
 }
+int p_clear(lua_State* L) { if (lua_isstring(L, 1) && S(L, 1) == "menu") P(L)->ClearMenuParticles(); else P(L)->ClearParticles(); return 0; }   // particles.clear("menu"): the tutorial calls it on exit
 int p_addParticles(lua_State* L) {
     // Angry Birds Rio: the background confetti is the one emitter that ignores the limits, and it is drawn in the level's
     // two layers (drawLevelParticlesNative), so it goes to the level list, which the limits do not count
@@ -2519,7 +2576,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"setIsMultitouchMouseWheelSimulationEnabled", l_setIsMultitouchMouseWheelSimulationEnabled},
         {"doesMouseClickSetsTouchCount", l_doesMouseClickSetsTouchCount},
         {"setEditing", l_setEditing}, {"setGameOn", l_setGameOn},
-        {"loadLuaFileToObject", l_loadLuaFileToObject}, {"loadLuaFile", l_loadLuaFileToObject},   // 2.0.0: the same without an object
+        {"requireFile", l_requireFile}, {"loadLuaFileToObject", l_loadLuaFileToObject}, {"loadLuaFile", l_loadLuaFileToObject},   // 2.0.0: the same without an object
         {"loadLevel", l_loadLevel}, {"loadLevelEditor", l_loadLevelEditor}, {"saveLevel", l_saveLevel}, {"saveLevelForReload", l_saveLevelForReload}, {"saveLuaFile", l_saveLuaFile}, {"checkForPersistentFile", l_checkForPersistentFile}, {"loadPersistentFileWrapper", l_loadPersistentFileWrapper},
         {"initializePainter", l_initializePainter}, {"clearCanvas", l_clearCanvas}, {"paintToCanvas", l_paintToCanvas}, {"drawCanvasWithMask", l_drawCanvasWithMask},
         {"getDominantCanvasColors", l_getDominantCanvasColors}, {"createSpriteFromCanvas", l_createSpriteFromCanvas}, {"loadCanvasSprite", l_loadCanvasSprite}, {"createSilhouette", l_createSilhouette}, {"predictCollision", l_predictCollision}, {"setObjectGravity", l_setObjectGravity}, {"setObjectGravityScale", l_setObjectGravityScale}, {"resetObjectGravity", l_resetObjectGravity}, {"getObjectGravity", l_getObjectGravity}, {"setupCompoObject", l_setupCompoObject},
@@ -2536,7 +2593,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"getIntersectingObjects", l_getIntersectingObjects},
         {"setParticleSystemLimits", l_nothing}, {"clearParticleCache", l_clearParticleCache}, {"getGroundColor", l_getGroundColor}, {"setGroundColor", l_setGroundColor}, {"enableInGameParticlesNative", l_nothing},
         {"updateBackgroundAndForegroundScrollingNative", l_updateBackgroundAndForegroundScrollingNative}, {"rotateThemeSprites", l_rotateThemeSprites},
-        {"setThemeSprite", l_setThemeSprite}, {"drawMenuParticlesNative", l_nothing}, {"updateMenuParticlesNative", l_nothing}, {"isHDVersion", l_false},
+        {"setThemeSprite", l_setThemeSprite}, {"drawMenuParticlesNative", l_nothing}, {"updateMenuParticlesNative", l_nothing},
         {"createJoint", l_createJoint}, {"createJoints", l_createJoints}, {"setJointParameters", l_setJointParameters},
         {"checkJointLimits", l_checkJointLimits}, {"destroyJoint", l_destroyJoint},
         {"removeObject", l_removeObject}, {"savePersistentLuaFile", l_savePersistentLuaFile}, {"applyImpulse", l_applyImpulse}, {"applyForce", l_applyForce}, {"applyForceNative", l_applyForce}, {"setObjectDecoration", l_setObjectDecoration}, {"setNormalTrailSprite", l_setNormalTrailSprite}, {"setSpecialTrailSprite", l_setSpecialTrailSprite}, {"setSpriteRotation", l_setSpriteRotation}, {"setPivotOffset", l_setPivotOffset}, {"setTextureScale", l_setTextureScale}, {"setRecordVelocity", l_setRecordVelocity},
@@ -2615,6 +2672,8 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"iAdsSupported", l_false},
     };
     Register(L, p, 0, globals, sizeof(globals) / sizeof(globals[0]));
+    // Seasons 4.x calls requireFile as `_G.requireFile(...)` (createStartUpAssets, loadFonts): the real global table gets it too
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env"); lua_getfield(L, -1, "requireFile"); lua_setfield(L, LUA_GLOBALSINDEX, "requireFile"); lua_pop(L, 1);
 
     static const Entry res[] = {
         {"setPath", r_setPath}, {"createSpriteSheet", r_createSpriteSheet}, {"releaseSpriteSheet", r_releaseSpriteSheet},
@@ -2643,7 +2702,7 @@ void RegisterApi(lua_State* L, Platform* p) {
     }
 
     static const Entry particles[] = {
-        {"addParticles", p_addParticles}, {"addLevelParticles", p_addLevelParticles}, {"setSoftLimit", p_setSoftLimit}, {"setHardLimit", p_setHardLimit},
+        {"clear", p_clear}, {"addParticles", p_addParticles}, {"addLevelParticles", p_addLevelParticles}, {"setSoftLimit", p_setSoftLimit}, {"setHardLimit", p_setHardLimit},
         {"native_addParticlesWithMode", p_addParticlesWithMode}, {"addParticlesWithScale", p_addParticlesWithScale}, {"addParticlesWithProperties", p_addParticlesWithProperties},
     };
     lua_newtable(L);

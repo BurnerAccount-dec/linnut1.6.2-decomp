@@ -22,6 +22,7 @@
 #include <exception>
 #include <cstdlib>
 #include <cstring>
+#include <cctype>
 #include <string>
 #include <vector>
 
@@ -32,6 +33,8 @@ extern "C" {
 
 #include "engine/game_platform.h"
 #include "lua/dec_folder.h"
+#include "engine/apk_extract.h"
+#include "engine/level_writer.h"
 #include "engine/input.h"
 #include "engine/png_decoder.h"
 #include "window/gl_backend.h"
@@ -236,11 +239,17 @@ static void SetGameIcon(SDL_Window* window, const std::string& gameName) {
 }
 #endif
 
+static int strcasecmp_ab(const char* a, const char* b) {
+    for (; *a && *b; a++, b++) { int x = std::tolower((unsigned char)*a), y = std::tolower((unsigned char)*b); if (x != y) return x - y; }
+    return std::tolower((unsigned char)*a) - std::tolower((unsigned char)*b);
+}
+
 static int GameMain(int argc, char** argv) {
     std::string scripts, data, shot, configPath, userData;
     int shotFrames = 0; int testW = 0, testH = 0;
     bool decryptOnly = false, useDec = false;      // --decrypt / --use-dec: the dec folder (see lua/dec_folder.h)
     std::string decFolder;
+    std::string apkPath;                  // v3.0: an Android .apk or iPhone .ipa named on the command line (dragged onto the exe, or opened with it)
     std::string audioOut;                 // test: write the mixed sound of the --screenshot run to this .wav
     struct Click { int frame; float x, y, x2, y2; int length; };   // length 3 is a click, more is a drag to (x2, y2)
     std::vector<Click> clicks;
@@ -266,6 +275,7 @@ static int GameMain(int argc, char** argv) {
             else std::printf("--startup: cannot open %s\n", argv[i]);
         }
         else if (!std::strcmp(argv[i], "--prompt")) promptFirst = true;
+        else if (argv[i][0] != '-' && std::strlen(argv[i]) > 4 && (!strcasecmp_ab(argv[i] + std::strlen(argv[i]) - 4, ".apk") || !strcasecmp_ab(argv[i] + std::strlen(argv[i]) - 4, ".ipa"))) apkPath = argv[i];
         else if (!std::strcmp(argv[i], "--fps") && i + 1 < argc) startFps = std::atoi(argv[++i]);
         else if (!std::strcmp(argv[i], "--vsync")) startVsync = 1;
         else if (!std::strcmp(argv[i], "--audio-out") && i + 1 < argc) audioOut = argv[++i];
@@ -282,6 +292,42 @@ static int GameMain(int argc, char** argv) {
             while (!l.empty() && (l.back() == 10 || l.back() == 13 || l.back() == 32)) l.pop_back();
             if (l.empty() || l == "start" || l == "go") break;
             startupCmds.push_back(l);
+        }
+    }
+    if (!apkPath.empty()) {          // v3.0: open an Android .apk or iPhone .ipa: unpack assets/data once into a cache folder and run the game from there
+        std::string stem = apkPath;
+        size_t cut = stem.find_last_of("/\\");
+        if (cut != std::string::npos) stem = stem.substr(cut + 1);
+        const bool isIpa = !strcasecmp_ab(stem.c_str() + stem.size() - 4, ".ipa");
+        stem = stem.substr(0, stem.size() - 4);
+        std::string base;
+        if (const char* la = std::getenv("LOCALAPPDATA")) base = std::string(la) + "\\AngryBirdsEngine\\apk";
+        else if (const char* h = std::getenv("HOME")) base = std::string(h) + "/.cache/AngryBirdsEngine/apk";
+        else base = "apk_cache";
+        const std::string dir = base + "/" + stem;
+        std::string err;
+        std::printf("apk: %s\n", apkPath.c_str());
+        if (!ab::ExtractApk(apkPath, dir, &err)) {
+            std::printf("apk: %s\n", err.c_str());
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Angry Birds engine", err.c_str(), nullptr);
+            return 2;
+        }
+        std::printf("apk: data is in %s\\data\n", dir.c_str());
+        if (data.empty()) data = dir + "/data";
+        if (scripts.empty()) scripts = data + "/scripts";
+        if (configPath.empty()) {
+            configPath = dir + "/config.lua";
+            FILE* cf = std::fopen(configPath.c_str(), "rb");
+            if (cf) std::fclose(cf);
+            else if ((cf = std::fopen(configPath.c_str(), "wb"))) {     // the Android game's own settings, as the scripts expect them from config.lua
+                // an iPhone .ipa: a 480x320 screen, and the Lite game keeps its pictures in images/480x320_lite
+                bool lite = false;
+                if (isIpa) { std::string probeLite = dir + "/data/images/480x320_lite/INGAME_BIRDS_1.dat"; FILE* lp = std::fopen(probeLite.c_str(), "rb"); if (lp) { lite = true; std::fclose(lp); } }
+                std::fprintf(cf, "product = \"Angry Birds (%s)\"\npublisher = \"Rovio\"\nname = \"Angry Birds\"\nwidth = %d\nheight = %d\ndatapath = \"data\"\nisLiteVersion = %s\n"
+                                 "imagePath = \"images\"\nfontPath = \"fonts\"\naudioPath = \"audio\"\nlocalizationPath = \"localization\"\nlevelPath = \"levels\"\n"
+                                 "scriptPath = \"scripts\"\ndeviceModel = \"%s\"\nfullscreen = false\nshowCursor = true\n", stem.c_str(), isIpa ? 480 : 800, isIpa ? 320 : 480, lite ? "true" : "false", isIpa ? "iphone" : "android");
+                std::fclose(cf);
+            }
         }
     }
     // without arguments the exe works like the original: put it next to the game's data folder
@@ -352,6 +398,7 @@ static int GameMain(int argc, char** argv) {
     BootConfig cfg;
     cfg.scriptPath = scripts;
     cfg.commonScriptPath = commonScripts;
+    cfg.seasons4 = !commonScripts.empty() && wc.product.find("Seasons") != std::string::npos;
     cfg.imagePath = wc.imagePath;
     cfg.fontPath = wc.fontPath;
     cfg.deviceModel = wc.deviceModel; cfg.isLiteVersion = wc.isLiteVersion; cfg.isBetaVersion = wc.isBetaVersion;
@@ -424,6 +471,7 @@ static int GameMain(int argc, char** argv) {
         if (appData) userData = std::string(appData) + "\\" + wc.publisher + "\\" + wc.product;
         else { std::printf("--userdata original: APPDATA is not set, using the working folder\n"); userData.clear(); }
     }
+    if (!userData.empty()) ab::MakeDirectory(userData);      // v3.0: the save folder (%APPDATA%\\Rovio\\<product>) is made when it is missing, so settings.lua and highscores.lua can be written
     platform.SetUserDir(userData);
     std::printf("saves: %s\n", userData.empty() ? "(working folder)" : userData.c_str());
 

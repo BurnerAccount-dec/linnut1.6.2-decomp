@@ -2,7 +2,7 @@
 
 An unofficial, from-scratch reimplementation of the Angry Birds PC engine, rebuilt from Ghidra decompiles of the original executables. It is written in C++ (SDL2, OpenGL 1.x, Lua 5.1, Box2D 2.1 and 2.2) and does not re-implement the game logic: it runs the game's **original Lua scripts** and provides the native functions those scripts expect, so levels, menus, physics and scoring behave like the original game.
 
-**Version 2.9.** Changes are listed in [`CHANGELOG.md`](CHANGELOG.md).
+**Version 3.0.** Changes are listed in [`CHANGELOG.md`](CHANGELOG.md).
 
 **Not affiliated with, endorsed by or connected to Rovio Entertainment.** "Angry Birds" and everything in the game belong to their owners. This repository contains no game files: no scripts, images, sounds, levels or executables. To run it you need your own legally obtained copy of the game.
 
@@ -20,7 +20,7 @@ An unofficial, from-scratch reimplementation of the Angry Birds PC engine, rebui
 
 ## Quick start
 
-1. **Build it** (Windows, Visual Studio and CMake; see [Build](#build)) or take the exe from a release zip (`AngryBirdsEngine-v2.9.zip`, made by `make_release.bat`).
+1. **Build it** (Windows, Visual Studio and CMake; see [Build](#build)) or take the exe from a release zip (`AngryBirdsEngine-v3.0.zip`, made by `make_release.bat`).
 2. **Start it from inside the game's folder**, the one that holds `config.lua`:
 
        cd /d "C:\Program Files (x86)\Rovio\Angry Birds"
@@ -41,7 +41,8 @@ More in [`docs/USAGE.md`](docs/USAGE.md): the command line, controls, the typed 
 - Menus, level select, tutorials, pause, restart and level-complete flows in all supported versions.
 - Saves shared with the original game (encrypted and plain format).
 - A DPI-aware resizable window (the scripts' `resolutionChanged` runs), smoothed frame times, a typed console and debug tools.
-- For mod makers: nearly everything can be changed from Lua. The `engine` table (originals of every native, events, rule hooks `engine.shouldCollide` / `engine.strengthChange` / `engine.drawObject`), the `tuning` table (about 40 built-in constants of the physics, damage, water, wobble, zoom, particles and backgrounds), theme layers as data (`getThemeLayers` / `setThemeLayer`, `getCamera`, `drawBackground` / `drawGame` events, so a script can do sine-wave parallax), plus the extra script functions (collider types, alpha, silhouettes, collision prediction, per-object gravity, audio and graphics controls). The compiled-in remainder (Box2D's code, the damage formulas, the particle emitter) is listed in [`docs/SCRIPTING.md`](docs/SCRIPTING.md#what-can-still-not-be-reached-from-lua).
+- Android and iPhone: drag an `.apk` or `.ipa` onto the exe (or open it with the exe) and it runs the game's data, see [`docs/USAGE.md`](docs/USAGE.md#opening-an-android-apk-or-iphone-ipa).
+- For mod makers: nearly everything can be changed from Lua. The `engine` table (originals of every native, events, rule hooks `engine.shouldCollide` / `engine.force` / `engine.damage` / `engine.strengthChange` / `engine.drawObject` / `engine.drawSprite`, so a script can change the force, damage and drawing of every hit and every sprite), the `tuning` table (about 40 built-in constants of the physics, damage, water, wobble, zoom, particles and backgrounds), theme layers as data (`getThemeLayers` / `setThemeLayer`, `getCamera`, `drawBackground` / `drawGame` events, so a script can do sine-wave parallax), plus the extra script functions (collider types, alpha, silhouettes, collision prediction, per-object gravity, audio and graphics controls). The compiled-in remainder (Box2D's own code, the OpenGL quad drawing) is listed in [`docs/SCRIPTING.md`](docs/SCRIPTING.md#what-can-still-not-be-reached-from-lua).
 
 ## Documentation
 
@@ -74,7 +75,7 @@ More in [`docs/USAGE.md`](docs/USAGE.md): the command line, controls, the typed 
 
 (Use `-A x64` for a 64-bit build.) SDL2 is downloaded and built on the first configure if CMake cannot find it (internet needed). The program is `build\Release\AngryBirdsEngine.exe` (`Debug` for a debug build).
 
-`make_release.bat` builds a release configuration and zips the exe with the licences into `AngryBirdsEngine-v2.9.zip`.
+`make_release.bat` builds a release configuration and zips the exe with the licences into `AngryBirdsEngine-v3.0.zip`.
 
 ## How it works
 

@@ -249,6 +249,7 @@ public:
     void GetWorldGravity(float& x, float& y) override { Physics().GetGravity(x, y); }
     void SetMaxTranslation(float t) override { Physics().SetMaxTranslation(t); }
     void ClearParticles() override { particles_.clear(); }
+    void ClearMenuParticles() override { for (size_t i = 0; i < particles_.size();) { if (particles_[i].second) particles_.erase(particles_.begin() + i); else i++; } }
     void CreateThemeSprite(const std::string& name, const std::string& sprite, float x, float y, float scaleX, float scaleY, float angle, float speedX, int layer) override;
     void ModifyThemeSprite(const std::string& name, float x, float y, float scaleX, float scaleY, float angle, int layer) override;
     void RemoveThemeSprite(const std::string& name, int layer) override;
