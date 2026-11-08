@@ -4,7 +4,7 @@ What changed in each version of the engine, newest first. The README has the cur
 
 ## New in 2.9
 
-**This release contains everything since the 2.8 release candidate, which was never published: the Star Wars physics port, the Seasons 4.1.0 start-up fix and the first `engine` table (all described below under "Angry Birds Star Wars" and the first Lua entries) as well as the later additions.** The new Lua features of 2.9, in one list:
+**This release contains everything since the 2.8 release candidate: the Star Wars physics port, the Seasons 4.1.0 start-up fix and the first `engine` table (all described below under "Angry Birds Star Wars" and the first Lua entries) as well as the later additions.** The new Lua features of 2.9, in one list:
 
 * `tuning` table (about 40 built-in numbers: Star Wars damage, wobble and water, Rio wobble, Classic damage, solver iterations and sleep, zoom, particles, gravity) and `engine.tuningDefaults`.
 * Rule hooks: `engine.shouldCollide(a, b)`, `engine.strengthChange(name, other, old, new)`, `engine.drawObject(name)`.
@@ -45,7 +45,6 @@ What changed in each version of the engine, newest first. The README has the cur
 - **Everything changeable from Lua.** New global `engine` table: `engine.original` / `engine.resOriginal` (the engine's own natives, kept when a script replaces a global), `engine.natives()`, and `engine.on` / `off` / `emit` with the events `update`, `levelLoaded`, `objectCreated` and `objectRemoved`. `docs/SCRIPTING.md` has a new, complete native function reference and a chapter "Changing the engine from Lua".
 - **`tuning` table and `contact` event.** The engine's built-in constants can be set from Lua (`tuning["sw.forceDivisor"] = 5`): Star Wars damage divisor, homing damage, hit wobble and sensor removal limit, Rio wobble, and the mouse-wheel zoom step and duration; and, in every game, the Box2D solver (iterations, slop, sleep time and tolerance), the Star Wars water formula, the revert-gravity strength, the hit-wobble curve, the flip speed and the `hasMovingObjects` thresholds. `engine.on("contact", function(a, b) ... end)` fires when two objects begin to touch. `docs/SCRIPTING.md` ends with a modding guide with pseudocode and recipes.
 - **Asteroid-field rock layers (0x44adb0 / 0x44a800).** A layer with `spawnParameters` puts its rock on a random spot of its screen area, shifted by `(random - 0.5) * worldW / worldH` of the level box. The exe reads `amount` and `xSpeedVariance` but never uses them, so the engine ignores them too.
-* **Release name.** `make_release.bat` writes `AngryBirdsEngine-v2.9.zip`.
 
 ## New in 2.6
 
