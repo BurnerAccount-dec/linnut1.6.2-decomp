@@ -353,21 +353,335 @@ See "Extra script commands (new in 1.8)" above for worked examples of the last t
 - The aiming aid (`updateBirdTrajectoryTable`) now follows what the exe does: it flies a copy of the bird on its own with the free-flight integrator (world gravity plus the sensors' force times the inverse mass, the velocity damping clamp `1 - h * damping` between 0 and 1, the maximum translation of 2 per step), without collisions, and stores a point every few steps.
 - Box2D's block-solver condition number is 1000 for Space and 100 for Rio, as in each exe.
 
-## Native function summary
+## Native function reference
 
-These are the functions the engine registers for the scripts (all in `src/lua/lua_api.cpp`). Several are only used by one game; the ones that only talk to online services, ads or purchases are stubs.
+Every function the engine registers for the scripts, with its arguments, what it returns and what it does. They are all in `src/lua/lua_api.cpp` (the `res` and `particles` tables and the platform services come from the same file) or, for the few that exist only to keep a game's scripts running, in `src/lua/space_natives.lua`. The names are the retail exes' names, so the original scripts call them unchanged.
 
-- **Window and input:** `requestExit`, `setBGColor`, `captureMouse`, `isMouseCaptured`, `setFullScreenMode`, `isInFullScreenMode`, `setResolution`, `setRetinaResolution`, `setIsMultitouchMouseWheelSimulationEnabled`, `doesMouseClickSetsTouchCount`, `getClipboardText`, `hasLocationCapability`.
-- **Files, scripts and levels:** `loadLuaFileToObject`, `loadLuaFile`, `saveLuaFile`, `checkForLuaFile`, `createDirectory`, `checkDirectory`, `loadLevel`, `loadLevelFile`, `getLoadStatus`, `saveLevel`, `loadLevelEditor`, `setEditing`, `setGameOn`, `setGameParameters`.
-- **Physics objects:** `createBox`, `createCircle`, `createPolygon` (with `clearVertices`, `addVertex`), `removeObject`, `setPosition`, `setRotation`, `setVelocity`, `setAngularVelocity`, `setSleeping`, `applyImpulse`, `applyForce`, `getVelocity`, `getAngle`, `getLocalPoint`, `getWorldPoint`, `setObjectParameter`, `getIntersectingObjects`, `hasMovingObjects`, `hasMovingObjectsZeroTolerance`.
-- **Physics world:** `setPhysicsEnabled`, `isPhysicsEnabled`, `setPhysicsSimulationScale`, `setWorldGravity`, `setLevelLimits`, `setCollisionEnabled`; engine additions: `setObjectAlpha`, `getObjectAlpha`, `setColliderType`, `getColliderType`, `setColliderRule`, `getColliderRule`, `setPolygonRadius`, `getPolygonRadius`.
-- **Joints:** `createJoint`, `createJoints`, `setJointParameters`, `checkJointLimits`, `destroyJoint`, `removeJointsFromObject`.
-- **Camera and drawing state:** `setTopLeft`, `setWorldScale`, `setMaxWorldScale`, `setMaxTranslation`, `enableSmoothZooming`, `setRenderState` (8th value: alpha), `setAlpha`.
-- **Drawing:** `drawRect`, `drawRectLines`, `drawLine2D`, `drawTexturedRect`, `drawSome`, `drawLayer`, `drawBoxNative`, `drawUITextNative`, `clipText`, `drawGameNative`, `drawBackgroundNative`, `drawForegroundNative`, `drawParticlesNative`, `drawLevelParticlesNative`, `drawMenuParticlesNative`, `updateBackgroundAndForegroundScrollingNative`.
-- **Sprites, materials and themes:** `setSprite`, `setMaterial`, `setTexture`, `setTheme`, `createThemeSprite`, `modifyThemeSprite`, `updateThemeSprite`, `removeThemeSprite`, `setThemeSprite`, `rotateThemeSprites`, `isHDVersion`.
-- **Particles:** `setParticleSystemLimits`, `clearParticleCache`, `clearParticles`, `clearParticlesNative`, `updateMenuParticlesNative`, `enableInGameParticlesNative`.
-- **Trajectory dots:** `startNewTrajectory`, `addToTrajectory`, `addPuffToTrajectory`.
-- **Time and system:** `getCurrentTime`, `getTimeDifference`, `getTImeDifferenceInSeconds`, `getOSName`, `getOSVersion`, `getModel`, `getManufacturer`, `getCurrentLocale`, `initLocales`, `getDeviceID`, `verifyDeviceID`, `areDeviceIDsEqual`, `canOpenProgram`, `openProgram`, `playVideo`, `print`, `printGlobals`, `throwException`.
-- **The `res` table** (reached as `_G.res`): sprite sheets, fonts, `drawSprite`, `drawString`, `getSpriteBounds`, `getSpritePivot`, `useFont` and the audio functions.
-- **Stubs for services that are not part of a PC build:** registration and updates (`openRegistrationDialog`, `registerKey`, `checkRegistrationResult`, `requestLatestVersionNumber`, `checkForUpdates`, `callVersionUpdater`), Crystal, Game Center and leaderboards, Flurry and Medio statistics, ads, in-app purchases, notifications, NFC and the task switcher.
+**How to read the signatures**
 
+- *Arguments are positional.* A number that is missing reads as `0`, a string that is missing as `""`, a boolean that is missing as `false`; an argument shown in `[brackets]` can be left out.
+- *Units.* Positions, sizes and velocities of objects are in **world units** (the physics' metres); screen positions and the render state are in **pixels**; angles are **radians** (clockwise on screen, y grows downwards); times are in seconds.
+- *Names.* An "object" is the name string you gave `createBox`, `createCircle`, `createPolygon` and the other creation functions. A function that takes a name and gets an unknown one does nothing (or answers `nil` / `0` / `false`, as noted).
+- *Game.* Where a function only makes sense in one game it says so; "all games" is the default. `Rio` is Angry Birds Rio, `Space` Angry Birds Space, `SW` Angry Birds Star Wars.
+- *Every one of them can be replaced from Lua*, see [Changing the engine from Lua](#changing-the-engine-from-lua) at the end of this chapter.
+
+### Window, input and the engine's own state
+
+| Function | What it does |
+|---|---|
+| `requestExit()` | Asks the engine to close the window at the end of the frame. |
+| `print(...)` | Writes its arguments, separated by tabs, to the console window and the log. Strings and numbers are written as they are, booleans as `true` / `false`, any other value as its type name. (The standard Lua `print` is not used; scripts call this one, or `_G.print`.) |
+| `printGlobals()` | Writes the name and type of every global the scripts have, one per line. |
+| `throwException(text)` | Writes `script exception: <text>`; the engine does not stop. |
+| `setBGColor(r, g, b)` | The colour (0 to 255) the window is cleared with before each frame. `getBGColor()` returns `r, g, b`. |
+| `captureMouse(on)` / `isMouseCaptured()` | Keeps the mouse inside the window (for games that play with relative mouse movement). |
+| `setFullScreenMode(on)` / `isInFullScreenMode()` | Switches between window and full screen / tells which one it is. |
+| `setResolution(width, height)` | Resizes the window. The game is told through its `resolutionChanged` callback. `getFullScreenWidth()` and `getFullScreenHeight()` answer with the `screenWidth` / `screenHeight` globals (0 when unknown). |
+| `setRetinaResolution(...)`, `enableSmoothZooming(...)`, `setGameParameters(...)` | Accepted and ignored (device settings of the phone versions). |
+| `setIsMultitouchMouseWheelSimulationEnabled(on)` | With `on` the mouse wheel simulates a two-finger pinch zoom. `doesMouseClickSetsTouchCount()` tells whether a click raises the `touchcount` global (it does). |
+| `setEditing(on)`, `setGameOn(on)` | Tell the engine the level editor / the game is running; the engine uses them to decide what it draws and which keys it listens to. |
+| `getOSName()`, `getOSVersion()`, `getModel()`, `getManufacturer()` | `"Windows"`, `"6.1"`, `"PC"`, `"PC"`. `getHardwareModel()` returns the `deviceModel` of `config.lua` (`"windows"` by default). `getCurrentLocale()` returns `"en"`; `initLocales()` does nothing. |
+| `getDeviceID()` | A string made from the machine's network adapters, adapters separated by `;`. The registration screens of the older games keep it in the save to notice a copied save. `verifyDeviceID(saved)` is true when any adapter of `saved` is also one of this machine's; `areDeviceIDsEqual(a, b)` compares two ids. |
+| `getCurrentTime()` | `{year, month, day, hour, min, sec}` of the local clock. |
+| `getTimeDifference(later, earlier)` | `{days, hours, minutes, seconds}` between two such tables. `getTImeDifferenceInSeconds(later, earlier)` (sic) answers the same in seconds. |
+| `getClipboardText()` | An empty string. |
+| `canOpenProgram(name)` / `openProgram(name)` | `false` / nothing. |
+| `playVideo(path)`, `stopVideo()`, `isVideoPlaying()` | Plays an `.h264` cutscene full screen; scripts poll `isVideoPlaying()` for the end. |
+| `performBitwiseOr(a, b)` (SW) | `(int)a | (int)b`. `performBitwiseAnd(a, b)` is the same for AND. |
+| `isGameOverlayActive()` (SW) | Always `false`. |
+| `clearScreen()`, `refreshCurrentLocale()`, `recoverRenderObjects()` (SW) | Accepted and ignored (they exist in the retail table). |
+
+Example: a script that toggles full screen with F11 and prints what it did.
+
+```lua
+if keyPressed[122] then          -- F11
+    setFullScreenMode(not isInFullScreenMode())
+    print("full screen:", isInFullScreenMode())
+end
+```
+
+### Loading and saving files
+
+| Function | What it does |
+|---|---|
+| `loadLuaFile(path, name [, ...])` | Reads a script (plain, encrypted or compiled, the engine tells them apart) and runs it. With a `name` the file runs in a table of its own whose missing names are looked up in the globals, and the table becomes the global `name` (`loadLuaFile("scripts/cutscenes.lua", "cutscenes")` leaves a `cutscenes` table). With `""` it runs among the globals. A file that cannot be read or has an error prints `loadLuaFileToObject failed: <path>: <error>` and the call returns. |
+| `loadLuaFileToObject(path, object, name)` | The same, but the table is stored as `object[name]` and falls back to `object` for names it does not define (the Rio and 2.0.0 menus use this). With `name = ""` the file runs inside `object` itself. |
+| `loadLevel(path)` | Runs a level file in an empty environment and makes that table the global `loadedObjects` (it stays `nil` for a level that cannot be read). Raises the `levelLoaded` hook. `loadLevelEditor(path)` does the same for the editor (plain text copy); `loadLevelFile(path, date)` and `getLoadStatus()` are the Seasons daily-level calls: the level is local, so `getLoadStatus()` is `{status = 1}` at once. |
+| `saveLevel(path)` | Writes the live level (the positions and angles objects have now) as a level file. `saveLevelForReload(name)` (Space) does that and also keeps it as `objects.previousLevel` for the return from a bonus level. |
+| `saveLuaFile(name, tableName, persistent)` | Writes the global table `tableName` as `<tableName> = { ... }` to the file `name` in the user's save folder (`settings.lua`, `highscores.lua`). Saves are encrypted for the games that encrypted them; the file is written next to a `.tmp` first and the old one is kept as `.bak`. `savePersistentLuaFile(name, tableName)` does it for the persistent files. |
+| `checkForLuaFile(path)` | True when a script of the game (or the save folder) exists. `fileExists(path)` (all games, 2.4) is the general version: a file next to the exe or in the save folder. |
+| `checkDirectory(path)` / `createDirectory(path)` | Tests for / makes a folder in the save folder. |
+| `readDataFile(path)` | The whole file as a string (decrypted like a script), or `nil`. `loadTextFileToString(path)` (SW) does the same; `fileExistsInAppData(path)` (SW) tests it. |
+| `checkForPersistentFile(name)`, `loadPersistentFileWrapper(name)` | The Island HD saved world: tests for / loads `name` from the save folder and returns the table it defines. |
+
+Example: keep your own table across runs.
+
+```lua
+myMod = myMod or {runs = 0}
+if checkForLuaFile("mymod.lua") then loadLuaFile("mymod.lua", "") end
+myMod.runs = myMod.runs + 1
+saveLuaFile("mymod.lua", "myMod", true)
+```
+
+### Creating and removing objects
+
+All of these write the object into `objects.world[name]` (and `objects.joints` for joints), so a script sees it at once.
+
+| Function | What it does |
+|---|---|
+| `createBox(name, sprite, x, y, width, height, density, friction, restitution, collision, controllable, zOrder)` | A rectangle centred on `x, y`. `collision` (boolean, default true) lets other objects hit it, `controllable` marks a bird, `zOrder` is the draw order (higher is in front). |
+| `createCircle(name, sprite, x, y, radius, density, friction, restitution, [collision,] controllable, zOrder)` | A circle. `collision` is only present in Rio and Space calls (11 arguments). |
+| `createPolygon(name, sprite, x, y, width, height, density, friction, restitution, collision, controllable, zOrder)` | A convex polygon from the corners you gave with `clearVertices()` then `addVertex(x, y)`, relative to `x, y`. `createLineShape` (SW) takes the same arguments and builds a chain of edges from the vertices. |
+| `clearVertices()`, `addVertex(x, y)` | Collect the corners for the next `createPolygon` / `createLineShape`. |
+| `clearShapesArray()`, `addBoxToCompoundList(...)`, `addPolygonToCompoundList(...)`, `addCircleToCompoundList(...)`, `addLineToCompoundList(...)`, `setCompoundShapeLinearDamping(shapes, damping)`, `setCompoundShapeParameter(shapes, id, value)`, `createCompoundObject(name, x, y, _, density, friction, restitution, collision, controllable, zOrder)`, `finalizeCompoundObject()` | Build one body of several shapes: clear the list, add the parts, then create. `setCompoundShapeParameter` takes the ids of `setObjectParameter` and applies them when the body is made. |
+| `createCompoundBodyFromTable(t)` (Space) | The same from a table: `name, x, y, angle, z_order, material` and `children` (one table per part with `x, y, angle` and `blockData`). |
+| `setupCompoObject(name, items, scale)` | Makes an object draw as a composite: `items = {{sprite=, x=, y=, scale=, angle=}, ...}`. |
+| `removeObject(name)` | Destroys the body and its joints and removes it from `objects.world` and `objects.joints`. Raises the `objectRemoved` hook first, so a handler can still read the object. |
+| `setSprite(name, sprite)`, `setMaterial(name, material)`, `setTexture(name, texture)` | Change what an object is drawn with. |
+| `setObjectDensity(name, density)`, `setRestitution(name, value)` | Change the body's density / bounciness (all its fixtures). `native_setMass(name, density)` is `setObjectDensity`. |
+| `spriteExists(name)` | True when a sprite of that name is loaded. |
+
+Example: drop a crate and remove it after two seconds.
+
+```lua
+createBox("crate1", "BLOCK_WOOD_1", 10, -5, 2, 2, 1, 0.5, 0.2, true, false, 5)
+engine.on("update", function(dt)
+    crateTimer = (crateTimer or 0) + dt
+    if crateTimer > 2 and objects.world.crate1 then removeObject("crate1") end
+end)
+```
+
+### Reading and moving objects
+
+| Function | What it does |
+|---|---|
+| `setPosition(name, x, y)`, `setRotation(name, angle)` | Teleports / turns the body and updates `objects.world[name].x, .y, .angle`. |
+| `setVelocity(name, vx, vy)`, `setAngularVelocity(name, w)` | Sets the speed. `getAngularVelocity(name)` returns it; `multiplyVelocity(name, factor)` scales the current velocity. |
+| `getVelocity(name)` | `speed, vx, vy` (0, 0, 0 for a sleeping or unknown body). `getLinearVelocity(name)` (Space) returns `vx, vy`. |
+| `getAngle(name)` | The body's angle. |
+| `getLocalPoint(name, worldX, worldY)` / `getWorldPoint(name, localX, localY)` | Convert a point between the world and the body's own coordinates; each returns `x, y`. |
+| `applyImpulse(name, ix, iy, px, py)` | An instant push `ix, iy` at the world point `px, py`. `applyForce(name, fx, fy, px, py)` (and `applyForceNative`) is a force for this step. |
+| `setSleeping(name, sleeping)` | Puts a body to sleep or wakes it. `setActive(name, active)` takes it out of the simulation and back in. |
+| `setFixedRotation(name, on)`, `setLinearDamping(name, d)`, `setAngularDamping(name, d)` | Box2D body settings. |
+| `setAsSensor(name, on)` | Makes the body a sensor: it reports contacts but nothing collides with it. |
+| `setCollisionEnabled(name, on)` | Turns the object's collisions on and off. |
+| `setSpeedCap(name, maxSpeed [, maxVx, maxVy])`, `getSpeedCap(name)`, `clearSpeedCap(name)` (2.4) | A limit the object's velocity is brought back under after every physics step (0: no limit). |
+| `setObjectGravity(name, gx, gy)`, `setObjectGravityScale(name, scale)`, `resetObjectGravity(name)`, `getObjectGravity(name)` (2.4) | Gravity of one object. See "Gravity of one object" above. |
+| `getTouchingObjects(name)` (2.4) | `{names}` the body touches right now. |
+| `getIntersectingObjects{x1, y1, x2, y2}` / `getIntersectingObjects(box)` | The objects whose shapes overlap a box (Seasons passes the sizes of the sides, Rio / Space signed offsets). Used by explosions. |
+| `rayCast(x1, y1, x2, y2 [, all])` (2.4) | The nearest object the segment crosses: `name, hitX, hitY, normalX, normalY, fraction`, or `nil`; with `all = true` a list of such tables, nearest first. `getRayCastedObjects{x1=, y1=, x2=, y2=}` (Space) returns a flat list, six values per object. |
+| `hasMovingObjects()` / `hasMovingObjectsZeroTolerance()` | True while any object (other than those flagged with parameter 12 in SW) moves faster than 0.5 / 0.001. The game waits for this to be false before it judges a level. |
+| `setObjectAlpha(name, a)` / `getObjectAlpha(name)` | Transparency (0 invisible, 1 solid) used by `drawGameNative`; `getObjectAlpha` is -1 for an unknown object. |
+| `setObjectZOrder(name, z)`, `getObjectZOrder(name)`, `bringObjectToFront(name)`, `sendObjectToBack(name)`, `getObjectDrawOrder()` | The draw order of `drawGameNative`. |
+| `setColliderType(name, type)`, `getColliderType(name)`, `setColliderRule(typeA, typeB, collides)`, `getColliderRule(typeA, typeB)` | Collider classes: two objects collide only when the rule for their types allows it. |
+| `setPolygonRadius(r)` / `getPolygonRadius()` | The skin radius of boxes and polygons made afterwards (Rio's Box2D 2.2). |
+| `setScale(name, sx [, sy])`, `getScale(name)` | The scale an object's sprite is drawn with (the shape does not change). |
+| `setSpriteRotation(name, angle)`, `setPivotOffset(name, x, y)`, `setTextureScale(name, s)`, `setRecordVelocity(name, on)`, `setObjectDecoration(name, sprite, amount, angleIncrement, scale)` (Space) | Sprite look settings the Space scripts use. |
+| `setObjectParameter(name, id, value)` | The catch-all for per-object switches. The ids are listed with each game: see the table for SW above; for Seasons, Rio and Space the ids the scripts use are 5 (scale), 6 (use scale), 15 (`disableImmovable`) and the Rio bounce multipliers 6 and 7. |
+| `setSensorGravityMask(name, mask)`, `setObjectGravityCategory(name, category)`, `setSensorMinimumAndMaximumForces(name, min, max)`, `setRevertGravity(name, on)`, `setRevertGravityWithMultiplier(name, on, a, b)` (Space, SW) | A gravity sensor pulls only objects whose category bit is in its mask; the forces are clamped to the minimum and maximum; "revert" makes it push instead of pull. |
+| `setGravityForceMultiplier(m)`, `getGravityForceMultiplier()` | Scales the force every gravity sensor applies. |
+| `setWaterForceMultiplier(m)`, `getWaterForceMultiplier()`, `setBirdWaterDrag(d)`, `setObjectWaterDrag(d)` (SW) | The buoyancy force and the drag in water. |
+| `native_setBlockCollisionEnabled`, `native_setIgnoresScore`, `native_setKeepOrientation`, `native_setAffectedByForceMultipliers`, `native_setIsWater`, `native_setWaterDensity`, `native_setControlled`, `native_setTimeSinceCollision` (SW) | Per-object flags, see the table under "Object parameters". |
+
+Example: make every bird that is launched fly at half gravity.
+
+```lua
+engine.on("objectCreated", function(name, kind)
+    if string.find(name, "BIRD") then setObjectGravityScale(name, 0.5) end
+end)
+```
+
+### Joints
+
+| Function | What it does |
+|---|---|
+| `createJoint{name=, end1=, end2=, type=, coordType=, x1=, y1=, x2=, y2=, ...}` | Makes one joint. `type` 1 is a distance (spring) joint (`frequency`, `dampingRatio`, `collideConnected`), the others are revolute / prismatic / pulley / weld; the extra fields depend on the type (`motor`, `motorSpeed`, `maxTorque`, `limit`, `lowerLimit`, `upperLimit`, `breakable`, `breakForce`, `isDrawn`, `jointPosX`, `jointPosY`). It writes `objects.joints[name]`. |
+| `createJoints(list)` | `createJoint` for every entry of a level's joint table (an entry without `name` takes its key). |
+| `setJointParameters{name=, motor=, motorSpeed=, maxTorque=, limit=, ...}` | Changes the joint's motor and limits. `setRevoluteJointSpeed(name, speed)` sets only the motor speed. |
+| `checkJointLimits(name)`, `handleJointLimits(name, on)` | Make a limited joint apply its limits now. |
+| `destroyJoint(name)` | Destroys the joint and clears `objects.joints[name]`. `removeJointsFromObject(name)` destroys all joints of an object, `removeBreakableJointsFromObject(name)` (Space) only the breakable ones. |
+
+### World, physics and camera
+
+| Function | What it does |
+|---|---|
+| `setWorldGravity(gx, gy)` / `getWorldGravity()` | The world's gravity in units per second squared (y positive is down). |
+| `setPhysicsEnabled(on)` / `isPhysicsEnabled()` | Stops / resumes the physics step. |
+| `setPhysicsSimulationScale(s)` | Scales the speed of the whole simulation (slow motion). |
+| `setLevelLimits(left, top, right, bottom)` | The area in which objects live; objects that leave it are removed by the scripts. SW publishes these as `leftLimitWorld` ... |
+| `setTopLeft(x, y)` | The world position of the screen's top left corner. |
+| `setWorldScale(s)`, `setMaxWorldScale(s)`, `resetMouseWheelScale(s)`, `setMaxTranslation(t)` | The zoom (pixels per world unit), its maximum, the zoom the mouse wheel returns to, and the largest distance the camera moves per frame. |
+| `setThemeOffsetY(layer, y)`, `setStartingCameraValue(on)` | Used by the theme system to place the backgrounds (see "Backgrounds" in the README). |
+| `setGameRenderingDisabled(b)` / `isGameRenderingDisabled()` (SW) | A flag the scripts keep; the engine does not read it. |
+| `getAimingTime()` (Space) | `floor(simulationIterations) * objects.currentTimeStep`: how long the aiming aid simulates. |
+| `setDeltaTimeMultiplier(m)` / `getDeltaTimeMultiplier()` (Space) | Stored in `g_deltaTimeMultiplier` for the scripts' own use. |
+| `setCameraLimits(w)` (Space) | Stored in `g_cameraLimitWidth`. |
+
+### Drawing
+
+All drawing functions use the **render state** that `setRenderState` set last. `setRenderState(tx, ty, sx, sy, angle, pivotX, pivotY, alpha, skewX, skewY, bendX, bendY, z [, bendFunction])` sets a transform: everything drawn after is scaled by `sx, sy`, turned by `angle` about `pivotX, pivotY` and then moved by `tx, ty` (in the scaled units: the scripts divide a screen position by the scale). Values you leave out keep their defaults (`0, 0, 1, 1, 0, 0, 0, 1, 0, ...`). Reset it with `setRenderState(0, 0, 1, 1, 0, 0, 0, 1)` after drawing.
+
+| Function | What it does |
+|---|---|
+| `drawRect(r, g, b, a, x, y, width, height, useRenderState)` | A filled rectangle; colour 0 to 255 (a: 0 to 255). With `useRenderState` false it is in screen pixels. |
+| `drawRectLines(left, top, right, bottom, lineWidth, r, g, b, a)` | The four edges. |
+| `drawLine2D(x1, y1, x2, y2, lineWidth, r, g, b, a)` | One line. `res.drawTexturedLine2D(sprite, x1, y1, x2, y2, width [, r, g, b, a])` draws a sprite stretched along a line (Leia's beam). |
+| `drawBoxNative(box, x, y, width, height [, vAnchor, hAnchor])` | A nine-patch box: `box` names the corner and edge sprites (`topLeft`, `top`, ...), used by the menus. |
+| `drawUITextNative(text, x, y [, scaleX, scaleY [, angle [, scale]]])` | Draws a `Text` item of the UI components (`text.draw`). |
+| `clipText(font, text, width)` | Breaks a text into lines that fit `width` pixels; the result is in the global `clippedText` (lines and the widest one). |
+| `drawGameNative()` | Draws every object of `objects.world` in z order with their sprites. |
+| `drawBackgroundNative(layerIndex)`, `drawForegroundNative()` | Draw the theme's background / foreground layers (`bgLayers` / `fgLayers` of the theme). |
+| `drawParticlesNative()`, `drawParticlesFiltered(layer)`, `drawLevelParticlesNative(layer)`, `drawMenuParticlesNative()` | Draw the particles of a list. `layer` 1 is behind the blocks, 2 in front of the birds, 3 the notifications. |
+| `updateBackgroundAndForegroundScrollingNative(dt, ...)`, `rotateThemeSprites(dt)`, `updateThemeSprite(dt)` | Advance the scrolling and rotating theme layers. |
+| `createThemeSprite(...)`, `createThemeAnimation{...}`, `modifyThemeSprite(...)`, `removeThemeSprite(name, layer)`, `setThemeSprite(name, sprite, layer)` | The scattered decorations of a theme layer (clouds, stars). `createThemeAnimation` takes `layer, x, y, scaleX, scaleY, angle, name, spriteName, velX, velY, scaleSpeed, startAnimTimer, animDelay, startingDelay, isAnimation, bLoop, animation = {frame sprites}`. |
+| `setTheme(name)` | Selects the theme (its textures, layers and sounds) for the level. |
+| `drawTexturedRect`, `drawSome`, `drawLayer` | Accepted and ignored. |
+| `drawString3D(group, text, x, y, z, tilt, turn, depth, alpha)` (SW) | One line of the credits crawl, drawn on a tilted plane. |
+| `renderGravityVisualsNative(sensor, x, y, zoom)` (SW) | See the note below. |
+| `startNewTrajectory()`, `addToTrajectory(index, x, y)`, `addPuffToTrajectory(index, x, y)`, `setCustomTrajectorySprites(dot, ...)`, `setNormalTrailSprite(sprite)`, `setSpecialTrailSprite(sprite)` | The dots drawn behind a flying bird. |
+| `enableAimingAid(on)`, `setAimingAidSprite(sprite, scale)`, `populateAimingAid()`, `clearAimingAid()`, `updateBirdTrajectoryTable([name])`, `simulateAimingAid(...)` (Space, SW, Classic with `extras`) | The aiming aid: `updateBirdTrajectoryTable` fills the path from the simulation, `populateAimingAid` lays out the dots, `clearAimingAid` removes them. The speed and spacing of the dots are the globals `simulationAimSpeed` and `simulationAimSpawnTime`. |
+| `setAlpha(a [, target])`, `setBlendMode(mode [, target])`, `setShader(effect [, target])`, `setTint(r [, g, b] [, target])`, `getTint([target])`, `resetTint([target])`, `setTintChannel(channel, value [, target])`, `setSkew(x, y [, target])`, `setBend(x, y [, target])`, `setRenderZ(z [, target])`, `setBlur(amount [, target])`, `setPixelate(size [, target])`, `resetBlur`, `resetPixelate`, `setVisualRotation(angle [, target])`, `resetRenderOverrides(target)` (2.2 / 2.4) | Single values of the render state with their own functions; with a `target` (an object, sprite or sprite group name) the setting is kept for that target and every later draw of it uses it. See "Graphics settings for one target" above. |
+
+Note on `renderGravityVisualsNative`: the retail routine (0x415f90) reads four numbers, `sensor, x, y, zoom`. The game's script passes three, and the retail exe stops with an "Excepted type number at stack position 4" error for the missing fourth, so the retail game draws no rings from it; the static ring of a gravity field is drawn by the script's own `drawGravityBubble`. The engine does the same (the missing zoom reads as 0). A script of your own can pass a zoom and gets the rings.
+
+### The `res` table (sprites, text, fonts and sound)
+
+Reached as `res` or `_G.res`. Sprites live in *sheets* (`createSpriteSheet`); a function that takes a sprite also accepts the sheet's name in front (`res.drawSprite("SHEET", "SPRITE", x, y)`) and `nil` or `""` as "any sheet".
+
+| Function | What it does |
+|---|---|
+| `setPath(folder)` | The folder the other `res` functions read from (`imagePath`, `audioPath`, ...). |
+| `createSpriteSheet(file)` / `releaseSpriteSheet(file)` | Loads / frees a sprite sheet (the `.dat` and its picture). |
+| `createCompoSpriteSet(file)` / `releaseCompoSpriteSet(file)` | The same for a file of composite sprites. |
+| `drawSprite(sprite, x, y [, vAnchor, hAnchor [, width, height]])` | Draws a sprite at `x, y` using the render state. `vAnchor` is `"TOP"`, `"VCENTER"`, `"BOTTOM"` or `"VPIVOT"`, `hAnchor` `"LEFT"`, `"HCENTER"`, `"RIGHT"` or `"HPIVOT"` (the sprite's own pivot). `drawCompoSprite` is the same name for composites. |
+| `getSpriteBounds(sprite)` | `width, height` in pixels (0, 0 when not loaded). `getSpritePivot(sprite)` returns `pivotX, pivotY`; `getCompoSpriteBounds(sprite)` returns `x1, y1, x2, y2`. |
+| `getSpritePixel(sprite, x, y)` (2.4) | `r, g, b, a` of one pixel, or `nil`. |
+| `getCompoSprites(name [, "all"])` (2.4) | The parts a composite is made of now (`{sprite, x, y, scale, angle}` each), or every sprite it uses. |
+| `captureSprite(name)`, `keepLastFrame(on)` | Copies the finished frame into a sprite called `name` (the screen-wipe uses `CAPTURED_SCREENSHOT`). |
+| `createBitmapFont(file)` / `useFont(name)` | Loads a font / makes it the current one. `getStringWidth(text)`, `getFontHeight()`, `getFontLeading()`, `getFontTracking()`, `getFontMaxAscending()`, `getFontMaxDescending()` measure the current font. |
+| `drawString(group, textOrKey, x, y, vAnchor, hAnchor)` | Draws text; with a `group` it looks the key up in that text group first. |
+| `setClipRect(x, y, w, h)` | Limits drawing to a rectangle (screen pixels). |
+| `createTextGroupSet(file)`, `loadLocale(file, name)`, `useLocale(name)`, `getString(group, key)`, `setString(group, key, text)` | The texts of the game: load a `TEXTS_*.dat`, choose the language, read or replace one text. |
+| `createAudio(name, file)`, `playAudio(name [, volume, loop, track])`, `stopAudio(name)`, `stopAllAudio()`, `isAudioPlaying(name)` | Sound clips: define one, play it (looping or not, on a numbered track), stop it, ask. |
+| `setTrackVolume(volume, track)` (note the order), `getTrackVolume(track)`, `setMasterVolume(v)`, `getMasterVolume()`, `setAudioSpeed(speed [, track])`, `getAudioSpeed([track])`, `pauseAudio([track])`, `resumeAudio([track])`, `isAudioPaused([track])`, `setAudioClipVolume(name, v)`, `setAudioClipSpeed(name, s)` (2.2) | Volume and speed of everything or one track / clip. |
+| `setAudioClipPitch`, `setAudioClipTempo`, `setAudioClipPan`, `resetAudioClipEffects`, `seekAudioClip(name, seconds)`, `getAudioClipTime(name)`, `getAudioClipLength(name)` (2.4) | Pitch, tempo, pan and position of a clip; settings made before the clip plays are kept for it. |
+| `createAudioOutput(rate, channels, bits)`, `startAudioOutput()`, `stopAudioOutput()` | Raw sound output (the engine ignores them). |
+| `openURL(url)` | Opens the address in the browser. |
+
+Example: draw a sprite's name, centred, over every selected object.
+
+```lua
+setRenderState(0, 0, 1, 1, 0)
+res.useFont(fontBasic)
+res.drawString("", "hello", screenWidth * 0.5, 40, "TOP", "HCENTER")
+```
+
+### The `particles` table
+
+| Function | What it does |
+|---|---|
+| `particles.addParticles(type, amount, x, y, w, h, angle [, ignoreLimits])` | Emits `amount` particles of a particle definition (`particleTable`) in the rectangle `x, y, w, h`, turned by `angle`. The soft and hard limits (`setSoftLimit(soft, perFrame)`, `setHardLimit(n)`) cap how many exist; `ignoreLimits` bypasses them. |
+| `particles.addLevelParticles(type, amount, x, y, w, h, angle, ignoreLimits)` | The same, into the level's list (drawn by `drawLevelParticlesNative`). |
+| `particles.addParticlesWithScale(type, amount, x, y, w, h, angle, scaleBegin, scaleEnd)` (Space) | The call's scales replace the definition's. |
+| `particles.addParticlesWithProperties(type, amount, x, y, w, h, angle, minVel, maxVel, minEmitterAngle, maxEmitterAngle)` (Space) | The call's velocities and emitter angles replace the definition's. |
+| `particles.native_addParticlesWithMode{definitionName=, amount=, x=, y=, w=, h=, angle=, mode=}` (SW) | The theme-system form (mode 1 foreground, 2 background). |
+| `themeSystem.spawnFGLayerParticles(id)` (SW) | Starts the foreground particle layer with that `spawnerId`. |
+| `clearParticles()`, `clearParticlesNative()`, `clearParticlesWithTagNative()` | Remove all particles. |
+| `setParticleSystemLimits`, `clearParticleCache`, `enableInGameParticlesNative`, `updateMenuParticlesNative` | Accepted and ignored. |
+
+### Engine additions
+
+Documented in full above: `createSilhouette`, `predictCollision`, gravity of one object, transparency and draw order, colliders; `rayCast`, `getTouchingObjects`, `setSpeedCap`, `setScale`, `fileExists` (2.4).
+
+### Services of a phone or console build (answered with constants)
+
+These are in the original scripts' call lists but have nothing to do on a PC. They exist so the scripts run; they do nothing and return `nil` unless a value is shown.
+
+- Registration and updates: `openRegistrationDialog`, `registerKey`, `requestLatestVersionNumber`, `checkForUpdates`, `callVersionUpdater`, `checkRegistrationResult` (`false`), `getUnlockRequestChecksum` (`""`).
+- Crystal, Game Center, leaderboards, achievements: `activateCrystalUI`, `activateCrystalUIAtProfile`, `deactivateCrystalUI`, `showCrystalSplash`, `isCrystalSplashShowing` (`false`), `isCrystalUIShowing` (`false`), `userEnabledCrystal` (`false`), `avoidCrystalBackgroundActivity`, `initGameCenter`, `getLeaderboardScoresForPlayers`, `getLeaderboardScoresForRange`, `showLeaderboards`, `showAchievements`, `postHighscore`, `unlockAchievement`.
+- Statistics: `logFlurryEvent`, `logFlurryEventWithParam`, `logFlurryEventWithParams`, `flushMedioEvents`, `logMedioAnonymousIDtoFlurry`, `logMedioEvent`.
+- Ads and in-app purchases: `requestAd`, `showAd`, `hideAd`, `requestBannerAd`, `showBannerAd`, `hideBannerAd`, `requestInterstitialAd`, `requestAndShowInterstitialAd`, `showInterstitialAd`, `requestExpandableAd`, `showExpandableAd`, `stopAds`, `requestAdvertisement`... `showAdvertisement`, `hideAdvertisement`, `requestInterstitial`, `showInterstitial`, `requestVideoAd`, `requestAndShowVideo`, `showVideoAdvertisement`, `enableiAds`, `disableiAds`, `iAdsSupported` (`false`), `videoReady` (`false`), `iapBuyItem`, `iapGetItemAt`, `iapGetItemCount`, `iapInitItemPurchase`, `iapInitTimeOut`, `iapIsAllowed` (`false`), `native_isPaymentInitialized` (`false`), `native_initPaymentProvider`, `native_iapRestorePurchases`.
+- Device: `goToTaskSwitcherLua`, `toggleNFC`, `setNotificationCallback`, `addNotificationAfter`, `removeNotification`, `hasLocationCapability` (`false`), `isWebViewLoading` (`false`), `native_isCameraSupported`, `native_hasFrontCamera` (`false`), `native_getDeviceOrientation` (`0`), `native_startQrScanner`, `native_stopQrScanner`, `native_setQrRecognizedCallback`, `native_startURLThread`, `getFontScale()` and `getUIScale()` (`1`), `getWindowState()` (`"FULL"`).
+- Other SW calls with no PC effect: `toggleZoomSteps`, `setPhysicsScale`, `setFlashAnimation`, `updateThemeParticlesNative`, `loadLevelFromAppData`, `loadLuaFileFromAppDataToObject`, `native_loadTextFileToLuaTable`, `native_setZOrderRange`, `native_setAdditionalBirdGravity`, `native_setWaterColor`, `native_resizeRadius`, `native_onLevelInitComplete`, `native_refreshThemeSystem`, `native_resetThemeSystem`, `native_setThemeLayerOffset`, `native_setThemeLayerScale`, `native_drawSimulationTrajectory`, `native_getLevelLimits` (`0, 0, 0, 0`), `getLocale()` (`"en"`), `decodeBase64(s)`, `getJSONHash`, `GetJSONDiff`, `importJSONToLuaTable`, `setCurrentLevelPack(name)` / `getCurrentLevelPack()` (kept in `g_currentLevelPack`).
+
+---
+
+## Changing the engine from Lua
+
+Everything above is an ordinary global (or a field of `res` / `particles`) in the scripts' environment, so a script can change any of it, and the engine gives you a few tools that make that safe. Nothing here needs a rebuild: put the code in a script of the game (or in the plain-text `dec` folder, see `docs/USAGE.md`) or run it from the console window.
+
+### 1. Replace or wrap a native
+
+Assign to the name. The scripts look the function up by name every time they call it, so the new function is used from then on:
+
+```lua
+local original = engine.original.setWorldGravity    -- always the engine's own function
+function setWorldGravity(gx, gy)
+    original(gx * 0.5, gy * 0.5)                    -- every level now has half the gravity
+end
+```
+
+`engine.original` holds the engine's own version of every native (`engine.original.print`, `engine.original.createBox`, ...) and `engine.resOriginal` the functions of `res` (`engine.resOriginal.drawSprite`). They do not change when a script replaces the global, so a wrapper can always reach the real thing, and two mods that wrap the same function do not lose each other's code if each one wraps whatever the global is *now*:
+
+```lua
+local previous = createBox
+function createBox(name, sprite, x, y, w, h, ...)
+    return previous(name, sprite, x, y, w * 1.2, h * 1.2, ...)   -- bigger boxes
+end
+```
+
+`engine.natives([includeRes])` returns the sorted list of native names (with `true`, the `res` functions too, as `"res.drawSprite"`), so you can list, test for or loop over them.
+
+A function the engine calls on the *game's* side (the callbacks `update`, `draw`, `initialize`, `birdCollision`, ... and every function the game scripts define, such as `gamelua.addToTrajectory`) is replaced the same way: wrap the global.
+
+### 2. React to what the engine does: `engine.on`
+
+```lua
+engine.on(event, handler)   -- adds a handler and returns it
+engine.off(event, handler)  -- removes it (true if it was there)
+engine.emit(event, ...)     -- raises one of your own events
+```
+
+The engine raises these events (the handlers run in the order they were added; an error in one is printed as `engine.on(<event>): ...` and the others still run):
+
+| Event | Arguments | When |
+|---|---|---|
+| `"update"` | `dt, realDt` | after every frame's `update`; `dt` is the game time, `realDt` the real time |
+| `"levelLoaded"` | `path` | after `loadLevel` has run a level file (the table is `loadedObjects`) |
+| `"objectCreated"` | `name, kind` | after `createBox` / `createCircle` / `createPolygon` made an object (`kind` is `"box"`, `"circle"` or `"polygon"`); `objects.world[name]` already exists |
+| `"objectRemoved"` | `name` | at the start of `removeObject`, so the object can still be read |
+
+```lua
+-- tint every pig red when the level has loaded, and log how many objects there are
+engine.on("levelLoaded", function(path)
+    print("loaded", path)
+end)
+engine.on("objectCreated", function(name, kind)
+    if string.find(name, "PIG") then setTint(1, 0.4, 0.4, name) end
+end)
+```
+
+While no handler is registered the hooks cost one table lookup.
+
+### 3. Change numbers the engine reads from Lua
+
+Several engine settings are plain globals that the engine reads when it needs them, so setting the global changes the behaviour at once:
+
+| Global | Effect |
+|---|---|
+| `simulationAimSpeed`, `simulationAimSpawnTime` | speed and spacing of the aiming-aid dots (defaults 4 and 0.6) |
+| `simulationIterations`, `objects.currentTimeStep` | length of the simulated flight of the aiming aid |
+| `leftLimitWorld`, `rightLimitWorld`, `topLimitWorld`, `bottomLimitWorld` | the level's limits, read by the SW backgrounds |
+| `g_useZeroAsThemeReferencePointX`, `g_useZeroAsThemeReferencePointY`, `g_useLowerCameraAsThemeReferencePoint` | where the SW theme layers take their reference camera |
+| `screenWidth`, `screenHeight`, `deviceModel`, `showCursor`, `isLiteVersion`, `isBetaVersion`, `uniqueInstallationId` | what the engine tells the scripts about the window and the install |
+| `native` | a table for the platform services of the original exe (the scripts test `native.apprater`); a script may put its own functions in it |
+
+### 4. Replace a game script
+
+- `AngryBirdsEngine.exe --decrypt` writes a game's scripts as plain text into a `dec` folder and `--use-dec` makes the engine read them instead of the game's own copies, so any script of any game can be edited with a text editor (see `docs/USAGE.md`).
+- A file called `extra_scripts.lua` next to `gamelogic.lua` is loaded once the Classic scripts are up (see `extras/`); that is the place for a mod that wraps natives and game functions.
+- `AB_EXEC=<lua> AB_EXEC_FRAME=<n>` runs a snippet on frame `n`, handy for trying a change before putting it in a file.
+
+### 5. What is not (yet) changeable from Lua
+
+The rules that the original exes compiled in, and that no original script ever reached, are still C++: the collision damage and wobble formulas of the SW, Space and Rio physics, the contact filter, the Box2D step itself, the drawing order inside `drawGameNative` and the particle emitter maths. You can change their *inputs* (the object parameters, `setSpeedCap`, `setWorldGravity`, `setObjectGravity`, colliders, density and restitution), their *results* (wrap `birdCollision`, `blockCollision`, `removeObject`) and *when* they run (`setPhysicsEnabled`, `setPhysicsSimulationScale`), and you can replace the native that triggers them. Anything else you need, tell us in an issue: the plan is to open each of those as a global the engine reads, the way `simulationAimSpeed` already works.

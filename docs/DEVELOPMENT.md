@@ -154,7 +154,7 @@ Second pass over the Rio exe (checked against the 2.2 code in `third_party/box2d
 
 `PhysicsWorld::MoveObjectZ` (front: highest z + 1, at least 5; back: lowest z - 1) and `GamePlatform::DrawGroup(which)` / `GameDrawOrder()` (the four groups of `DrawGame` as lists, so the drawing and the Lua / console listing use the same sort) are new. `SyncWorldZ` (end of `lua_api.cpp`) writes the z into `objects.world[name].z_order`; `l_setObjectZOrder`, `l_moveObjectZ` and the console command `zorder` call it, so the table the scripts read never goes stale. `getObjectZOrder` returns nil for a missing object. Checked: Rio 1.4.2 Plane 1-10 and a beach level render pixel for pixel as before the refactor of `DrawGame`.
 
-## Angry Birds Star Wars (v2.7)
+## Angry Birds Star Wars (v2.8)
 
 Addresses are from `AngryBirdsStarWars.exe` (a different binary from the 1.6.2 one the older notes use).
 

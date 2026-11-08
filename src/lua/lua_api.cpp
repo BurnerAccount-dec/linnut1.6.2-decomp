@@ -591,6 +591,7 @@ void ReloadAllTables(lua_State* L) {
     ab::LoadRioTables(L);
 }
 
+
 // loadLevel(file) (0x40d2c0): the level file runs in a fresh, empty environment table; that table
 // becomes the global `loadedObjects`. A level that cannot be read leaves loadedObjects nil, which
 // the scripts handle ("level was not found").
@@ -654,6 +655,7 @@ int l_loadLevel(lua_State* L) {
     lua_pop(L, 2);
     P(L)->EndLevelLoad();
     lua_pushboolean(L, ok);
+    EmitHook(L, "levelLoaded", file.c_str());
     return 1;
 }
 // loadLevelEditor(file) (Seasons, 0x40db30): the editor asks for the plain-text copy of a level before it runs loadLevelInternal.
@@ -1017,16 +1019,19 @@ BodyDef ReadBody(lua_State* L, bool circle) {
 int l_createBox(lua_State* L) {
     BodyDef d = ReadBody(L, false);
     WriteWorldEntry(L, d, "box", P(L)->CreateBox(d));
+    EmitHook(L, "objectCreated", d.name.c_str(), "box");
     return 0;
 }
 int l_createCircle(lua_State* L) {
     BodyDef d = ReadBody(L, true);
     WriteWorldEntry(L, d, "circle", P(L)->CreateCircle(d));
+    EmitHook(L, "objectCreated", d.name.c_str(), "circle");
     return 0;
 }
 int l_createPolygon(lua_State* L) {
     BodyDef d = ReadBody(L, false);
     WriteWorldEntry(L, d, "polygon", P(L)->CreatePolygon(d, P(L)->Vertices()));
+    EmitHook(L, "objectCreated", d.name.c_str(), "polygon");
     return 0;
 }
 // createLineShape (Star Wars): the same arguments as createPolygon; the vertices from addVertex become a chain of edges (0x439640)
@@ -1381,6 +1386,7 @@ int l_destroyJoint(lua_State* L) {
 }
 bool RioMode(lua_State* L);
 int l_removeObject(lua_State* L) {
+    EmitHook(L, "objectRemoved", S(L, 1).c_str());
     std::vector<std::string> fired = P(L)->RemoveObject(S(L, 1));
     if (!fired.empty() && PushObjectsTable(L, "joints")) {
         for (size_t i = 0; i < fired.size(); i++) {
@@ -2748,6 +2754,32 @@ void SyncWorldZ(lua_State* L, const std::string& name, float z) {
     lua_getfield(L, -1, name.c_str());
     if (lua_istable(L, -1)) { lua_pushnumber(L, z); lua_setfield(L, -2, "z_order"); }
     lua_pop(L, 2);
+}
+
+
+// engine.on(event, fn) handlers (see engine_table in script_host.cpp). `engine.hookCount` is the number of handlers registered, so an unused hook is one lookup.
+void EmitHook(lua_State* L, const char* event, const char* s1, const char* s2, int numbers, double a, double b) {
+    const int top = lua_gettop(L);
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    lua_getfield(L, -1, "engine");
+    if (lua_istable(L, -1)) {
+        lua_getfield(L, -1, "hookCount");
+        const bool any = lua_tonumber(L, -1) > 0;
+        lua_pop(L, 1);
+        if (any) {
+            lua_getfield(L, -1, "emit");
+            if (lua_isfunction(L, -1)) {
+                int n = 1;
+                lua_pushstring(L, event);
+                if (s1) { lua_pushstring(L, s1); n++; }
+                if (s2) { lua_pushstring(L, s2); n++; }
+                if (numbers > 0) { lua_pushnumber(L, a); n++; }
+                if (numbers > 1) { lua_pushnumber(L, b); n++; }
+                if (lua_pcall(L, n, 0, 0) != 0) { std::fprintf(stderr, "engine hook %s: %s\n", event, lua_tostring(L, -1)); lua_pop(L, 1); }
+            }
+        }
+    }
+    lua_settop(L, top);
 }
 
 }  // namespace ab

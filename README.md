@@ -2,7 +2,7 @@
 
 An unofficial, from-scratch reimplementation of the Angry Birds PC engine, rebuilt from Ghidra decompiles of the original executables. It is written in C++ (SDL2, OpenGL 1.x, Lua 5.1, Box2D 2.1 and 2.2) and does not re-implement the game logic: it runs the game's **original Lua scripts** and provides the native functions those scripts expect, so levels, menus, physics and scoring behave like the original game.
 
-**Version 2.7.** Changes are listed in [`CHANGELOG.md`](CHANGELOG.md).
+**Version 2.8.** Changes are listed in [`CHANGELOG.md`](CHANGELOG.md).
 
 **Not affiliated with, endorsed by or connected to Rovio Entertainment.** "Angry Birds" and everything in the game belong to their owners. This repository contains no game files: no scripts, images, sounds, levels or executables. To run it you need your own legally obtained copy of the game.
 
@@ -20,7 +20,7 @@ An unofficial, from-scratch reimplementation of the Angry Birds PC engine, rebui
 
 ## Quick start
 
-1. **Build it** (Windows, Visual Studio and CMake; see [Build](#build)) or take the exe from a release zip (`AngryBirdsEngine-v2.7.zip`, made by `make_release.bat`).
+1. **Build it** (Windows, Visual Studio and CMake; see [Build](#build)) or take the exe from a release zip (`AngryBirdsEngine-v2.8.zip`, made by `make_release.bat`).
 2. **Start it from inside the game's folder**, the one that holds `config.lua`:
 
        cd /d "C:\Program Files (x86)\Rovio\Angry Birds"
@@ -48,7 +48,7 @@ More in [`docs/USAGE.md`](docs/USAGE.md): the command line, controls, the typed 
 | File | What is in it |
 |---|---|
 | [`docs/USAGE.md`](docs/USAGE.md) | Running the engine, command line options, controls, debug keys and logging, the console, environment variables, the `dec` folder |
-| [`docs/SCRIPTING.md`](docs/SCRIPTING.md) | Everything for script writers and modders: the functions the engine adds, the native function summary, Star Wars parameters and callbacks |
+| [`docs/SCRIPTING.md`](docs/SCRIPTING.md) | Everything for script writers and modders: the functions the engine adds, the full native function reference, the `engine` table and hooks for changing the engine from Lua, Star Wars parameters and callbacks |
 | [`CHANGELOG.md`](CHANGELOG.md) | What changed in each version |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Research notes with exe addresses and the guesses still to check |
 
@@ -74,7 +74,7 @@ More in [`docs/USAGE.md`](docs/USAGE.md): the command line, controls, the typed 
 
 (Use `-A x64` for a 64-bit build.) SDL2 is downloaded and built on the first configure if CMake cannot find it (internet needed). The program is `build\Release\AngryBirdsEngine.exe` (`Debug` for a debug build).
 
-`make_release.bat` builds a release configuration and zips the exe with the licences into `AngryBirdsEngine-v2.7.zip`.
+`make_release.bat` builds a release configuration and zips the exe with the licences into `AngryBirdsEngine-v2.8.zip`.
 
 ## How it works
 

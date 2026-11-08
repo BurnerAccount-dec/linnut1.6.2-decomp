@@ -117,6 +117,50 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
     SetString("localizationPath", config_.localizationPath);
     SetString("levelPath", config_.levelPath);
     SetString("deviceModel", config_.deviceModel);
+    // Seasons 4.x (settingsWrapper.lua builds "installationId_" .. uniqueInstallationId) and the later scripts read these globals from the exe:
+    // the id of this install, and the `native` table of the platform services (apprater, ...). A service the PC exe does not have is simply a missing field.
+    SetString("uniqueInstallationId", "angrybirdsengine");
+    // The `engine` table every script can use (see docs/SCRIPTING.md, "Changing the engine from Lua"): the pristine natives, a list of their names and
+    // events the engine raises (update, levelLoaded, objectCreated, objectRemoved). It is made before any game script runs.
+    RunString(
+        "local G = _G\n"
+        "local env = G.getfenv(1)\n"
+        "local original, resOriginal, handlers = {}, {}, {}\n"
+        "for k, v in G.pairs(env) do if G.type(v) == 'function' then original[k] = v end end\n"
+        "if G.type(env.res) == 'table' then for k, v in G.pairs(env.res) do if G.type(v) == 'function' then resOriginal[k] = v end end end\n"
+        "local engine = {version = '2.8', original = original, resOriginal = resOriginal, hookCount = 0}\n"
+        "function engine.natives(includeRes)\n"
+        "    local names = {}\n"
+        "    for k in G.pairs(original) do names[#names + 1] = k end\n"
+        "    if includeRes then for k in G.pairs(resOriginal) do names[#names + 1] = 'res.' .. k end end\n"
+        "    G.table.sort(names)\n"
+        "    return names\n"
+        "end\n"
+        "function engine.on(event, fn)\n"
+        "    G.assert(G.type(event) == 'string' and G.type(fn) == 'function', 'engine.on(event, function)')\n"
+        "    local list = handlers[event]\n"
+        "    if not list then list = {}; handlers[event] = list end\n"
+        "    list[#list + 1] = fn\n"
+        "    engine.hookCount = engine.hookCount + 1\n"
+        "    return fn\n"
+        "end\n"
+        "function engine.off(event, fn)\n"
+        "    local list = handlers[event]\n"
+        "    if not list then return false end\n"
+        "    for i = #list, 1, -1 do if list[i] == fn then G.table.remove(list, i); engine.hookCount = engine.hookCount - 1; return true end end\n"
+        "    return false\n"
+        "end\n"
+        "function engine.emit(event, ...)\n"
+        "    local list = handlers[event]\n"
+        "    if not list then return end\n"
+        "    for i = 1, #list do\n"
+        "        local ok, err = G.pcall(list[i], ...)\n"
+        "        if not ok then G.print('engine.on(' .. event .. '): ' .. G.tostring(err)) end\n"
+        "    end\n"
+        "end\n"
+        "env.engine = engine\n");
+    GetEnvField("native");
+    if (!lua_istable(L_, -1)) { lua_pop(L_, 1); NewGlobalTable("native"); } else lua_pop(L_, 1);
     lua_pushboolean(L_, config_.isLiteVersion);
     SetEnvField("isLiteVersion");
     lua_pushboolean(L_, config_.showCursor);
@@ -499,7 +543,9 @@ bool ScriptHost::Update(float dt, float realDt) {
     if (!lua_isfunction(L_, -1)) { lua_pop(L_, 1); return true; }
     lua_pushnumber(L_, dt);
     lua_pushnumber(L_, realDt);
-    return CallWithArgs("update", 2) && DrawEditorOverlay();
+    const bool ok = CallWithArgs("update", 2) && DrawEditorOverlay();
+    EmitHook(L_, "update", nullptr, nullptr, 2, dt, realDt);   // engine.on("update", function(dt, realDt) ... end)
+    return ok;
 }
 
 // Seasons and the later games keep the editor's on-screen extras (level name, status line, group palette) in a global drawEditor() that the exe
