@@ -8,7 +8,7 @@ if extraScripts ~= nil or _G.type(loadLevel) ~= "function" or _G.type(update) ~=
 	return
 end
 extraScripts = true
-print("extra_scripts.lua loaded (screen wipe, aiming aid, version 6" .. (_G.type(simulateAimingAid) == "function" and ")" or ": this engine build is too old for the aiming aid, rebuild it)"))
+print("extra_scripts.lua loaded (screen wipe, aiming aid, version 10" .. (_G.type(simulateAimingAid) == "function" and ")" or ": this engine build is too old for the aiming aid, rebuild it)"))
 
 ------------------------------------------------------------------ 1. screen wipe
 screenwipe = {
@@ -122,11 +122,20 @@ end
 aimingAid = {
 	enabled = true,
 	points = 150,     -- the length of the path: one point per physics step, 1/30 second (150 = 5 seconds)
-	sprite = nil,     -- the dot sprite; nil: the bird's aimingAidSprite when the game has it (Star Wars), else Space's TRAIL_AIM_1 / TRAIL_AIM_BLUE (needs Space's INGAME_PARTICLES_1 sheet in the images folder), else TRAIL_WHITE_1
+	sprite = nil,     -- the dot sprite; nil: the bird's aimingAidSprite when the game has it (Star Wars), else Space's TRAIL_AIM_1 / TRAIL_AIM_BLUE (needs Space's INGAME_PARTICLES_1 sheet in the images folder), else TRAIL_FLOWER_2, else TRAIL_WHITE_1
 	scale = 3,        -- dot size factor (Classic's TRAIL_WHITE sprites are small)
 	debug = false,    -- true: prints why the dots are or are not drawn, every frame
 	showing = false,
+	silhouette = true,       -- the dots are silhouettes of the selected bird's current sprite in its main colour (the old dots are commented out below)
+	silhouetteScale = 0.4,   -- size of those silhouettes compared with the bird
+	silhouetteAlpha = 0.65,   -- 35% see-through
 }
+
+-- the length the rubber band can be pulled to: a function in 1.6.x, the variable shootMaxLength in 1.3.5 and the Free iPhone version
+local function maxBandLength()
+	if _G.type(rubberBandMaximumLength) == "function" then return rubberBandMaximumLength() end
+	return shootMaxLength
+end
 
 local originalDrawGame2 = drawGame
 drawGame = function(...)
@@ -134,25 +143,40 @@ drawGame = function(...)
 	local name = selectedBird ~= nil and selectedBird.name or nil
 	local dragging = name ~= nil or (g_birdDragOnTouchAttributes ~= nil and g_birdDragOnTouchAttributes.dragging)
 	if name == nil and dragging then name = currentBirdName end
+	if birdSelected == false or levelCompleted == true then dragging = false end   -- the level ended (or the bird was let go) while it was held: the game unselects it, the touch-drag flag may stay set
 	local ok = a.enabled and dragging and name ~= nil and rubberBandPos ~= nil and levelStartPosition ~= nil and objects.world[name] ~= nil
-		and _G.type(rubberBandMaximumLength) == "function" and _G.type(simulateAimingAid) == "function"
+		and maxBandLength() ~= nil and _G.type(simulateAimingAid) == "function"
 	if a.debug then print("aimingAid: enabled=" .. _G.tostring(a.enabled) .. " dragging=" .. _G.tostring(dragging) .. " bird=" .. _G.tostring(name) .. " band=" .. _G.tostring(rubberBandLength) .. " ok=" .. _G.tostring(ok)) end
 	if ok then
 		local dx, dy = levelStartPosition.x - rubberBandPos.x, levelStartPosition.y - rubberBandPos.y
 		local dist = _G.math.sqrt(dx * dx + dy * dy)
 		if dist > 0.0001 then
-			local distFactor = _G.math.min(1, _G.math.max(0, rubberBandLength / rubberBandMaximumLength()))
+			local distFactor = _G.math.min(1, _G.math.max(0, rubberBandLength / maxBandLength()))
 			local force = -defaultForce * physicsScale * (selectedBird and selectedBird.mass or objects.world[name].mass) * distFactor   -- the impulse shootSelectedBird applies
 			if not a.showing then
 				a.showing = true
+				-- the dots are small silhouettes of the bird that is pulled back: its current sprite, filled with the main colour of that sprite
+				local birdSprite = objects.world[name].sprite
+				local sprite, scale
+				if a.silhouette and birdSprite ~= nil and _G.type(createSilhouette) == "function" then
+					local silhouette = "AIMSIL_" .. birdSprite
+					if spriteExists(silhouette) or createSilhouette(silhouette, birdSprite, -1, 0, 0, a.silhouetteAlpha) then
+						sprite, scale = silhouette, a.silhouetteScale
+					end
+				end
+				if sprite == nil then sprite, scale = "TRAIL_WHITE_1", a.scale end   -- the bird has no sprite to copy
+				--[[ The old system (the dots of Space / Star Wars, else TRAIL_FLOWER_2 or the white puff), kept for anyone who wants it back: remove this comment and the silhouette block above.
 				local def = getObjectDefinition and getObjectDefinition(name)
-				local sprite, scale = a.sprite or (def and def.aimingAidSprite), 1
+				sprite, scale = a.sprite or (def and def.aimingAidSprite), 1
 				if not (sprite and spriteExists(sprite)) then   -- Space's light blue dot: its sheet INGAME_PARTICLES_1 (.dat and .png from Angry Birds Space) is loaded from the images folder when it is there
 					_G.pcall(_G.res.createSpriteSheet, imagePath .. "/INGAME_PARTICLES_1.dat")
 					sprite, scale = nil, 1
 					for _, n in _G.ipairs({"TRAIL_AIM_1", "TRAIL_AIM_BLUE"}) do if spriteExists(n) then sprite = n break end end
-					if not sprite then sprite, scale = "TRAIL_WHITE_1", a.scale end
+					if not sprite then   -- no Space / Star Wars dot: the flower trail of the Classic games, then the white puff
+						for _, n in _G.ipairs({"TRAIL_FLOWER_2", "TRAIL_WHITE_1"}) do if spriteExists(n) then sprite, scale = n, (n == "TRAIL_WHITE_1" and a.scale or 0.7) break end end
+					end
 				end
+				]]
 				setAimingAidSprite(sprite, scale)
 				enableAimingAid(true)
 			end

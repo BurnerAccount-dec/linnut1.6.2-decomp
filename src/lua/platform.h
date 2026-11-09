@@ -197,6 +197,8 @@ public:
     virtual void SetRenderState(int argc, const float* args) { (void)argc; (void)args; }
     virtual void GetRenderTranslation(float& tx, float& ty) { tx = ty = 0; }   // where the scripts last moved the render state (drawUITextNative keeps it, as the exe does)
     virtual void SetAlpha(float a) { (void)a; }
+    // the optional pivot arguments of the drawing functions: while on, the render state's scale grows from this point (in the coordinates the function draws in) and not from the origin
+    virtual void SetScalePivot(bool on, float x, float y) { (void)on; (void)x; (void)y; }
     // v2.2: the colour that sprites are multiplied by (1, 1, 1: no tint), setRenderState arguments 15 to 17 and setTint
     virtual void SetTint(float r, float g, float b) { (void)r; (void)g; (void)b; }
     virtual void GetTint(float& r, float& g, float& b) { r = g = b = 1; }
@@ -246,6 +248,8 @@ public:
     virtual void ResKeepLastFrame(bool on) { (void)on; }                                    // Classic screenwipe: captureSprite before anything is drawn this frame takes the last finished frame
     virtual void ResCaptureSprite(const std::string& name) { (void)name; }                  // v2.5 (Star Wars): the last frame becomes a sprite of that name
     virtual void SetObjectRestitution(const std::string& n, float r) { (void)n; (void)r; }   // Star Wars setRestitution
+    virtual void SetObjectFriction(const std::string& n, float f) { (void)n; (void)f; }
+    virtual void ResizeObjectCircle(const std::string& n, float r) { (void)n; (void)r; }
     virtual void SetObjectDensity(const std::string& n, float density) { (void)n; (void)density; }   // v2.5 (Star Wars setMass)
     virtual void AddParticlesMode(const std::string& type, float amount, float x, float y, float w, float h, float angle, int mode) { AddParticles(type, amount, x, y, w, h, angle); (void)mode; }
     virtual void DrawParticlesFiltered(int filter) { (void)filter; }                         // 1 background, 2 foreground, 3 notification
@@ -283,6 +287,7 @@ public:
     virtual void SetThemeSprite(const std::string& name, const std::string& sprite, int layer) { (void)name; (void)sprite; (void)layer; }
     virtual void RotateThemeSprites(float dt) { (void)dt; }
     virtual void ScrollThemeLayers(float dt, bool force) { (void)dt; (void)force; }
+    virtual void ScrollWaterLayers(float dt) { (void)dt; }   // the water layers of Seasons 2.4.1 (Piglantis) drift by themselves, once per game frame
     virtual void DrawTexturedLine2D(const std::string& sprite, float x1, float y1, float x2, float y2, float width, float r, float g, float b, float a) { (void)sprite; (void)x1; (void)y1; (void)x2; (void)y2; (void)width; (void)r; (void)g; (void)b; (void)a; }
     virtual void ResDrawSprite(const std::string& sprite, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height) {
         (void)sprite; (void)x; (void)y; (void)vAnchor; (void)hAnchor; (void)sized; (void)width; (void)height; }

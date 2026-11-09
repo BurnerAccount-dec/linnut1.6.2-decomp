@@ -172,6 +172,98 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
     if (!lua_istable(L_, -1)) { lua_pop(L_, 1); NewGlobalTable("tuning"); } else lua_pop(L_, 1);
     GetEnvField("nuked");        // 2.0.0 (Android): the save files the exe found corrupted and replaced (none here)
     if (!lua_istable(L_, -1)) { lua_pop(L_, 1); NewGlobalTable("nuked"); } else lua_pop(L_, 1);
+    RunString(     // the analytics of Seasons 2.x (Medio): every call does nothing and answers nil (the Android games without scripts_common need it too)
+        "local env = _G.getfenv(1)\n"
+        "if env.MedioEvents == nil then env.MedioEvents = _G.setmetatable({}, {__index = function() return function() end end}) end\n");
+    GetEnvField("MedioEvents");
+    lua_setfield(L_, LUA_GLOBALSINDEX, "MedioEvents");
+    if (config_.seasons4) {              // the services of the 3.x games (ads, the Rovio channel): not available here, the scripts ask and get "no"
+        RunString(
+            "local env = _G.getfenv(1)\n"
+            "if env.getFirstOf == nil then env.getFirstOf = function(n, t, def) for i = 1, n do if t[i] ~= nil then return t[i] end end return def end end\n"
+            "if env.getGameTimer == nil then env.getGameTimer = function() return _G.os.clock() end end\n"
+            "if env.getSpeed == nil then env.getSpeed = function(name) return (env.getVelocity(name)) end end\n"
+            "if env.drawLine == nil then env.drawLine = function(r, g, b, a, x1, y1, x2, y2, _, w) env.drawLine2D(x1, y1, x2, y2, w or 1, r, g, b, a) end end\n"
+            "if env.getTrajectory == nil then\n"
+            "    -- the predicted flight of a bird (the Egg Defender cannons aim with it): points {x, y, t} every 1/30 s for 3 s from where the bird is, with its speed and the world's gravity\n"
+            "    env.getTrajectory = function(name)\n"
+            "        local o = env.objects and env.objects.world and env.objects.world[name]\n"
+            "        local pts = {}\n"
+            "        if not o then return pts end\n"
+            "        local _, vx, vy = env.getVelocity(name)\n"
+            "        local _, gy = env.getWorldGravity()\n"
+            "        for i = 0, 90 do local t = i / 30; pts[#pts + 1] = {x = o.x + vx * t, y = o.y + vy * t + 0.5 * (gy or 0) * t * t, t = t} end\n"
+            "        return pts\n"
+            "    end\n"
+            "end\n"
+            "for _, n in _G.ipairs({\"setAccelerometerActive\", \"enableMotion\", \"showSystemPopup\", \"setThemeForegroundOffsetY\", \"setThemeRectColour\", \"native_reloadIngameSprites\", \"setUpdating\", \"sendNotification\", \"printError\", \"drawSlingScopeNative\"}) do if env[n] == nil then env[n] = function() end end end\n"
+            "if env.drawRubberband == nil then\n"
+            "    -- the touch-device slingshot band: the scripts pass screen pixels, drawLine2D wants world coordinates (the render state is the game's)\n"
+            "    env.drawRubberband = function(x1, y1, x2, y2, w, sprite)\n"
+            "        local s = env.tempWorldScale or env.worldScale or 1\n"
+            "        local sc, cx, cy = env.screen, env.cameraShakeX or 0, env.cameraShakeY or 0\n"
+            "        env.drawLine2D(x1 / s + sc.left + cx, y1 / s + sc.top + cy, x2 / s + sc.left + cx, y2 / s + sc.top + cy, w / s, env.g_rubber_r or 48, env.g_rubber_g or 22, env.g_rubber_b or 8, 255)\n"
+            "    end\n"
+            "end\n"
+            "if env.__abForceObjs == nil then\n"
+            "    env.__abForceObjs = {}\n"
+            "    local rawSet = env.setObjectParameter\n"
+            "    env.setObjectParameter = function(name, id, v)\n"
+            "        if id == 8 then env.__abForceObjs[name] = (v == 1) or nil return end\n"
+            "        return rawSet(name, id, v)\n"
+            "    end\n"
+            "    env.__abPerStepForces = function()\n"
+            "        local dt = 1 / 30\n"
+            "        local world = env.objects and env.objects.world\n"
+            "        if not world then return end\n"
+            "        local gx, gy = env.getWorldGravity()\n"
+            "        for name in _G.pairs(env.__abForceObjs) do\n"
+            "            local o = world[name]\n"
+            "            if not o then env.__abForceObjs[name] = nil\n"
+            "            elseif not o.disableForce then\n"
+            "                local vx, vy = env.getVelocity(name)\n"
+            "                local ang = env.getAngle(name) or 0\n"
+            "                local c, s = _G.math.cos(ang), _G.math.sin(ang)\n"
+            "                local fx, fy = o.forceX or 0, o.forceY or 0\n"
+            "                local fr = o.forceRelative\n"
+            "                if fr and fr ~= 0 then\n"
+            "                    local tv = o.targetVelocity\n"
+            "                    local along = vx * c + vy * s\n"
+            "                    if not tv or tv == 0 or (fr > 0 and along < tv) or (fr < 0 and along > -tv) then fx, fy = fx + fr * c, fy + fr * s end\n"
+            "                end\n"
+            "                if fx ~= 0 or fy ~= 0 then env.applyForceNative(name, fx, fy) end\n"
+            "                local k = o.airResistance or 0\n"
+            "                local kx, ky = k, k\n"
+            "                local fxr, fyr = o.frictionXRelative or 0, o.frictionYRelative or 0\n"
+            "                local fl = o.floatability or 0\n"
+            "                if k ~= 0 or fxr ~= 0 or fyr ~= 0 or fl ~= 0 then\n"
+            "                    local ax = vx * c + vy * s\n"
+            "                    local ay = -vx * s + vy * c\n"
+            "                    ax = ax * _G.math.max(0, 1 - (k + fxr) * dt)\n"
+            "                    ay = ay * _G.math.max(0, 1 - (k + fyr) * dt)\n"
+            "                    local nx, ny = ax * c - ay * s, ax * s + ay * c\n"
+            "                    nx, ny = nx - gx * fl * dt, ny - gy * fl * dt\n"
+            "                    env.setVelocity(name, nx, ny)\n"
+            "                end\n"
+            "            end\n"
+            "        end\n"
+            "    end\n"
+            "end\n"
+            "local none = function() end\n"
+            "local no = function() return false end\n"
+            "local zero = function() return 0 end\n"
+            "local names = {RovioAds = {trackConversion = none, startSession = none, addPlacementNative = none, addPlacement = none, addPlacementWithGeometry = none, show = no, hide = none, click = none, isAvailable = no},\n"
+            "               RovioChannel = {onMenuInitialised = none, openChannelView = none, isAvailable = no, numOfNewContent = zero, updateNewContent = none}}\n"
+            "for name, t in _G.pairs(names) do\n"
+            "    env[name] = t\n"
+            "end\n"
+            "-- the analytics of Seasons 2.x (Medio): every call does nothing and answers nil\n"
+            "if env.MedioEvents == nil then env.MedioEvents = _G.setmetatable({}, {__index = function() return none end}) end\n");
+        for (const char* name : {"RovioAds", "RovioChannel", "MedioEvents"}) {     // the scripts read them as _G.RovioAds, _G being the real global table
+            GetEnvField(name);
+            lua_setfield(L_, LUA_GLOBALSINDEX, name);
+        }
+    }
     if (!IsSpaceDataFolder()) {          // (Space asserts that the engine leaves it undefined)
     lua_pushboolean(L_, 0);              // the scripts read isHDVersion as a plain variable (Android 2.0.0 picks its 1280x800 images when it is true)
     SetEnvField("isHDVersion");
@@ -362,6 +454,7 @@ bool ScriptHost::LoadScripts() {
     } else {
         const char* files[] = {"/loadlist.lua", "/gamelogic.lua"};
         for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
+            if (i == 0) { std::vector<uint8_t> ll; if (!ab::ReadLuaFile(config_.scriptPath + files[i], ll) || ll.empty()) { first_ = true; lua_pushnumber(L_, 0); SetEnvField("touches"); lua_pushboolean(L_, 1); SetEnvField("abBoxHalfExtents"); continue; } }   // Angry Birds 1.0 has no loadlist.lua: its gamelogic.lua loads its sheets itself
             if (!RunFile(config_.scriptPath + files[i])) return false;
         }
     }
@@ -484,9 +577,13 @@ bool ScriptHost::LoadScripts() {
     // are all behind `not releaseBuild` or cheatsEnabled. releaseBuild itself must stay true: false unlocks every level and episode
     // (resetSettings, the level select). So the cheats are switched on, and the two per-frame functions that read the debug keys run
     // in an environment where releaseBuild reads false and everything else reads and writes the real globals.
+    std::vector<uint8_t> dcBytes;
+    const bool debugConsole = !config_.commonScriptPath.empty() && ReadLuaFile(config_.commonScriptPath + "/menus/DebugConsole.lua", dcBytes) && !dcBytes.empty();
     if (!std::getenv("AB_NODEBUGKEYS")) RunString((std::string(
         "local env = _G.getfenv(1)\n"
         "env.cheatsEnabled = true\n") +
+        // the 3.x gamelogic loads menus/DebugConsole.lua when cheatsEnabled is already true at load time and then calls DebugConsole every frame: load it now
+        (debugConsole ? std::string("if env.DebugConsole == nil and _G.type(env.loadLuaFileToObject) == \"function\" then env.loadLuaFileToObject(env.commonScriptPath .. \"/menus/DebugConsole.lua\", env.this, \"DebugConsole\") end\n") : std::string()) +
         // initSubsystems builds the `Editor` class when showEditor is set; a data folder without the editor (an Android .apk) has no such class
         "local init = env.initSubsystems\n"
         "if not (env.Editor == nil and _G.type(init) == \"function\" and _G.string.find(_G.string.dump(init), \"Editor\", 1, true)) then env.showEditor = true end\n" +
@@ -536,7 +633,7 @@ bool ScriptHost::CallWithArgs(const char* name, int nargs) {
         // an error in a frame's update or draw is printed once and the frame is skipped instead of ending the game.
         // AB_STRICT=1 restores the old behaviour (the first script error ends the run).
         static const bool strict = std::getenv("AB_STRICT") != nullptr;
-        if (!strict && IsSpaceDataFolder() && (std::strcmp(name, "update") == 0 || std::strcmp(name, "draw") == 0)) {
+        if (!strict && (IsSpaceDataFolder() || config_.seasons4) && (std::strcmp(name, "update") == 0 || std::strcmp(name, "draw") == 0)) {
             if (reportedErrors_.insert(msg).second) std::fprintf(stderr, "script error (skipped, the game goes on): %s\n", msg.c_str());
             return true;
         }
@@ -565,7 +662,78 @@ bool ScriptHost::Update(float dt, float realDt) {
     if (!lua_isfunction(L_, -1)) { lua_pop(L_, 1); return true; }
     lua_pushnumber(L_, dt);
     lua_pushnumber(L_, realDt);
-    const bool ok = CallWithArgs("update", 2) && DrawEditorOverlay();
+    bool ok = CallWithArgs("update", 2);
+    if (ok && !nativeDots_) {   // the later games record the aiming dots in the exe (addTrajectoryPositionsForBirds), 1.0 and the other early ones in their script (addToTrajectory)
+        nativeDots_ = true;
+        RunString(
+            "local env = _G.getfenv(1)\n"
+            "local rawAdd = env.addToTrajectory\n"
+            "if rawAdd == nil then return end\n"
+            "local scriptDots = false\n"
+            "env.addToTrajectory = function(...) scriptDots = true; return rawAdd(...) end\n"
+            "local function rec(o, n)\n"
+            "    if o == nil or o.recordTrajectory == false or env.physicsToWorldTransform == nil then return end\n"
+            "    local x, y = env.physicsToWorldTransform(o.x, o.y)\n"
+            "    local list = env.birdTrajectory and env.birdTrajectory[n]\n"
+            "    local last = list and list[#list]\n"
+            "    if last and (x - last.x) * (x - last.x) + (y - last.y) * (y - last.y) <= 400 then return end\n"
+            "    if list then list[#list + 1] = {x = x, y = y} end\n"
+            "    rawAdd(n, x, y)\n"
+            "end\n"
+            "env.abEditorEscape = function()   -- Esc on the level-clear / level-failed page of a playtest from the editor goes back to the editor (the game's own pages ignore it)\n"
+            "    local p = env.currentMenuPage\n"
+            "    if env.startedFromEditor == true and env.returnToEditor and p ~= nil and (p == env.levelComplete or p == env.levelFailed) and env.keyReleased and env.keyReleased[\"ESCAPE\"] then\n"
+            "        env.keyReleased[\"ESCAPE\"] = nil; if env.keyPressed then env.keyPressed[\"ESCAPE\"] = nil end\n"
+            "        env.returnToEditor()\n"
+            "    end\n"
+            "end\n"
+            "env.abRecordDots = function()\n"
+            "    if scriptDots or env.objects == nil or env.objects.world == nil then return end\n"
+            "    rec(env.flyingBird, 1)\n"
+            "    if env.otherBirds then for i = 1, 2 do local o = env.objects.world[env.otherBirds[i]]; if o ~= nil then rec(o, i + 1) end end end\n"
+            "end\n");
+    }
+    if (ok && !pausePops_) {      // Seasons 2.3.0: the point pop-ups (5K pig sprites, scores) are drawn only with the HUD, so they vanished while paused; installed once the game has made floatingScores
+        GetEnvField("floatingScores");
+        bool have = lua_istable(L_, -1);
+        lua_pop(L_, 1);
+        if (have) {
+            pausePops_ = true;
+            RunString(
+            "local env = _G.getfenv(1)\n"
+            "if env.floatingScores ~= nil and env.drawMenuPage and env.pausePage then   -- Seasons 2.3.0: the point pop-ups (5K pig sprites, scores) are only drawn with the HUD, so they vanished while paused; they stay now\n"
+            "    local rawDraw = env.drawMenuPage\n"
+            "    env.drawMenuPage = function(page, ...)\n"
+            "        local r1, r2 = rawDraw(page, ...)\n"
+            "        if page == env.pausePage and env.currentGameMode == env.updateMenu and #env.floatingScores > 0 and env.physicsToWorldTransform and env.screen then\n"
+            "            local okp, perr = _G.pcall(function()\n"
+            "                env.setRenderState(0, 0, 1, 1, 0); env.setFont(\"FONT_SCORE\")\n"
+            "                for i = 1, #env.floatingScores do\n"
+            "                    local fs = env.floatingScores[i]\n"
+            "                    local fx, fy = env.physicsToWorldTransform(fs.x, fs.y)\n"
+            "                    local ws = env.tempWorldScale or env.worldScale\n"
+            "                    fx = (fx - env.screen.left) * ws; fy = (fy - env.screen.top) * ws\n"
+            "                    local xs = fs.xs\n"
+            "                    if xs and xs > 0 then\n"
+            "                        env.setRenderState(0, 0, xs, xs)\n"
+            "                        if fs.text ~= nil then env.res.drawString(\"TEXTS_BASIC\", fs.text, fx / xs, fy / xs, \"BOTTOM\", \"HCENTER\") end\n"
+            "                        if fs.sprite ~= nil then env.res.drawSprite(\"MENU_ELEMENTS_1\", fs.sprite, _G.math.floor(fx / xs), _G.math.floor(fy / xs), \"BOTTOM\", \"HCENTER\") end\n"
+            "                    end\n"
+            "                end\n"
+            "                env.setRenderState(0, 0, 1, 1, 0); if env.fontBasic then env.setFont(env.fontBasic) end\n"
+            "            end)\n"
+            "            if not okp and not env.abPopWarned then env.abPopWarned = true; _G.print(\"pause pop-ups: \" .. _G.tostring(perr)) end\n"
+            "        end\n"
+            "        return r1, r2\n"
+            "    end\n"
+            "end\n"            );
+        }
+    }
+    if (ok && nativeDots_) ok = Call("abRecordDots");
+    if (ok && nativeDots_) ok = Call("abEditorEscape");
+    if (ok) ok = Call("waterUpdate");        // Seasons 2.4.1 (Piglantis): the exe calls the script's waterUpdate() every frame (buoyancy, drag and splashes of the objects below objects.waterLevel)
+    platform_.ScrollWaterLayers(dt);
+    if (ok) ok = DrawEditorOverlay();
     EmitHook(L_, "update", nullptr, nullptr, 2, dt, realDt);   // engine.on("update", function(dt, realDt) ... end)
     return ok;
 }
@@ -578,7 +746,10 @@ bool ScriptHost::DrawEditorOverlay() {
     bool inEditor = lua_isfunction(L_, -1) && lua_rawequal(L_, -1, -2);
     lua_pop(L_, 2);
     if (!inEditor) return true;
-    return Call("drawEditor");
+    bool ok = Call("drawEditor");
+    GetEnvField("__abDrawEditorPage");
+    if (lua_isfunction(L_, -1)) { lua_pop(L_, 1); Call("__abDrawEditorPage"); } else lua_pop(L_, 1);
+    return ok;
 }
 
 bool ScriptHost::BirdCollision(const std::string& a, const std::string& b, float force, float damage) {
@@ -591,13 +762,14 @@ bool ScriptHost::BirdCollision(const std::string& a, const std::string& b, float
     return CallWithArgs("birdCollision", 4);
 }
 
-bool ScriptHost::BlockCollision(const std::string& a, const std::string& b, float force, bool wasDamageDone) {
+bool ScriptHost::BlockCollision(const std::string& a, const std::string& b, float force, bool wasDamageDone, float damage) {
     GetEnvField("blockCollision");
     if (!lua_isfunction(L_, -1)) { lua_pop(L_, 1); return true; }
     lua_pushlstring(L_, a.data(), a.size());
     lua_pushlstring(L_, b.data(), b.size());
     lua_pushnumber(L_, force);
-    lua_pushboolean(L_, wasDamageDone);
+    if (config_.seasons4) lua_pushnumber(L_, wasDamageDone ? (damage > 0 ? damage : 1.0f) : 0.0f);   // 3.x: blockCollision(name, other, force, damage)
+    else lua_pushboolean(L_, wasDamageDone);
     if (space_) {      // Space: blockCollision(name, other, force, wasDamageDone, dot, resultDamage)
         lua_pushboolean(L_, wasDamageDone);
         lua_pushnumber(L_, 0);

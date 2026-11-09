@@ -247,7 +247,7 @@ static int strcasecmp_ab(const char* a, const char* b) {
 static int GameMain(int argc, char** argv) {
     std::string scripts, data, shot, configPath, userData;
     int shotFrames = 0; int testW = 0, testH = 0;
-    bool decryptOnly = false, useDec = false;      // --decrypt / --use-dec: the dec folder (see lua/dec_folder.h)
+    bool retinaOn = false, decryptOnly = false, useDec = false;      // --decrypt / --use-dec: the dec folder (see lua/dec_folder.h)
     std::string decFolder;
     std::string apkPath;                  // v3.0: an Android .apk or iPhone .ipa named on the command line (dragged onto the exe, or opened with it)
     std::string audioOut;                 // test: write the mixed sound of the --screenshot run to this .wav
@@ -255,12 +255,15 @@ static int GameMain(int argc, char** argv) {
     std::vector<Click> clicks;
     std::vector<std::pair<int, int>> wheels;     // test: --wheel <frame> <notches>
     std::vector<std::pair<int, std::string>> keys;   // test: --key <frame> <name>, a key press of 3 frames
+    std::vector<std::string> extraLua;            // v3.0: .lua files named on the command line (dragged onto the exe with an .apk / .ipa / the game): loaded like extra_scripts.lua
     std::vector<std::string> startupCmds;          // v2.2: --cmd "<command>" (repeatable), --startup <file> (one command per line), --prompt (type them before the game starts)
+    std::vector<std::pair<int, std::string>> timedCmds;
     bool promptFirst = std::getenv("AB_PROMPT") != nullptr;
     int startFps = -1, startVsync = -1;
     for (int i = 1; i < argc; i++) {
         if (!std::strcmp(argv[i], "--scripts") && i + 1 < argc) scripts = argv[++i];
         else if (!std::strcmp(argv[i], "--data") && i + 1 < argc) data = argv[++i];
+        else if (!std::strcmp(argv[i], "--retina")) retinaOn = true;      // v3.1: use the "retina" picture set of an .ipa (2048x1536 / 960x640); off by default
         else if (!std::strcmp(argv[i], "--userdata") && i + 1 < argc) userData = argv[++i];
         else if (!std::strcmp(argv[i], "--config") && i + 1 < argc) configPath = argv[++i];
         else if (!std::strcmp(argv[i], "--decrypt")) { decryptOnly = true; if (i + 1 < argc && argv[i + 1][0] != '-') decFolder = argv[++i]; }
@@ -270,11 +273,13 @@ static int GameMain(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--click") && i + 3 < argc) { float x = (float)std::atof(argv[i + 2]), y = (float)std::atof(argv[i + 3]); clicks.push_back({std::atoi(argv[i + 1]), x, y, x, y, 3}); i += 3; }
         else if (!std::strcmp(argv[i], "--drag") && i + 5 < argc) { clicks.push_back({std::atoi(argv[i + 1]), (float)std::atof(argv[i + 2]), (float)std::atof(argv[i + 3]), (float)std::atof(argv[i + 4]), (float)std::atof(argv[i + 5]), 30}); i += 5; }
         else if (!std::strcmp(argv[i], "--cmd") && i + 1 < argc) startupCmds.push_back(argv[++i]);
+        else if (!std::strcmp(argv[i], "--cmd-at") && i + 2 < argc) { timedCmds.push_back({std::atoi(argv[i + 1]), argv[i + 2]}); i += 2; }   // v3.0: --cmd-at <frame> "<command>" (a console command at that frame, for testing)
         else if (!std::strcmp(argv[i], "--startup") && i + 1 < argc) {
             if (std::FILE* sf = std::fopen(argv[++i], "r")) { char b[1024]; while (std::fgets(b, sizeof b, sf)) startupCmds.push_back(b); std::fclose(sf); }
             else std::printf("--startup: cannot open %s\n", argv[i]);
         }
         else if (!std::strcmp(argv[i], "--prompt")) promptFirst = true;
+        else if (argv[i][0] != '-' && std::strlen(argv[i]) > 4 && !strcasecmp_ab(argv[i] + std::strlen(argv[i]) - 4, ".lua")) extraLua.push_back(argv[i]);
         else if (argv[i][0] != '-' && std::strlen(argv[i]) > 4 && (!strcasecmp_ab(argv[i] + std::strlen(argv[i]) - 4, ".apk") || !strcasecmp_ab(argv[i] + std::strlen(argv[i]) - 4, ".ipa"))) apkPath = argv[i];
         else if (!std::strcmp(argv[i], "--fps") && i + 1 < argc) startFps = std::atoi(argv[++i]);
         else if (!std::strcmp(argv[i], "--vsync")) startVsync = 1;
@@ -306,26 +311,43 @@ static int GameMain(int argc, char** argv) {
         else base = "apk_cache";
         const std::string dir = base + "/" + stem;
         std::string err;
-        std::printf("apk: %s\n", apkPath.c_str());
+        std::printf("%s: %s\n", isIpa ? "ipa" : "apk", apkPath.c_str());
         if (!ab::ExtractApk(apkPath, dir, &err)) {
-            std::printf("apk: %s\n", err.c_str());
+            std::printf("%s: %s\n", isIpa ? "ipa" : "apk", err.c_str());
             SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Angry Birds engine", err.c_str(), nullptr);
             return 2;
         }
-        std::printf("apk: data is in %s\\data\n", dir.c_str());
+        std::printf("%s: data is in %s\\data\n", isIpa ? "ipa" : "apk", dir.c_str());
         if (data.empty()) data = dir + "/data";
-        if (scripts.empty()) scripts = data + "/scripts";
+        bool flatData = false;      // the first Angry Birds (1.0): scripts, pictures, fonts, levels and sounds all lie in one data folder
+        { FILE* g1 = std::fopen((data + "/scripts/gamelogic.lua").c_str(), "rb"); if (g1) std::fclose(g1); else if ((g1 = std::fopen((data + "/gamelogic.lua").c_str(), "rb"))) { std::fclose(g1); flatData = true; } }
+        if (scripts.empty()) scripts = flatData ? data : data + "/scripts";
         if (configPath.empty()) {
             configPath = dir + "/config.lua";
             FILE* cf = std::fopen(configPath.c_str(), "rb");
-            if (cf) std::fclose(cf);
+            if (cf) {      // a config written for the other retina setting is written again
+                char buf[4096]; size_t n = std::fread(buf, 1, sizeof buf - 1, cf); buf[n] = 0; std::fclose(cf);
+                bool wasRetina = std::strstr(buf, "retina = true") != nullptr, hasMark = std::strstr(buf, "retina = ") != nullptr;
+                if (isIpa && (wasRetina != retinaOn || !hasMark)) { std::remove(configPath.c_str()); cf = nullptr; }
+                else cf = (FILE*)1;
+            }
+            if (cf) {}
             else if ((cf = std::fopen(configPath.c_str(), "wb"))) {     // the Android game's own settings, as the scripts expect them from config.lua
                 // an iPhone .ipa: a 480x320 screen, and the Lite game keeps its pictures in images/480x320_lite
                 bool lite = false;
                 if (isIpa) { std::string probeLite = dir + "/data/images/480x320_lite/INGAME_BIRDS_1.dat"; FILE* lp = std::fopen(probeLite.c_str(), "rb"); if (lp) { lite = true; std::fclose(lp); } }
+                int cfgW = isIpa ? 480 : 800, cfgH = isIpa ? 320 : 480;
+                if (isIpa) {                       // the picture size of the data folder the .ipa carries (fonts/<w>x<h>), when it is not the iPhone 480x320
+                    static const int sizes[][2] = {{480, 320}, {960, 640}, {1024, 768}, {2048, 1536}, {1136, 640}, {1280, 720}};
+                    for (const auto& sz : sizes) {
+                        if (!retinaOn && ((sz[0] == 960 && sz[1] == 640) || (sz[0] == 2048 && sz[1] == 1536))) continue;      // the retina sets stay off unless --retina
+                        char fp[600]; std::snprintf(fp, sizeof fp, "%s/data/fonts/%dx%d/FONT_BASIC.dat", dir.c_str(), sz[0], sz[1]);
+                        if (FILE* ff = std::fopen(fp, "rb")) { std::fclose(ff); cfgW = sz[0]; cfgH = sz[1]; break; }
+                    }
+                }
                 std::fprintf(cf, "product = \"Angry Birds (%s)\"\npublisher = \"Rovio\"\nname = \"Angry Birds\"\nwidth = %d\nheight = %d\ndatapath = \"data\"\nisLiteVersion = %s\n"
-                                 "imagePath = \"images\"\nfontPath = \"fonts\"\naudioPath = \"audio\"\nlocalizationPath = \"localization\"\nlevelPath = \"levels\"\n"
-                                 "scriptPath = \"scripts\"\ndeviceModel = \"%s\"\nfullscreen = false\nshowCursor = true\n", stem.c_str(), isIpa ? 480 : 800, isIpa ? 320 : 480, lite ? "true" : "false", isIpa ? "iphone" : "android");
+                                 "imagePath = \"%s\"\nfontPath = \"%s\"\naudioPath = \"%s\"\nlocalizationPath = \"%s\"\nlevelPath = \"%s\"\n"
+                                 "scriptPath = \"%s\"\ndeviceModel = \"%s\"\nfullscreen = false\nshowCursor = true\nretina = %s\n", stem.c_str(), cfgW, cfgH, lite ? "true" : "false", flatData ? "." : "images", flatData ? "." : "fonts", flatData ? "." : "audio", flatData ? "." : "localization", flatData ? "." : "levels", flatData ? "." : "scripts", isIpa ? (cfgW >= 1024 ? "ipad" : "iphone") : "android", retinaOn ? "true" : "false");
                 std::fclose(cf);
             }
         }
@@ -398,7 +420,7 @@ static int GameMain(int argc, char** argv) {
     BootConfig cfg;
     cfg.scriptPath = scripts;
     cfg.commonScriptPath = commonScripts;
-    cfg.seasons4 = !commonScripts.empty() && wc.product.find("Seasons") != std::string::npos;
+    cfg.seasons4 = !commonScripts.empty() && (wc.product.find("Seasons") != std::string::npos || !apkPath.empty());     // v3.0: an Android .apk with scripts_common (3.3.0) is the same generation
     cfg.imagePath = wc.imagePath;
     cfg.fontPath = wc.fontPath;
     cfg.deviceModel = wc.deviceModel; cfg.isLiteVersion = wc.isLiteVersion; cfg.isBetaVersion = wc.isBetaVersion;
@@ -431,7 +453,7 @@ static int GameMain(int argc, char** argv) {
 #ifdef _WIN32
     SetGameIcon(window, wc.name);
 #endif
-    SDL_SetWindowMinimumSize(window, 1024, 600);
+    SDL_SetWindowMinimumSize(window, wc.width < 1024 ? wc.width : 1024, wc.height < 600 ? wc.height : 600);   // v3.1: a game whose pictures are 480x320 (the iPhone .ipa games) is not forced to a bigger window
     SDL_ShowCursor(wc.showCursor ? SDL_ENABLE : SDL_DISABLE);   // the game draws its own hand cursor
     SDL_GLContext context = SDL_GL_CreateContext(window);
     if (!context) { std::printf("SDL_GL_CreateContext: %s\n", SDL_GetError()); return 1; }
@@ -446,6 +468,7 @@ static int GameMain(int argc, char** argv) {
     cfg.screenWidth = (float)pw;
     cfg.screenHeight = (float)ph;
     GamePlatform platform(data);
+    platform.extraScriptFiles = extraLua;
     // playVideo and openURL: the system opens the file or address (the default video player, the browser)
     platform.openExternal = [](const std::string& target) {
         std::string url = target;
@@ -506,6 +529,7 @@ static int GameMain(int argc, char** argv) {
     }
     host.RunString(("videoPath = \"" + wc.videoPath + "\"").c_str());       // v2.2: a script (or config.lua) can change it; playVideo(videoPath .. "/" .. name)
     if (!host.LoadScripts()) { std::printf("LOAD FAILED: %s\n", host.LastError().c_str()); return 1; }
+    if (std::getenv("AB_MISSING")) host.TraceMissingGlobals(true);      // debug: at the end the names the scripts read that do not exist are listed
     if (!host.CreateStartUpAssets()) { std::printf("createStartUpAssets FAILED: %s\n", host.LastError().c_str()); return 1; }
 
     InputBridge input;
@@ -583,7 +607,7 @@ static int GameMain(int argc, char** argv) {
                     if (e.type == SDL_MOUSEBUTTONDOWN) input.KeyDown(KeyIndex(name)); else input.KeyUp(KeyIndex(name));
                     break;
                 }
-                case SDL_MOUSEWHEEL: input.Wheel((float)e.wheel.y); platform.Wheel(e.wheel.y); break;
+                case SDL_MOUSEWHEEL: input.Wheel((float)e.wheel.y); platform.SetWheelFine((SDL_GetModState() & KMOD_SHIFT) != 0); platform.Wheel(e.wheel.y); break;
                 case SDL_WINDOWEVENT:
                     if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST) input.ReleaseAll();
                     // the scripts pause the game when the window is left (gamePaused) and get gameResumed back
@@ -654,10 +678,11 @@ static int GameMain(int argc, char** argv) {
         platform.Resize(pw, ph);                        // the screen is the window
         input.Apply(host.State());
         if (!startupDone) { startupDone = true; for (const std::string& l : startupCmds) platform.ConsoleCommand(l); }
+        for (const auto& tc : timedCmds) if (tc.first == frame) platform.ConsoleCommand(tc.second);
         for (const std::string& l : TakeConsoleLines()) platform.ConsoleCommand(l);
         { bool v; if (platform.TakeVsyncChange(v)) SDL_GL_SetSwapInterval(v ? 1 : 0); }
         platform.BeginFrame();
-        platform.SetSpeedBoost((SDL_GetModState() & KMOD_SHIFT) != 0);     // holding Shift doubles the speed
+        platform.SetSpeedBoost((SDL_GetModState() & KMOD_ALT) != 0);     // holding Alt doubles the speed (Shift is the games' own zoom / editor key)
         platform.RunFrame(dt);
         SDL_ShowCursor((wc.showCursor || platform.NeedsSystemCursor()) ? SDL_ENABLE : SDL_DISABLE);   // editors whose scripts draw no hand cursor
         platform.EndFrame();
@@ -676,6 +701,7 @@ static int GameMain(int argc, char** argv) {
             backend.ReadPixels(pixels, w, h);
             WritePngFile(shot.c_str(), w, h, pixels.data());
             std::printf("wrote %s (%dx%d)\n", shot.c_str(), w, h);
+            if (std::getenv("AB_MISSING")) { std::printf("missing globals:"); for (const std::string& m : host.MissingGlobals()) std::printf(" %s", m.c_str()); std::printf("\n"); }
             if (!audioOut.empty()) {
                 uint32_t bytes = (uint32_t)(audioCapture.size() * 2);
                 unsigned char head[44] = {'R','I','F','F',0,0,0,0,'W','A','V','E','f','m','t',' ',16,0,0,0,1,0,2,0,0x44,0xAC,0,0,0x10,0xB1,2,0,4,0,16,0,'d','a','t','a'};

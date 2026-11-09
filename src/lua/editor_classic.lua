@@ -2,8 +2,19 @@
 -- so the engine runs this copy when a game's own updateEditor is only a stub (script_host.cpp, EnsureClassicEditor).
 -- Everything it calls (cursor, selectedObjects, createObject, saveLevel ...) is defined by the game's own scripts.
 function updateEditor(dt, time)
+	-- an empty slot of the editor's level list has no file: the game's loadLevelInternal then returns early and never clears this flag, so the next level you pick would never load
+	if loadingPageDrawn then loadingPageDrawn = false end
 -- editor can be preprocessed out by defining "STRIP_EDITOR"
 --#ifndef STRIP_EDITOR
+
+	-- the joint page of the Seasons / 1.6.x editors (menus/editorjointPage.lua), when the game ships it: J and F1 to F5 open it with a new joint
+	if EditorJointPage and not editorJointPage then
+		editorJointPage = EditorJointPage:new()
+		editorJointPage:onEntry()
+	end
+	if editorJointPage and editor == nil then
+		editor = { drawOneLayer = false, currentLayer = 0 }
+	end
 
 	if oldZoomLevel ~= zoomLevel then
 		worldScale = worldScale + zoomLevel - oldZoomLevel
@@ -19,11 +30,24 @@ function updateEditor(dt, time)
 	--print("cw.x_ " .. cursorWorld.x .. " - cw.y: " .. cursorWorld.y .. "\n")
 
 	-- Handle input
-	if keyPressed["ESCAPE"] or keyPressed["F1"] then
+	-- Escape is taken on release: the menu page the editor hands over to reads the release of the same key as "back" and would go on to the title screen
+	-- Escape with the joint window open only closes the window (the game's own editor does the same); a second Escape leaves the editor
+	local jointPageOpen = editorJointPage and (editor.newJoint ~= nil or editorJointPage.selectedJoint ~= nil)
+	if keyReleased["ESCAPE"] and jointPageOpen then
+		editorJointPage.disableSelectedJoint = true
+		keyReleased["ESCAPE"] = nil
+	end
+	-- with the joint page F1 is the distance joint of two selected objects, Escape is the only way out
+	if keyReleased["ESCAPE"] or (keyPressed["F1"] and not (editorJointPage and selectedObjects ~= nil and #selectedObjects == 2)) then
 		setGameMode(updateMenu)
 		setPhysicsEnabled(false)
 		physicsEnabled = false
 		setActiveMenuPage(levelSelectionEdit[currentThemeNumber])
+		if editorJointPage then
+			editorJointPage:onExit()
+			editorJointPage = nil
+			return
+		end
 	end
 
 	if keyHold["CONTROL"] and keyPressed["S"] then
@@ -76,7 +100,8 @@ function updateEditor(dt, time)
 		
 	end
 	
-	if g_debugCameras and keyPressed["LBUTTON"] then								
+	-- the cameras list belongs to the games that define it (g_camerasList); where it is missing the click does nothing instead of stopping the script
+	if g_debugCameras and g_camerasList ~= nil and keyPressed["LBUTTON"] then								
 		for i = 1, #g_camerasList, 1 do
 			local t_initialX = 20
 			local t_initialY = 150
@@ -124,6 +149,24 @@ function updateEditor(dt, time)
 			screen.x = 0
 			screen.y = 0
 		end
+	end
+
+	-- world gravity (v3.1): Shift+G raises it by 1, Ctrl+G lowers it by 1 (Shift+Ctrl+G sets it back to 20), as the editor of Seasons 2.4.1 does; the value is saved in the level as worldGravity
+	if keyPressed["G"] and (keyHold["SHIFT"] or keyHold["CONTROL"]) then
+		if objects.worldGravity == nil then
+			local _, gy = getWorldGravity()
+			objects.worldGravity = gy or 20
+		end
+		if keyHold["SHIFT"] and keyHold["CONTROL"] then
+			objects.worldGravity = 20
+		elseif keyHold["SHIFT"] then
+			objects.worldGravity = objects.worldGravity + 1
+		else
+			objects.worldGravity = objects.worldGravity - 1
+		end
+		setWorldGravity(0, objects.worldGravity)
+		levelSaved = false
+		print("world gravity: " .. objects.worldGravity .. "\n")
 	end
 
 	-- set active theme
@@ -361,6 +404,15 @@ function updateEditor(dt, time)
 		
 		if keyReleased["DELETE"] then
 			for k, v in _G.pairs(selectedObjects) do
+				if editorJointPage then
+					for key, value in _G.pairs(objects.joints) do
+						if value.end1 == v.name or value.end2 == v.name then
+							editorJointPage:removeItem(value.name)
+							editorJointPage:removeItem(value.name .. "_ANCHOR_1")
+							editorJointPage:removeItem(value.name .. "_ANCHOR_2")
+						end
+					end
+				end
 				local name = v.name
 				objects.world[name] = nil
 				removeObject(name)
@@ -434,9 +486,33 @@ function updateEditor(dt, time)
 		
 		if keyPressed["J"] then
 			if #selectedObjects == 2 then
-				createJoint(selectedObjects[1].name .. selectedObjects[2].name, selectedObjects[1].name, selectedObjects[2].name, 1, 2, 0, 0, 0, 0)
+				if editorJointPage then
+					-- the joint page: pick the type, the anchors and the motor / limits there, the joint is made when you click away
+					editor.newJoint = { name = selectedObjects[1].name .. selectedObjects[2].name,
+									end1 = selectedObjects[1].name, end2 = selectedObjects[2].name, type = 1,
+									coordType = 2, x1 = 0, y1 = 0, x2 = 0, y2 = 0, collideConnected = false }
+					editorJointPage.newJoint = true
+				else
+					createJoint(selectedObjects[1].name .. selectedObjects[2].name, selectedObjects[1].name, selectedObjects[2].name, 1, 2, 0, 0, 0, 0)
+				end
 				levelSaved = false
 			end
+		end
+	end
+
+	if editorJointPage and #selectedObjects == 2 then
+		local jointType = (keyPressed["F1"] and 1) or (keyPressed["F2"] and 2) or (keyPressed["F3"] and 3) or (keyPressed["F4"] and 4) or (keyPressed["F5"] and 5)
+		if jointType then      -- F1 distance, F2 weld, F3 revolute, F4 prismatic, F5 "destroy attached"
+			editor.newJoint = { name = selectedObjects[1].name .. selectedObjects[2].name,
+								end1 = selectedObjects[1].name, end2 = selectedObjects[2].name, type = jointType,
+								coordType = 2, x1 = 0, y1 = 0, x2 = 0, y2 = 0 }
+			if jointType == 4 then
+				editorJointPage.items.x.visible = true
+				editorJointPage.items.y.visible = true
+				editorJointPage.items.x.text = editorJointPage.xTexts[1]
+				editorJointPage.items.y.text = editorJointPage.yTexts[1]
+			end
+			editorJointPage.newJoint = true
 		end
 	end
 		
@@ -514,6 +590,13 @@ function updateEditor(dt, time)
 	oldCursor.x = cursor.x
 	oldCursor.y = cursor.y	
 	
+	if editorJointPage then editorJointPage:update(dt) end
 	drawGame()
+	if editorJointPage and not drawEditor then editorJointPage:draw() end   -- games with an exe-called drawEditor use __abDrawEditorPage below
 --#endif
+end
+
+-- called by the engine after drawEditor() (Seasons and later), which repaints the whole game: the joint page must go on top of that
+function __abDrawEditorPage()
+	if editorJointPage then editorJointPage:draw() end
 end

@@ -523,9 +523,9 @@ All drawing functions use the **render state** that `setRenderState` set last. `
 
 | Function | What it does |
 |---|---|
-| `drawRect(r, g, b, a, x, y, width, height, useRenderState)` | A filled rectangle; colour 0 to 255 (a: 0 to 255). With `useRenderState` false it is in screen pixels. |
+| `drawRect(r, g, b, a, x1, y1, x2, y2, useRenderState [, pivotX, pivotY])` | A filled rectangle between two corners; colour 0 to 255 (a: 0 to 255). With `useRenderState` false it is in screen pixels. |
 | `drawRectLines(left, top, right, bottom, lineWidth, r, g, b, a)` | The four edges. |
-| `drawLine2D(x1, y1, x2, y2, lineWidth, r, g, b, a)` | One line. `res.drawTexturedLine2D(sprite, x1, y1, x2, y2, width [, r, g, b, a])` draws a sprite stretched along a line (Leia's beam). |
+| `drawLine2D(x1, y1, x2, y2, lineWidth, r, g, b, a [, pivotX, pivotY])` | One line. `res.drawTexturedLine2D(sprite, x1, y1, x2, y2, width [, r, g, b, a])` draws a sprite stretched along a line (Leia's beam). |
 | `drawBoxNative(box, x, y, width, height [, vAnchor, hAnchor])` | A nine-patch box: `box` names the corner and edge sprites (`topLeft`, `top`, ...), used by the menus. |
 | `drawUITextNative(text, x, y [, scaleX, scaleY [, angle [, scale]]])` | Draws a `Text` item of the UI components (`text.draw`). |
 | `clipText(font, text, width)` | Breaks a text into lines that fit `width` pixels; the result is in the global `clippedText` (lines and the widest one). |
@@ -542,6 +542,9 @@ All drawing functions use the **render state** that `setRenderState` set last. `
 | `enableAimingAid(on)`, `setAimingAidSprite(sprite, scale)`, `populateAimingAid()`, `clearAimingAid()`, `updateBirdTrajectoryTable([name])`, `simulateAimingAid(...)` (Space, SW, Classic with `extras`) | The aiming aid: `updateBirdTrajectoryTable` fills the path from the simulation, `populateAimingAid` lays out the dots, `clearAimingAid` removes them. The speed and spacing of the dots are the globals `simulationAimSpeed` and `simulationAimSpawnTime`. |
 | `setAlpha(a [, target])`, `setBlendMode(mode [, target])`, `setShader(effect [, target])`, `setTint(r [, g, b] [, target])`, `getTint([target])`, `resetTint([target])`, `setTintChannel(channel, value [, target])`, `setSkew(x, y [, target])`, `setBend(x, y [, target])`, `setRenderZ(z [, target])`, `setBlur(amount [, target])`, `setPixelate(size [, target])`, `resetBlur`, `resetPixelate`, `setVisualRotation(angle [, target])`, `resetRenderOverrides(target)` (2.2 / 2.4) | Single values of the render state with their own functions; with a `target` (an object, sprite or sprite group name) the setting is kept for that target and every later draw of it uses it. See "Graphics settings for one target" above. |
 
+**Pivot arguments (3.1).** `drawRect`, `drawLine2D`, `res.drawSprite`, `res.drawTexturedLine2D` (after its colour) and `res.drawString` accept two optional last arguments, `pivotX, pivotY`, a point in the same coordinates as the drawing. When both are numbers the scale (`sx, sy`) of the render state grows from that point: the point stays where it is and the rest of the picture spreads from it. If either one is `nil` or missing the call works as before (the scale grows from the origin of the render state). Without a scale other than 1 it changes nothing. Example: `setRenderState(0, 0, 2, 2, 0); drawRect(0, 200, 0, 150, 300, 300, 400, 400, true, 300, 300)` fills 300..500 on both axes, where without the pivot it would fill 600..800.
+
+
 Note on `renderGravityVisualsNative`: the retail routine (0x415f90) reads four numbers, `sensor, x, y, zoom`. The game's script passes three, and the retail exe stops with an "Excepted type number at stack position 4" error for the missing fourth, so the retail game draws no rings from it; the static ring of a gravity field is drawn by the script's own `drawGravityBubble`. The engine does the same (the missing zoom reads as 0). A script of your own can pass a zoom and gets the rings.
 
 ### The `res` table (sprites, text, fonts and sound)
@@ -553,13 +556,13 @@ Reached as `res` or `_G.res`. Sprites live in *sheets* (`createSpriteSheet`); a 
 | `setPath(folder)` | The folder the other `res` functions read from (`imagePath`, `audioPath`, ...). |
 | `createSpriteSheet(file)` / `releaseSpriteSheet(file)` | Loads / frees a sprite sheet (the `.dat` and its picture). |
 | `createCompoSpriteSet(file)` / `releaseCompoSpriteSet(file)` | The same for a file of composite sprites. |
-| `drawSprite(sprite, x, y [, vAnchor, hAnchor [, width, height]])` | Draws a sprite at `x, y` using the render state. `vAnchor` is `"TOP"`, `"VCENTER"`, `"BOTTOM"` or `"VPIVOT"`, `hAnchor` `"LEFT"`, `"HCENTER"`, `"RIGHT"` or `"HPIVOT"` (the sprite's own pivot). `drawCompoSprite` is the same name for composites. |
+| `drawSprite(sprite, x, y [, vAnchor, hAnchor [, width, height [, pivotX, pivotY]]])` | Draws a sprite at `x, y` using the render state. `vAnchor` is `"TOP"`, `"VCENTER"`, `"BOTTOM"` or `"VPIVOT"`, `hAnchor` `"LEFT"`, `"HCENTER"`, `"RIGHT"` or `"HPIVOT"` (the sprite's own pivot). `drawCompoSprite` is the same name for composites. |
 | `getSpriteBounds(sprite)` | `width, height` in pixels (0, 0 when not loaded). `getSpritePivot(sprite)` returns `pivotX, pivotY`; `getCompoSpriteBounds(sprite)` returns `x1, y1, x2, y2`. |
 | `getSpritePixel(sprite, x, y)` (2.4) | `r, g, b, a` of one pixel, or `nil`. |
 | `getCompoSprites(name [, "all"])` (2.4) | The parts a composite is made of now (`{sprite, x, y, scale, angle}` each), or every sprite it uses. |
 | `captureSprite(name)`, `keepLastFrame(on)` | Copies the finished frame into a sprite called `name` (the screen-wipe uses `CAPTURED_SCREENSHOT`). |
 | `createBitmapFont(file)` / `useFont(name)` | Loads a font / makes it the current one. `getStringWidth(text)`, `getFontHeight()`, `getFontLeading()`, `getFontTracking()`, `getFontMaxAscending()`, `getFontMaxDescending()` measure the current font. |
-| `drawString(group, textOrKey, x, y, vAnchor, hAnchor)` | Draws text; with a `group` it looks the key up in that text group first. |
+| `drawString(group, textOrKey, x, y, vAnchor, hAnchor [, pivotX, pivotY])` | Draws text; with a `group` it looks the key up in that text group first. |
 | `setClipRect(x, y, w, h)` | Limits drawing to a rectangle (screen pixels). |
 | `createTextGroupSet(file)`, `loadLocale(file, name)`, `useLocale(name)`, `getString(group, key)`, `setString(group, key, text)` | The texts of the game: load a `TEXTS_*.dat`, choose the language, read or replace one text. |
 | `createAudio(name, file)`, `playAudio(name [, volume, loop, track])`, `stopAudio(name)`, `stopAllAudio()`, `isAudioPlaying(name)` | Sound clips: define one, play it (looping or not, on a numbered track), stop it, ask. |

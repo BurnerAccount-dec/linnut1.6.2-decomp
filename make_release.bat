@@ -23,8 +23,8 @@ cmake --build build --config Release --target angrybirds || goto fail
 if not exist build\Release\AngryBirdsEngine.exe goto fail
 
 rem the name of whoever runs this, taken from Windows, so the name is not written into this file
-findstr /i /m /c:"%USERNAME%" build\Release\AngryBirdsEngine.exe && goto personal
-findstr /i /m /c:"C:\Users" build\Release\AngryBirdsEngine.exe && goto personal
+findstr /i /m /c:"%USERNAME%" build\Release\AngryBirdsEngine.exe >nul && set "HIT=%USERNAME%" && goto personal
+findstr /i /m /c:"C:\Users" build\Release\AngryBirdsEngine.exe >nul && set "HIT=C:\Users" && goto personal
 
 mkdir dist
 copy build\Release\AngryBirdsEngine.exe dist\AngryBirdsEngine.exe || goto fail
@@ -38,16 +38,19 @@ copy CHANGELOG.md dist\CHANGELOG.md || goto fail
 xcopy /e /i /y docs dist\docs || goto fail
 xcopy /e /i /y tools dist\tools || goto fail
 xcopy /e /i /y extras dist\extras || goto fail
-powershell -NoProfile -Command "Compress-Archive -Force -Path dist\* -DestinationPath AngryBirdsEngine-v3.0.zip" || goto fail
+powershell -NoProfile -Command "Compress-Archive -Force -Path dist\* -DestinationPath AngryBirdsEngine-v3.1.zip" || goto fail
 
 echo.
 echo DONE. The exe is clean. Upload this file to the GitHub release:
-echo   C:\abbuild\AngryBirdsEngine-v3.0.zip
+echo   C:\abbuild\AngryBirdsEngine-v3.1.zip
 exit /b 0
 
 :personal
 echo.
 echo STOP: the exe still contains a personal path. Do not publish it. Tell Claude.
+echo The exe contains the text: %HIT%
+echo Where it is (the 160 characters around it):
+powershell -NoProfile -Command "$t=[IO.File]::ReadAllText('build\Release\AngryBirdsEngine.exe',[Text.Encoding]::GetEncoding(28591)); $i=$t.IndexOf($env:HIT,[StringComparison]::OrdinalIgnoreCase); if($i -ge 0){$a=[Math]::Max(0,$i-80); $t.Substring($a,[Math]::Min(160,$t.Length-$a)) -replace '[^\x20-\x7e]','.'}"
 exit /b 1
 
 :fail

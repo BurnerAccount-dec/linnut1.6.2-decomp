@@ -312,23 +312,16 @@ bool DecodePvrtc4(const std::vector<uint8_t>& file, uint32_t width, uint32_t hei
     return true;
 }
 
-// 2.0.0 keeps some textures (all its fonts) as PowerVR v2 files: a 52 byte header, then the pixels. Only
-// the plain 16 and 32 bit formats are read (4444, 5551, 565, 8888), top row first, not twiddled.
-bool DecodePvr(const std::vector<uint8_t>& file, Image& out, std::string* error) {
-    auto u32 = [&](size_t at) { return (uint32_t)file[at] | (uint32_t)file[at + 1] << 8 | (uint32_t)file[at + 2] << 16 | (uint32_t)file[at + 3] << 24; };
-    uint32_t height = u32(4), width = u32(8), flags = u32(16), format = flags & 0xFF;
-    if (width == 0 || height == 0 || width > 8192 || height > 8192) { if (error) *error = "bad .pvr size"; return false; }
-    if (format == 0x19) return DecodePvrtc4(file, width, height, out, error);
-    if (flags & 0x200) { if (error) *error = ".pvr: twiddled textures are not supported"; return false; }
-    if (format == 0x36) {      // ETC1 (Android builds): 4x4 blocks of 8 bytes, 4 bits per pixel, opaque; only the first (largest) level is read
+// ETC1 pixels (4x4 blocks of 8 bytes) starting at file[dataAt]: Android builds (v2 .pvr format 0x36 and v3 format 6)
+static bool DecodeEtc1At(const std::vector<uint8_t>& file, size_t dataAt, uint32_t width, uint32_t height, Image& out, std::string* error) {      // ETC1 (Android builds): 4x4 blocks of 8 bytes, 4 bits per pixel, opaque; only the first (largest) level is read
         const size_t bw = (width + 3) / 4, bh = (height + 3) / 4;
-        if (file.size() < 52 + bw * bh * 8) { if (error) *error = "truncated .pvr"; return false; }
+        if (file.size() < dataAt + bw * bh * 8) { if (error) *error = "truncated .pvr"; return false; }
         static const int mod[8][4] = {{2, 8, -2, -8}, {5, 17, -5, -17}, {9, 29, -9, -29}, {13, 42, -13, -42}, {18, 60, -18, -60}, {24, 80, -24, -80}, {33, 106, -33, -106}, {47, 183, -47, -183}};
         auto clamp = [](int v) { return (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v); };
         out.width = (int)width; out.height = (int)height;
         out.rgba.assign((size_t)width * height * 4, 255);
         for (size_t by = 0; by < bh; by++) for (size_t bx = 0; bx < bw; bx++) {
-            const uint8_t* b = &file[52 + (by * bw + bx) * 8];
+            const uint8_t* b = &file[dataAt + (by * bw + bx) * 8];
             const bool diff = (b[3] & 2) != 0, flip = (b[3] & 1) != 0;
             int c[2][3];
             if (diff) {
@@ -355,6 +348,54 @@ bool DecodePvr(const std::vector<uint8_t>& file, Image& out, std::string* error)
         }
         return true;
     }
+
+// PowerVR v3 files ("PVR\3", 3.3.0 Android): the pixel format is 8 bytes (a channel name letter and its bit count for each of four channels, or a compressed
+// format number); only the first mip level is read. ETC1 (6) and the plain 565, 4444 and 8888 layouts are decoded.
+static bool DecodePvr3(const std::vector<uint8_t>& file, Image& out, std::string* error) {
+    auto u32 = [&](size_t at) { return (uint32_t)file[at] | (uint32_t)file[at + 1] << 8 | (uint32_t)file[at + 2] << 16 | (uint32_t)file[at + 3] << 24; };
+    if (file.size() < 52) { if (error) *error = "truncated .pvr"; return false; }
+    const uint32_t height = u32(24), width = u32(28), meta = u32(48);
+    const size_t at = 52 + meta;
+    if (width == 0 || height == 0 || width > 8192 || height > 8192) { if (error) *error = "bad .pvr size"; return false; }
+    if (file[12] == 0 && file[13] == 0 && file[14] == 0 && file[15] == 0) {          // compressed: the format number is in the first four bytes
+        if (u32(8) == 6) return DecodeEtc1At(file, at, width, height, out, error);
+        if (error) *error = ".pvr: compressed format " + std::to_string(u32(8)) + " is not supported";
+        return false;
+    }
+    const uint8_t r = file[12], g = file[13], b = file[14], a = file[15];
+    const size_t bytes = (r + g + b + a) / 8;
+    if (file.size() < at + (size_t)width * height * bytes) { if (error) *error = "truncated .pvr"; return false; }
+    out.width = (int)width; out.height = (int)height;
+    out.rgba.assign((size_t)width * height * 4, 255);
+    const uint8_t* src = &file[at];
+    for (size_t i = 0; i < (size_t)width * height; i++) {
+        uint8_t* d = &out.rgba[i * 4];
+        if (r == 8 && g == 8 && b == 8 && a == 8) { d[0] = src[i * 4]; d[1] = src[i * 4 + 1]; d[2] = src[i * 4 + 2]; d[3] = src[i * 4 + 3]; }
+        else if (r == 8 && g == 8 && b == 8 && a == 0) { d[0] = src[i * 3]; d[1] = src[i * 3 + 1]; d[2] = src[i * 3 + 2]; }
+        else if (r == 4 && g == 4 && b == 4 && a == 4) {
+            uint16_t v = (uint16_t)(src[i * 2] | src[i * 2 + 1] << 8);
+            d[0] = (uint8_t)(((v >> 12) & 15) * 17); d[1] = (uint8_t)(((v >> 8) & 15) * 17); d[2] = (uint8_t)(((v >> 4) & 15) * 17); d[3] = (uint8_t)((v & 15) * 17);
+        } else if (r == 5 && g == 6 && b == 5) {
+            uint16_t v = (uint16_t)(src[i * 2] | src[i * 2 + 1] << 8);
+            d[0] = (uint8_t)(((v >> 11) & 31) * 255 / 31); d[1] = (uint8_t)(((v >> 5) & 63) * 255 / 63); d[2] = (uint8_t)((v & 31) * 255 / 31);
+        } else if (r == 5 && g == 5 && b == 5 && a == 1) {
+            uint16_t v = (uint16_t)(src[i * 2] | src[i * 2 + 1] << 8);
+            d[0] = (uint8_t)(((v >> 11) & 31) * 255 / 31); d[1] = (uint8_t)(((v >> 6) & 31) * 255 / 31); d[2] = (uint8_t)(((v >> 1) & 31) * 255 / 31); d[3] = (uint8_t)((v & 1) * 255);
+        } else { if (error) *error = ".pvr: this channel layout is not supported"; return false; }
+    }
+    return true;
+}
+
+// 2.0.0 keeps some textures (all its fonts) as PowerVR v2 files: a 52 byte header, then the pixels. Only
+// the plain 16 and 32 bit formats are read (4444, 5551, 565, 8888), top row first, not twiddled.
+bool DecodePvr(const std::vector<uint8_t>& file, Image& out, std::string* error) {
+    if (file.size() > 4 && file[0] == 'P' && file[1] == 'V' && file[2] == 'R' && file[3] == 3) return DecodePvr3(file, out, error);
+    auto u32 = [&](size_t at) { return (uint32_t)file[at] | (uint32_t)file[at + 1] << 8 | (uint32_t)file[at + 2] << 16 | (uint32_t)file[at + 3] << 24; };
+    uint32_t height = u32(4), width = u32(8), flags = u32(16), format = flags & 0xFF;
+    if (width == 0 || height == 0 || width > 8192 || height > 8192) { if (error) *error = "bad .pvr size"; return false; }
+    if (format == 0x19) return DecodePvrtc4(file, width, height, out, error);
+    if (flags & 0x200) { if (error) *error = ".pvr: twiddled textures are not supported"; return false; }
+    if (format == 0x36) return DecodeEtc1At(file, 52, width, height, out, error);   // ETC1 (Android builds)
     size_t bytesPerPixel = format == 0x12 ? 4 : 2;
     if (format != 0x10 && format != 0x11 && format != 0x12 && format != 0x13) {
         if (error) *error = ".pvr: pixel format " + std::to_string(format) + " is not supported (only 4444, 5551, 8888 and 565)";
@@ -392,6 +433,7 @@ bool LoadPngFile(const std::string& path, Image& out, std::string* error) {
     while ((n = fread(buf, 1, sizeof buf, f)) > 0) bytes.insert(bytes.end(), buf, buf + n);
     fclose(f);
     if (bytes.size() > 52 && std::memcmp(&bytes[44], "PVR!", 4) == 0) return DecodePvr(bytes, out, error);
+    if (bytes.size() > 52 && bytes[0] == 'P' && bytes[1] == 'V' && bytes[2] == 'R' && bytes[3] == 3) return DecodePvr(bytes, out, error);      // PowerVR v3 (3.3.0 Android)
     return DecodePng(bytes, out, error);
 }
 

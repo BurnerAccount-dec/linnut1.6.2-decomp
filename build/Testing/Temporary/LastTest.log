@@ -1,0 +1,149 @@
+Start testing: Nov 08 16:22 Pacific Standard Time
+----------------------------------------------------------
+1/9 Testing: collision_damage
+1/9 Test: collision_damage
+Command: "C:/Users/Hugofritz/Downloads/engine/build/Release/ab_tests.exe"
+Directory: C:/Users/Hugofritz/Downloads/engine/build
+"collision_damage" start time: Nov 08 16:22 Pacific Standard Time
+Output:
+----------------------------------------------------------
+all passed
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"collision_damage" end time: Nov 08 16:22 Pacific Standard Time
+"collision_damage" time elapsed: 00:00:00
+----------------------------------------------------------
+
+2/9 Testing: frame_update
+2/9 Test: frame_update
+Command: "C:/Users/Hugofritz/Downloads/engine/build/Release/ab_frame_tests.exe"
+Directory: C:/Users/Hugofritz/Downloads/engine/build
+"frame_update" start time: Nov 08 16:22 Pacific Standard Time
+Output:
+----------------------------------------------------------
+frame_update: all passed
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"frame_update" end time: Nov 08 16:22 Pacific Standard Time
+"frame_update" time elapsed: 00:00:00
+----------------------------------------------------------
+
+3/9 Testing: physics_world
+3/9 Test: physics_world
+Command: "C:/Users/Hugofritz/Downloads/engine/build/Release/ab_physics_tests.exe"
+Directory: C:/Users/Hugofritz/Downloads/engine/build
+"physics_world" start time: Nov 08 16:22 Pacific Standard Time
+Output:
+----------------------------------------------------------
+Box2D 2.1.1
+Box2D 2.2.0
+physics_world: all passed
+<end of output>
+Test time =   0.04 sec
+----------------------------------------------------------
+Test Passed.
+"physics_world" end time: Nov 08 16:22 Pacific Standard Time
+"physics_world" time elapsed: 00:00:00
+----------------------------------------------------------
+
+4/9 Testing: audio_controls
+4/9 Test: audio_controls
+Command: "C:/Users/Hugofritz/Downloads/engine/build/Release/ab_audio_tests.exe"
+Directory: C:/Users/Hugofritz/Downloads/engine/build
+"audio_controls" start time: Nov 08 16:22 Pacific Standard Time
+Output:
+----------------------------------------------------------
+audio control tests passed
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"audio_controls" end time: Nov 08 16:22 Pacific Standard Time
+"audio_controls" time elapsed: 00:00:00
+----------------------------------------------------------
+
+5/9 Testing: lua_frame_host
+5/9 Test: lua_frame_host
+Command: "C:/Users/Hugofritz/Downloads/engine/build/Release/ab_lua_frame_tests.exe"
+Directory: C:/Users/Hugofritz/Downloads/engine/build
+"lua_frame_host" start time: Nov 08 16:22 Pacific Standard Time
+Output:
+----------------------------------------------------------
+lua_frame_host: all passed
+<end of output>
+Test time =   0.06 sec
+----------------------------------------------------------
+Test Passed.
+"lua_frame_host" end time: Nov 08 16:22 Pacific Standard Time
+"lua_frame_host" time elapsed: 00:00:00
+----------------------------------------------------------
+
+6/9 Testing: sprite_sheet
+6/9 Test: sprite_sheet
+Command: "C:/Users/Hugofritz/Downloads/engine/build/Release/ab_sprite_sheet_tests.exe" "C:/Users/Hugofritz/Downloads/engine/tests/data"
+Directory: C:/Users/Hugofritz/Downloads/engine/build
+"sprite_sheet" start time: Nov 08 16:22 Pacific Standard Time
+Output:
+----------------------------------------------------------
+sprite_sheet: all passed
+<end of output>
+Test time =   0.03 sec
+----------------------------------------------------------
+Test Passed.
+"sprite_sheet" end time: Nov 08 16:22 Pacific Standard Time
+"sprite_sheet" time elapsed: 00:00:00
+----------------------------------------------------------
+
+7/9 Testing: level_writer
+7/9 Test: level_writer
+Command: "C:/Users/Hugofritz/Downloads/engine/build/Release/ab_level_writer_tests.exe"
+Directory: C:/Users/Hugofritz/Downloads/engine/build
+"level_writer" start time: Nov 08 16:22 Pacific Standard Time
+Output:
+----------------------------------------------------------
+level_writer: all passed
+<end of output>
+Test time =   0.07 sec
+----------------------------------------------------------
+Test Passed.
+"level_writer" end time: Nov 08 16:22 Pacific Standard Time
+"level_writer" time elapsed: 00:00:00
+----------------------------------------------------------
+
+8/9 Testing: alpha
+8/9 Test: alpha
+Command: "C:/Users/Hugofritz/Downloads/engine/build/Release/ab_alpha_tests.exe"
+Directory: C:/Users/Hugofritz/Downloads/engine/build
+"alpha" start time: Nov 08 16:22 Pacific Standard Time
+Output:
+----------------------------------------------------------
+alpha tests passed
+<end of output>
+Test time =   0.03 sec
+----------------------------------------------------------
+Test Passed.
+"alpha" end time: Nov 08 16:22 Pacific Standard Time
+"alpha" time elapsed: 00:00:00
+----------------------------------------------------------
+
+9/9 Testing: video
+9/9 Test: video
+Command: "C:/Users/Hugofritz/Downloads/engine/build/Release/ab_video_test.exe"
+Directory: C:/Users/Hugofritz/Downloads/engine/build
+"video" start time: Nov 08 16:22 Pacific Standard Time
+Output:
+----------------------------------------------------------
+video test skipped (set AB_TEST_VIDEO to an .m4v file)
+<end of output>
+Test time =   0.02 sec
+----------------------------------------------------------
+Test Passed.
+"video" end time: Nov 08 16:22 Pacific Standard Time
+"video" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Nov 08 16:22 Pacific Standard Time

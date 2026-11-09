@@ -11,6 +11,7 @@
 #include <iterator>
 #include <vector>
 #include "lua/aes.h"
+#include "lua/dec_folder.h"
 #include <cstring>
 #include "lua/lua_api.h"
 
@@ -72,6 +73,8 @@ std::string FieldS(lua_State* L, int t, const char* k) {
 
 // ---- window / system
 int l_requestExit(lua_State* L) { P(L)->RequestExit(); return 0; }
+int l_printWarning(lua_State* L) { std::string m = lua_isstring(L, 1) ? lua_tostring(L, 1) : ""; P(L)->Print("* WARNING " + m); return 0; }   // 3.x EventManager: printWarning(text)
+int l_compile(lua_State*) { return 0; }   // Angry Birds 1.0: R in a level calls compile() (the developers' script reload); nothing to reload here
 int l_print(lua_State* L) {
     std::string out;
     int n = lua_gettop(L);
@@ -693,6 +696,10 @@ int l_loadLevel(lua_State* L) {
             lua_pop(L, 2);
         }
         if (haveGm) { float r = 0; P(L)->BodyCommand("", 8, gm, r); }
+        // v3.1: a level's own `worldGravity` (the editor's G keys write it) is the world gravity the level plays with, in the games whose scripts do not read it themselves
+        lua_getfield(L, -1, "worldGravity");
+        if (lua_isnumber(L, -1)) P(L)->SetWorldGravity(0, (float)lua_tonumber(L, -1));
+        lua_pop(L, 1);
         // The scripts empty loadedObjects once they have taken what they use. The editor's saveLevel writes back what the file
         // held that no script keeps (trainCarts, weather...), so the top-level entries stay in the registry.
         lua_newtable(L);
@@ -991,7 +998,7 @@ int l_setupCompoObject(lua_State* L) {
 //   colour, and everything it leaves clear stays clear, so a pig becomes a flat pig-shaped patch, a bird a bird-shaped shadow. The source can be any
 //   sprite a sheet knows, with its pivot, and it keeps its size; use the new name anywhere a sprite name goes (setSprite, drawSprite, an object's
 //   sprite, a compo part). Calling it again with the same newName replaces the earlier sprite.
-//   r, g, b, a is the colour. Give each as 0 to 1 (1, 1, 1 white; 0, 0, 0 black), or as 0 to 255 when any value is above 1. The pixel's own alpha is
+//   r, g, b, a is the colour (r below 0: the main colour of the source sprite is taken). Give each as 0 to 1 (1, 1, 1 white; 0, 0, 0 black), or as 0 to 255 when any value is above 1. The pixel's own alpha is
 //   multiplied by a, so soft edges of the source stay soft and a = 0.5 makes a half-see-through shadow. A colour left out is 1.
 //   outlineWidth (optional, default 0): 0 fills the whole shape. A number of pixels above 0 keeps only the border of the shape, that many pixels wide,
 //   measured inwards from every edge (including the edges of holes), which gives an outline sprite to draw behind or over the original for a glow or a
@@ -1069,12 +1076,16 @@ BodyDef ReadBody(lua_State* L, bool circle) {
     // Angry Birds Rio's circles take the collision flag as well (a boolean followed by the controllable boolean)
     if (!circle || lua_gettop(L) >= i + 2 || (lua_type(L, i) == LUA_TBOOLEAN && lua_type(L, i + 1) == LUA_TBOOLEAN)) d.collision = B(L, i++);   // Space's createCircle always has 11 arguments (the collision flag may be a sprite name: any non-nil value is true)
     d.controllable = B(L, i++);
-    d.zOrder = N(L, i++);
+    d.zOrder = lua_gettop(L) >= i ? N(L, i++) : 0;   // Angry Birds 1.0: createCircle / createBox have no z order argument
     return d;
 }
 int l_createBox(lua_State* L) {
     BodyDef d = ReadBody(L, false);
-    WriteWorldEntry(L, d, "box", P(L)->CreateBox(d));
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env"); lua_getfield(L, -1, "abBoxHalfExtents"); 
+    bool halfExt = lua_toboolean(L, -1) != 0; lua_pop(L, 2);
+    BodyDef shape = d;
+    if (halfExt) { shape.w *= 2.0f; shape.h *= 2.0f; }      // Angry Birds 1.0: createBox takes the half sizes
+    WriteWorldEntry(L, d, "box", P(L)->CreateBox(shape));
     EmitHook(L, "objectCreated", d.name.c_str(), "box");
     return 0;
 }
@@ -1085,7 +1096,23 @@ int l_createCircle(lua_State* L) {
     return 0;
 }
 int l_createPolygon(lua_State* L) {
-    BodyDef d = ReadBody(L, false);
+    BodyDef d;
+    if (lua_istable(L, 5)) {   // 3.3.0: createPolygon(name, sprite, x, y, {{x=,y=},...}, density, friction, restitution, collision, controllable, zOrder)
+        d.name = S(L, 1); d.sprite = S(L, 2); d.x = N(L, 3); d.y = N(L, 4);
+        P(L)->ClearVertices();
+        float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+        int cnt = (int)lua_objlen(L, 5);
+        for (int k = 1; k <= cnt; k++) {
+            lua_rawgeti(L, 5, k);
+            float vx = NumOr(L, lua_gettop(L), "x", 0), vy = NumOr(L, lua_gettop(L), "y", 0);
+            lua_pop(L, 1);
+            P(L)->AddVertex(vx, vy);
+            x0 = std::min(x0, vx); x1 = std::max(x1, vx); y0 = std::min(y0, vy); y1 = std::max(y1, vy);
+        }
+        d.w = cnt ? x1 - x0 : 0; d.h = cnt ? y1 - y0 : 0;
+        d.density = N(L, 6); d.friction = N(L, 7); d.restitution = N(L, 8);
+        d.collision = B(L, 9); d.controllable = B(L, 10); d.zOrder = N(L, 11);
+    } else d = ReadBody(L, false);
     WriteWorldEntry(L, d, "polygon", P(L)->CreatePolygon(d, P(L)->Vertices()));
     EmitHook(L, "objectCreated", d.name.c_str(), "polygon");
     return 0;
@@ -1267,6 +1294,14 @@ void SpaceLinkJoint(lua_State* L, const std::string& e1, const std::string& e2) 
 
 // createJoint{ name, end1, end2, type, coordType, x1, y1, x2, y2, ... } (0x40ecd0)
 int l_createJoint(lua_State* L) {
+    // the joint system before 1.6.0 (1.3.5 and the Free iPhone version): createJoint(name, end1, end2, type, coordType, x1, y1, x2, y2), the same fields in a row
+    if (lua_type(L, 1) == LUA_TSTRING) {
+        static const char* const fields[] = {"name", "end1", "end2", "type", "coordType", "x1", "y1", "x2", "y2"};
+        lua_newtable(L);
+        for (int i = 0; i < 9; i++) { lua_pushvalue(L, i + 1); lua_setfield(L, -2, fields[i]); }
+        lua_replace(L, 1);
+        lua_settop(L, 1);
+    }
     luaL_checktype(L, 1, LUA_TTABLE);
     JointDef d;
     d.name = FieldS(L, 1, "name");
@@ -1451,7 +1486,9 @@ int l_removeObject(lua_State* L) {
         }
         lua_pop(L, 1);
     }
-    if ((RioMode(L) || IsSpaceData(L)) && PushObjectsTable(L, "joints")) {      // Rio and Space/Star Wars: a joint whose object is gone does not stay in objects.joints (removeBird would follow it to a missing object)
+    bool commonScripts = false;   // the 3.x games (scripts_common): same cleanup
+    { PushEnv(L); lua_getfield(L, -1, "commonScriptPath"); commonScripts = lua_isstring(L, -1) && lua_objlen(L, -1) > 0; lua_pop(L, 2); }
+    if ((RioMode(L) || IsSpaceData(L) || commonScripts) && PushObjectsTable(L, "joints")) {      // Rio and Space/Star Wars: a joint whose object is gone does not stay in objects.joints (removeBird would follow it to a missing object)
         std::string gone = S(L, 1);
         std::vector<std::string> stale;
         lua_pushnil(L);
@@ -1472,8 +1509,19 @@ int l_removeObject(lua_State* L) {
     }
     return 0;
 }
-int l_applyImpulse(lua_State* L) { P(L)->ApplyImpulse(S(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5)); return 0; }
-int l_applyForce(lua_State* L) { P(L)->ApplyForce(S(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5)); return 0; }
+// the 3.x scripts call applyImpulse(name, ix, iy) and applyForce(name, fx, fy) without a point: the body's own position
+static void BodyPoint(lua_State* L, int argx, float& px, float& py) {
+    if (lua_isnumber(L, argx) && lua_isnumber(L, argx + 1)) { px = (float)lua_tonumber(L, argx); py = (float)lua_tonumber(L, argx + 1); return; }
+    px = py = 0;
+    std::string n = S(L, 1);
+    if (PushObjectsTable(L, "world")) {
+        lua_getfield(L, -1, n.c_str());
+        if (lua_istable(L, -1)) { px = NumOr(L, lua_gettop(L), "x", 0); py = NumOr(L, lua_gettop(L), "y", 0); }
+        lua_pop(L, 2);
+    }
+}
+int l_applyImpulse(lua_State* L) { float px, py; BodyPoint(L, 4, px, py); P(L)->ApplyImpulse(S(L, 1), N(L, 2), N(L, 3), px, py); return 0; }
+int l_applyForce(lua_State* L) { float px, py; BodyPoint(L, 4, px, py); P(L)->ApplyForce(S(L, 1), N(L, 2), N(L, 3), px, py); return 0; }
 // the exe also writes x / y (angle for setRotation) into objects.world[name]
 void SetWorldField(lua_State* L, const std::string& name, const char* k1, float v1, const char* k2 = nullptr, float v2 = 0) {
     if (!PushObjectsTable(L, "world")) return;
@@ -1513,6 +1561,8 @@ int l_updateBirdTrajectoryTable(lua_State* L) { float r = 0; P(L)->BodyCommand(l
 int l_spriteExists(lua_State* L) { lua_pushboolean(L, P(L)->SpriteExists(S(L, 1))); return 1; }
 int l_simulateAimingAid(lua_State* L) { float st[2] = {N(L, 5), N(L, 6)}; lua_pushboolean(L, P(L)->AimSimulate(lua_isstring(L, 1) ? lua_tostring(L, 1) : "", N(L, 2), N(L, 3), lua_isnumber(L, 4) ? (int)lua_tonumber(L, 4) : 120, lua_isnumber(L, 5) && lua_isnumber(L, 6) ? st : nullptr)); return 1; }
 int l_setSensorGravityMask(lua_State* L) { return BodyCmd(L, 10); }
+int l_setFilterMask(lua_State* L) { return BodyCmd(L, 30); }
+int l_setFilterCategory(lua_State* L) { return BodyCmd(L, 31); }
 int l_setRevertGravity(lua_State* L) { float r = 0; P(L)->BodyCommand(S(L, 1), 14, B(L, 2) ? 1.0f : 0.0f, r); return 0; }
 int l_setRevertGravityWithMultiplier(lua_State* L) { float r = 0; P(L)->BodyCommand(S(L, 1), 15, B(L, 2) ? 1.0f : 0.0f, r); P(L)->BodyCommand(S(L, 1), 16, NOpt(L, 3, 0), r); P(L)->BodyCommand(S(L, 1), 17, NOpt(L, 4, 0), r); return 0; }
 int l_setObjectGravityCategory(lua_State* L) { return BodyCmd(L, 11); }
@@ -1906,11 +1956,19 @@ int l_setRenderState(lua_State* L) {
     if (argc >= 21 && lua_type(L, 21) != LUA_TNIL) P(L)->SetShaderEffect(ShaderFrom(L, 21));
     return 0;
 }
+// the optional pivot arguments (x, y) of the drawing functions: both numbers = the scale of the render state grows from that point; either one nil or missing = as before
+struct ScalePivot {
+    lua_State* L; bool on;
+    ScalePivot(lua_State* l, int ix, int iy) : L(l), on(lua_isnumber(l, ix) && lua_isnumber(l, iy)) { if (on) P(L)->SetScalePivot(true, (float)lua_tonumber(L, ix), (float)lua_tonumber(L, iy)); }
+    ~ScalePivot() { if (on) P(L)->SetScalePivot(false, 0, 0); }
+};
 int l_drawRect(lua_State* L) {
+    ScalePivot pivot(L, 10, 11);
     P(L)->DrawRect(N(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), N(L, 8), B(L, 9));
     return 0;
 }
 int l_drawLine2D(lua_State* L) {
+    ScalePivot pivot(L, 10, 11);
     P(L)->DrawLine2D(N(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), N(L, 8), N(L, 9));
     return 0;
 }
@@ -2197,7 +2255,7 @@ int l_drawUITextNative(lua_State* L) {
 }
 int l_emptyString(lua_State* L) { lua_pushstring(L, ""); return 1; }
 int l_getTimeDifferenceInSeconds(lua_State* L) {
-    lua_getglobal(L, "getTimeDifference");
+    lua_pushcfunction(L, l_getTimeDifference);   // the native itself: the script global lives in the game environment, not in _G
     lua_pushvalue(L, 1); lua_pushvalue(L, 2);
     lua_call(L, 2, 1);
     double total = 0;
@@ -2325,6 +2383,8 @@ int r_createBitmapFont(lua_State* L) { P(L)->ResCreateBitmapFont(S(L, 1)); retur
 int r_useFont(lua_State* L) { P(L)->ResUseFont(S(L, 1)); return 0; }
 int r_createTextGroupSet(lua_State* L) { P(L)->ResCreateTextGroupSet(S(L, 1)); return 0; }
 int r_loadLocale(lua_State* L) { P(L)->ResLoadLocale(S(L, 1), S(L, 2)); return 0; }
+int r_nothing3(lua_State*) { return 0; }   // res.releaseFont(file) / res.releaseAudio(name): the PC engine keeps what it loaded
+int r_getLocale(lua_State* L) { lua_pushstring(L, "en_US"); return 1; }   // res.getLocale(): the 3.x scripts read the country from characters 4 and 5
 int r_useLocale(lua_State* L) { P(L)->ResUseLocale(S(L, 1)); return 0; }
 int r_getString(lua_State* L) { lua_pushstring(L, P(L)->ResGetString(S(L, 1), S(L, 2)).c_str()); return 1; }
 // An anchor word sets the vertical or the horizontal anchor, whichever it names (game::parseAnchorString, 0x43b4b0).
@@ -2344,18 +2404,21 @@ int r_drawSprite(lua_State* L) {
     if (argc > 3) ParseAnchor(luaL_checkstring(L, 4 + o), v, h);
     if (argc > 4) ParseAnchor(luaL_checkstring(L, 5 + o), v, h);
     bool sized = argc >= 7;
+    ScalePivot pivot(L, 8 + o, 9 + o);
     P(L)->ResDrawSprite(S(L, 1 + o), N(L, 2 + o), N(L, 3 + o), v, h, sized, sized ? N(L, 6 + o) : 0.0f, sized ? N(L, 7 + o) : 0.0f);
     return 0;
 }
 // drawCompoSprite is drawSprite (0x4307f0); the name is looked up among the sprites and the composites
 // drawTexturedLine2D(sprite, x1, y1, x2, y2, width [, r, g, b, a])   colour 0 to 255, 255 when left out
 int r_drawTexturedLine2D(lua_State* L) {
+    ScalePivot pivot(L, 11, 12);
     P(L)->DrawTexturedLine2D(S(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6),
         lua_isnoneornil(L, 7) ? 255.0f : N(L, 7), lua_isnoneornil(L, 8) ? 255.0f : N(L, 8), lua_isnoneornil(L, 9) ? 255.0f : N(L, 9), lua_isnoneornil(L, 10) ? 255.0f : N(L, 10));
     return 0;
 }
 int r_drawCompoSprite(lua_State* L) { return r_drawSprite(L); }
 int r_drawString(lua_State* L) {
+    ScalePivot pivot(L, 7, 8);
     P(L)->ResDrawString(S(L, 1), S(L, 2), N(L, 3), N(L, 4), S(L, 5), S(L, 6));
     return 0;
 }
@@ -2523,6 +2586,9 @@ int l_loadTextFileToString(lua_State* L) {   // 0x419560
 }
 int l_isGameOverlayActive(lua_State* L) { lua_pushboolean(L, 0); return 1; }   // 0x40d450 stub in retail
 int l_retailNoop(lua_State*) { return 0; }   // clearScreen, refreshCurrentLocale, recoverRenderObjects, ...
+int l_setFriction(lua_State* L) { P(L)->SetObjectFriction(S(L, 1), N(L, 2)); return 0; }
+int l_resizeCircle(lua_State* L) { P(L)->ResizeObjectCircle(S(L, 1), N(L, 2)); return 0; }
+int l_setVisible(lua_State* L) { P(L)->SetObjectAlpha(S(L, 1), lua_toboolean(L, 2) ? 1.0f : 0.0f); return 0; }
 int l_setObjectDensity(lua_State* L) { P(L)->SetObjectDensity(S(L, 1), N(L, 2)); return 0; }
 int r_keepLastFrame(lua_State* L) { P(L)->ResKeepLastFrame(lua_toboolean(L, 1) != 0); return 0; }
 int r_spawnFGLayerParticles(lua_State* L) { P(L)->SpawnFGLayerParticles((int)lua_tonumber(L, 1)); return 0; }
@@ -2569,7 +2635,7 @@ void FileInEditorPalette(lua_State* L, int key, int entry, int position) {
 
 void RegisterApi(lua_State* L, Platform* p) {
     static const Entry globals[] = {
-        {"requestExit", l_requestExit}, {"print", l_print}, {"printGlobals", l_printGlobals},
+        {"requestExit", l_requestExit}, {"print", l_print}, {"printWarning", l_printWarning}, {"compile", l_compile}, {"printGlobals", l_printGlobals},
         {"setBGColor", l_setBGColor}, {"captureMouse", l_captureMouse}, {"isMouseCaptured", l_isMouseCaptured},
         {"setFullScreenMode", l_setFullScreenMode}, {"isInFullScreenMode", l_isInFullScreenMode},
         {"setResolution", l_setResolution},
@@ -2601,7 +2667,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"setAngularVelocity", l_setAngularVelocity}, {"setLinearDamping", l_setLinearDamping}, {"clearShapesArray", l_clearShapesArray}, {"addBoxToCompoundList", l_addBoxToCompoundList}, {"addPolygonToCompoundList", l_addPolygonToCompoundList}, {"addLineToCompoundList", l_addLineToCompoundList}, {"addCircleToCompoundList", l_addCircleToCompoundList}, {"setCompoundShapeLinearDamping", l_setCompoundShapeLinearDamping}, {"setCompoundShapeParameter", l_setCompoundShapeParameter}, {"createCompoundObject", l_createCompoundObject}, {"finalizeCompoundObject", l_finalizeCompoundObject}, {"enableAimingAid", l_enableAimingAid}, {"setAimingAidSprite", l_setAimingAidSprite}, {"clearAimingAid", l_clearAimingAid}, {"populateAimingAid", l_populateAimingAid}, {"updateBirdTrajectoryTable", l_updateBirdTrajectoryTable}, {"simulateAimingAid", l_simulateAimingAid}, {"spriteExists", l_spriteExists}, {"setSensorGravityMask", l_setSensorGravityMask}, {"setRevertGravity", l_setRevertGravity}, {"setRevertGravityWithMultiplier", l_setRevertGravityWithMultiplier}, {"setObjectGravityCategory", l_setObjectGravityCategory},
         {"setSensorMinimumAndMaximumForces", l_setSensorMinimumAndMaximumForces}, {"setGravityForceMultiplier", l_setGravityForceMultiplier},
         {"getGravityForceMultiplier", l_getGravityForceMultiplier}, {"setAngularDamping", l_setAngularDamping},
-        {"setFixedRotation", l_setFixedRotation}, {"setActive", l_setActive}, {"multiplyVelocity", l_multiplyVelocity}, {"setAsSensor", l_setAsSensor},
+        {"setFixedRotation", l_setFixedRotation}, {"setActive", l_setActive}, {"multiplyVelocity", l_multiplyVelocity}, {"setAsSensor", l_setAsSensor}, {"setSensor", l_setAsSensor}, {"setFilterMask", l_setFilterMask}, {"setFilterCategory", l_setFilterCategory},
         {"getAngularVelocity", l_getAngularVelocity}, {"setSleeping", l_setSleeping},
         {"getAngle", l_getAngle}, {"getWorldPoint", l_getWorldPoint}, {"setObjectParameter", l_setObjectParameter}, {"setScale", l_setScale}, {"getScale", l_getScale}, {"setSpeedCap", l_setSpeedCap}, {"getSpeedCap", l_getSpeedCap}, {"clearSpeedCap", l_clearSpeedCap}, {"getTouchingObjects", l_getTouchingObjects}, {"rayCast", l_rayCast}, {"fileExists", l_fileExists},
         {"setPhysicsSimulationScale", l_setPhysicsSimulationScale}, {"setPhysicsEnabled", l_setPhysicsEnabled}, {"setThemeOffsetY", l_setThemeOffsetY}, {"setStartingCameraValue", l_setStartingCameraValue},
@@ -2611,7 +2677,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"setRenderState", l_setRenderState}, {"drawRect", l_drawRect}, {"drawLine2D", l_drawLine2D},
         {"drawTexturedRect", l_nothing}, {"drawSome", l_nothing},
         {"drawGameNative", l_drawGameNative}, {"drawBackgroundNative", l_drawBackgroundNative},
-        {"drawForegroundNative", l_drawForegroundNative}, {"drawParticlesFiltered", l_drawParticlesFiltered}, {"readDataFile", l_readDataFile}, {"setObjectDensity", l_setObjectDensity}, {"setRestitution", l_setRestitution}, {"handleJointLimits", l_handleJointLimits}, {"getFullScreenWidth", l_getFullScreenWidth}, {"getFullScreenHeight", l_getFullScreenHeight}, {"performBitwiseOr", l_performBitwiseOr}, {"setWaterForceMultiplier", l_setWaterForceMultiplier}, {"getWaterForceMultiplier", l_getWaterForceMultiplier}, {"setBirdWaterDrag", l_setBirdWaterDrag}, {"setObjectWaterDrag", l_setObjectWaterDrag}, {"fileExistsInAppData", l_fileExistsInAppData}, {"loadTextFileToString", l_loadTextFileToString}, {"isGameOverlayActive", l_isGameOverlayActive}, {"clearScreen", l_retailNoop}, {"refreshCurrentLocale", l_retailNoop}, {"recoverRenderObjects", l_retailNoop}, {"drawParticlesNative", l_drawParticlesNative},
+        {"drawForegroundNative", l_drawForegroundNative}, {"drawParticlesFiltered", l_drawParticlesFiltered}, {"readDataFile", l_readDataFile}, {"setObjectDensity", l_setObjectDensity}, {"setDensity", l_setObjectDensity}, {"setFriction", l_setFriction}, {"resizeCircle", l_resizeCircle}, {"setVisible", l_setVisible}, {"inheritTeleportation", l_retailNoop}, {"setRestitution", l_setRestitution}, {"handleJointLimits", l_handleJointLimits}, {"getFullScreenWidth", l_getFullScreenWidth}, {"getFullScreenHeight", l_getFullScreenHeight}, {"performBitwiseOr", l_performBitwiseOr}, {"setWaterForceMultiplier", l_setWaterForceMultiplier}, {"getWaterForceMultiplier", l_getWaterForceMultiplier}, {"setBirdWaterDrag", l_setBirdWaterDrag}, {"setObjectWaterDrag", l_setObjectWaterDrag}, {"fileExistsInAppData", l_fileExistsInAppData}, {"loadTextFileToString", l_loadTextFileToString}, {"isGameOverlayActive", l_isGameOverlayActive}, {"clearScreen", l_retailNoop}, {"isEditing", l_false}, {"setRollingSound", l_retailNoop}, {"setRovioShelfAllowed", l_retailNoop}, {"setChannelCountLimit", l_retailNoop}, {"setOffsetedViewport", l_retailNoop}, {"refreshCurrentLocale", l_retailNoop}, {"recoverRenderObjects", l_retailNoop}, {"drawParticlesNative", l_drawParticlesNative},
         {"setSprite", l_setSprite}, {"setMaterial", l_setMaterial}, {"setTexture", l_setTexture}, {"setTheme", l_setTheme},
         {"clipText", l_clipText},
         {"startNewTrajectory", l_startNewTrajectory}, {"addToTrajectory", l_addToTrajectory},
@@ -2636,7 +2702,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"drawLayer", l_nothing},
         {"drawRectLines", l_drawRectLines}, {"drawBoxNative", l_drawBoxNative}, {"getCurrentTime", l_getCurrentTime},
         {"getTimeDifference", l_getTimeDifference}, {"setAlpha", l_setAlpha}, {"setBlendMode", l_setBlendMode}, {"setShader", l_setShader}, {"setTintChannel", l_setTintChannel}, {"setVisualRotation", l_setVisualRotation}, {"resetRenderOverrides", l_resetRenderOverrides}, {"setTint", l_setTint}, {"getTint", l_getTint}, {"resetTint", l_resetTint}, {"setSkew", l_setSkew}, {"setBend", l_setBend}, {"setRenderZ", l_setRenderZ}, {"setBlur", l_setBlur}, {"setPixelate", l_setPixelate}, {"resetBlur", l_resetBlur}, {"resetPixelate", l_resetPixelate}, {"drawUITextNative", l_drawUITextNative},
-        {"getTImeDifferenceInSeconds", l_getTimeDifferenceInSeconds}, {"checkRegistrationResult", l_false}, {"getClipboardText", l_emptyString},
+        {"getTImeDifferenceInSeconds", l_getTimeDifferenceInSeconds}, {"getTimeDifferenceInSeconds", l_getTimeDifferenceInSeconds}, {"checkRegistrationResult", l_false}, {"getClipboardText", l_emptyString},
         {"canOpenProgram", l_false}, {"openProgram", l_nothing}, {"hasLocationCapability", l_false}, {"drawLevelParticlesNative", l_drawLevelParticlesNative},
         {"setWorldGravity", l_setWorldGravity}, {"getWorldGravity", l_getWorldGravity},
         {"getOSName", l_osName}, {"getOSVersion", l_osVersion}, {"getModel", l_deviceModel},
@@ -2645,7 +2711,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         // Angry Birds Rio: ads, analytics and the NFC eagle are not there on the PC
         {"flushMedioEvents", l_nothing}, {"logMedioAnonymousIDtoFlurry", l_nothing}, {"logMedioEvent", l_nothing},
         {"hideBannerAd", l_nothing}, {"showBannerAd", l_nothing}, {"requestBannerAd", l_nothing},
-        {"requestInterstitialAd", l_nothing}, {"requestAndShowInterstitialAd", l_nothing}, {"showInterstitialAd", l_nothing},
+        {"requestInterstitialAd", l_nothing}, {"isInterstitialAdReady", l_false}, {"checkMainMenuAd", l_nothing}, {"isExpandableAdReady", l_false}, {"isVideoAdReady", l_false}, {"isRewardedAdReady", l_false}, {"isAdReady", l_false}, {"isBannerAdVisible", l_false}, {"isExpandableAdVisible", l_false}, {"isInterstitialAdVisible", l_false}, {"isVideoAdLoaded", l_false}, {"isExpandableAdLoaded", l_false}, {"isAdVisible", l_false}, {"isAdShowing", l_false}, {"isAdLoaded", l_false}, {"hideExpandableAd", l_nothing}, {"hideInterstitialAd", l_nothing}, {"requestRewardedAd", l_nothing}, {"showRewardedAd", l_nothing}, {"hideVideoAd", l_nothing}, {"isInterstitialReady", l_false}, {"isInterstitialAdLoaded", l_false}, {"isBannerAdReady", l_false}, {"requestAndShowInterstitialAd", l_nothing}, {"showInterstitialAd", l_nothing},
         {"toggleNFC", l_nothing}, {"enableSmoothZooming", l_nothing}, {"setGameParameters", l_nothing},
         {"throwException", l_throwException}, {"setNotificationCallback", l_nothing}, {"requestAd", l_nothing}, {"showAd", l_nothing}, {"hideAd", l_nothing},
         {"requestExpandableAd", l_nothing}, {"showExpandableAd", l_nothing}, {"stopAds", l_nothing},
@@ -2679,7 +2745,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"setPath", r_setPath}, {"createSpriteSheet", r_createSpriteSheet}, {"releaseSpriteSheet", r_releaseSpriteSheet},
         {"createCompoSpriteSet", r_createCompoSpriteSet}, {"releaseCompoSpriteSet", r_releaseCompoSpriteSet},
         {"createBitmapFont", r_createBitmapFont}, {"useFont", r_useFont},
-        {"createTextGroupSet", r_createTextGroupSet}, {"loadLocale", r_loadLocale}, {"useLocale", r_useLocale},
+        {"createTextGroupSet", r_createTextGroupSet}, {"loadLocale", r_loadLocale}, {"useLocale", r_useLocale}, {"getLocale", r_getLocale}, {"releaseFont", r_nothing3}, {"releaseAudio", r_nothing3},
         {"getString", r_getString}, {"drawSprite", r_drawSprite}, {"drawCompoSprite", r_drawCompoSprite}, {"drawTexturedLine2D", r_drawTexturedLine2D},
         {"drawString", r_drawString}, {"setClipRect", r_setClipRect},
         {"getSpriteBounds", r_getSpriteBounds}, {"getSpritePivot", r_getSpritePivot},
@@ -2724,6 +2790,35 @@ bool LoadTableFile(lua_State* L, const char* name, const std::string& path, std:
     int loaded = 1;
     std::string loadError = "No such file or directory";
     ab::ReadLuaFile(path, bytes);
+    if (bytes.empty() && path.size() > 14 && path.compare(path.size() - 14, 14, "/particles.lua") == 0) {
+        // v3.0: Angry Birds 3.3.0 keeps one file per particle effect in scripts/particles/<name>.lua instead of one particles.lua; each file runs in a table of its
+        // own and becomes particleTable.particles[<name>]
+        const std::string dir = path.substr(0, path.size() - 4);
+        std::vector<std::string> names = ab::ListFolder(dir);
+        bool any = false;
+        lua_newtable(L);                                    // particleTable.particles
+        for (const std::string& n : names) {
+            if (n.size() < 5 || n.compare(n.size() - 4, 4, ".lua") != 0) continue;
+            std::vector<uint8_t> fb;
+            ab::ReadLuaFile(dir + "/" + n, fb);
+            if (fb.empty() || luaL_loadbuffer(L, (const char*)fb.data(), fb.size(), (dir + "/" + n).c_str()) != 0) { if (!fb.empty()) lua_pop(L, 1); continue; }
+            lua_newtable(L);                                // the effect's own table
+            lua_pushvalue(L, -1);
+            lua_setfenv(L, -3);
+            lua_insert(L, -2);                              // the function on top, the effect's table below it
+            if (lua_pcall(L, 0, 0, 0) == 0) { lua_setfield(L, -2, n.substr(0, n.size() - 4).c_str()); any = true; }
+            else lua_pop(L, 2);
+        }
+        if (any) {
+            lua_setfield(L, -2, "particles");               // into the new table that is at -2
+            lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+            lua_pushvalue(L, -2);
+            lua_setfield(L, -2, name);
+            lua_pop(L, 2);
+            return true;
+        }
+        lua_pop(L, 1);
+    }
     if (!bytes.empty()) {
         loaded = luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), path.c_str());
         if (loaded != 0) { loadError = lua_tostring(L, -1); lua_pop(L, 1); }

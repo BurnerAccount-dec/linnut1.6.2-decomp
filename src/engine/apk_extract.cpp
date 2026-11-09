@@ -1,5 +1,6 @@
 #include "engine/apk_extract.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #ifdef _WIN32
@@ -82,7 +83,7 @@ bool EndsWith(const std::string& s, const char* t) {
 }  // namespace
 
 bool ExtractApk(const std::string& apkPath, const std::string& outDir, std::string* error) {
-    const std::string marker = outDir + "/.extracted";
+    const std::string marker = outDir + "/.extracted4";   // 4: music kept as .mp3.zip is unpacked; 3: the .ipa data folder is chosen (data_iphone first) and config.lua rebuilt
     { std::vector<uint8_t> m; if (ReadAll(marker, m)) return true; }
     std::vector<uint8_t> zip;
     if (!ReadAll(apkPath, zip)) { if (error) *error = "cannot open " + apkPath; return false; }
@@ -90,19 +91,45 @@ bool ExtractApk(const std::string& apkPath, const std::string& outDir, std::stri
     if (!ListZip(zip, entries)) { if (error) *error = apkPath + " is not a readable zip (.apk) file"; return false; }
     // an Android .apk keeps the data in assets/data; an iOS .ipa in Payload/<name>.app/data_iphone (or data_ipad)
     std::string prefix = "assets/data/";
+    std::string firstData;
     for (const Entry& e : entries) {
         if (e.name.compare(0, 8, "Payload/") != 0) continue;
         size_t app = e.name.find(".app/", 8);
         if (app == std::string::npos) continue;
         size_t d = app + 5;
-        if (e.name.compare(d, 5, "data_") == 0) { size_t slash = e.name.find('/', d); if (slash != std::string::npos) { prefix = e.name.substr(0, slash + 1); break; } }
+        if (e.name.compare(d, 5, "data_") != 0) continue;
+        size_t slash = e.name.find('/', d);
+        if (slash == std::string::npos) continue;
+        std::string p = e.name.substr(0, slash + 1);
+        if (e.name.compare(d, 11, "data_iphone") == 0) { prefix = p; firstData.clear(); break; }   // the phone data is what the engine runs (480x320)
+        if (firstData.empty()) firstData = p;
     }
+    if (!firstData.empty()) prefix = firstData;
+    if (firstData.empty() && prefix == "assets/data/") {     // an .ipa without a data_* folder (the first Angry Birds): the folder that holds scripts/gamelogic.lua is the data
+        std::string tail = "scripts/gamelogic.lua";
+        bool flat = false;
+        for (const Entry& e : entries) if (e.name.compare(0, 8, "Payload/") == 0 && e.name.size() > 14 && e.name.compare(e.name.size() - 14, 14, "/gamelogic.lua") == 0 && e.name.find("/scripts/") == std::string::npos) flat = true;   // the first Angry Birds: everything flat in data/
+        if (flat && std::none_of(entries.begin(), entries.end(), [](const Entry& e) { return e.name.find("/scripts/gamelogic.lua") != std::string::npos; })) tail = "gamelogic.lua";
+        for (const Entry& e : entries) {
+            if (e.name.compare(0, 8, "Payload/") != 0 || e.name.size() <= tail.size() || e.name.compare(e.name.size() - tail.size(), tail.size(), tail) != 0) continue;
+            prefix = e.name.substr(0, e.name.size() - tail.size());
+            break;
+        }
+    }
+    if (prefix != "assets/data/") std::remove((outDir + "/config.lua").c_str());   // an .ipa: the generated config follows the data folder found now
     int files = 0;
     for (const Entry& e : entries) {
         if (e.name.compare(0, prefix.size(), prefix) != 0 || e.name.back() == '/') continue;
         std::vector<uint8_t> bytes;
         if (!Unpack(zip, e, bytes)) { if (error) *error = "cannot unpack " + e.name; return false; }
         std::string rel = "data/" + e.name.substr(prefix.size());
+        if (EndsWith(rel, ".mp3.zip")) {                          // music kept in its own zip (Rio 1.4.2 title music): the mp3 inside is what the game opens
+            std::vector<Entry> inner;
+            if (ListZip(bytes, inner) && !inner.empty()) {
+                std::vector<uint8_t> mp3;
+                if (Unpack(bytes, inner[0], mp3) && WriteFile(outDir + "/" + rel.substr(0, rel.size() - 4), mp3)) { files++; continue; }
+            }
+        }
         if (EndsWith(rel, ".pvr.zip")) {                          // a texture kept in its own zip: the .pvr inside is what the game opens
             std::vector<Entry> inner;
             if (ListZip(bytes, inner) && !inner.empty()) {
@@ -116,7 +143,13 @@ bool ExtractApk(const std::string& apkPath, const std::string& outDir, std::stri
         if (!WriteFile(outDir + "/" + rel, bytes)) { if (error) *error = "cannot write " + outDir + "/" + rel; return false; }
         files++;
     }
-    if (files == 0) { if (error) *error = apkPath + " has no assets/data (.apk) or Payload/*.app/data_* (.ipa) folder (not an Angry Birds app?)"; return false; }
+    if (files == 0) {
+        bool ipaApp = false;
+        for (const Entry& e : entries) if (e.name.compare(0, 8, "Payload/") == 0 && e.name.find(".app/data/") != std::string::npos) { ipaApp = true; break; }
+        if (error) *error = ipaApp ? apkPath + " keeps its textures, sounds and Level*.lua files in data/ but has no scripts/gamelogic.lua: the game logic of this early version (Angry Birds 1.0) is in the app's own native program, not in Lua, so this engine has nothing to run it with."
+                                   : apkPath + " has no assets/data (.apk) or Payload/*.app/data_* (.ipa) folder (not an Angry Birds app?)";
+        return false;
+    }
     std::string note = "extracted from " + apkPath + "\n";
     WriteFile(marker, std::vector<uint8_t>(note.begin(), note.end()));
     return true;

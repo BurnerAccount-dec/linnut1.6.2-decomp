@@ -1,0 +1,10 @@
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/Hugofritz/Downloads/engine -BC:/Users/Hugofritz/Downloads/engine/build --check-stamp-file C:/Users/Hugofritz/Downloads/engine/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

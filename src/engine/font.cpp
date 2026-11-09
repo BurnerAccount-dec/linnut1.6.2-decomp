@@ -1,3 +1,5 @@
+#include <cstdlib>
+#include <cstdio>
 #include "engine/font.h"
 #include <cstring>
 
@@ -64,12 +66,17 @@ float BitmapFont::StringWidth(const std::string& utf8) const {
 
 bool ParseBitmapFont(const std::vector<uint8_t>& bytes, BitmapFont& out, std::string* error) {
     Reader r(bytes);
-    if (r.Bytes(4) != "KA3D") return Fail(error, "not a KA3D file");
-    r.U32();
-    if (r.Bytes(4) != "FONT") return Fail(error, "not a font");
-    r.U32();
-    unsigned images = r.U16();
-    if (images != 1) return Fail(error, "font with other than one image");
+    // Angry Birds 1.0 (iPhone) keeps its fonts without the KA3D header: the file starts at the image name's length
+    const bool headerless = bytes.size() > 6 && !(bytes[0] == 'K' && bytes[1] == 'A') && bytes[0] == 0 && bytes[1] > 4 && bytes.size() >= (size_t)(2 + bytes[1]) && bytes[2 + bytes[1] - 4] == '.';
+    if (std::getenv("AB_FONT_DEBUG")) std::printf("font headerless=%d size=%zu b0=%d b1=%d\n", (int)headerless, bytes.size(), bytes.empty() ? -1 : bytes[0], bytes.size() > 1 ? bytes[1] : -1);
+    if (!headerless) {
+        if (r.Bytes(4) != "KA3D") return Fail(error, "not a KA3D file");
+        r.U32();
+        if (r.Bytes(4) != "FONT") return Fail(error, "not a font");
+        r.U32();
+        unsigned images = r.U16();
+        if (images != 1) return Fail(error, "font with other than one image");
+    }
     out.image = r.Bytes(r.U16());
     out.leading = r.S16();
     out.tracking = r.S16();

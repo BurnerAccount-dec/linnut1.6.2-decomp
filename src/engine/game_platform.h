@@ -158,6 +158,8 @@ public:
     void ResKeepLastFrame(bool on) override { keepLast_ = on; if (!on) lastFrame_.clear(); }
     bool keepLast_ = false; int quadsThisFrame_ = 0; std::vector<unsigned char> lastFrame_; int lastW_ = 0, lastH_ = 0;
     void SetObjectDensity(const std::string& n, float density) override;
+    void SetObjectFriction(const std::string& n, float f) override;
+    void ResizeObjectCircle(const std::string& n, float r) override;
     void SetObjectRestitution(const std::string& n, float r) override;
     void AddParticlesMode(const std::string& type, float amount, float x, float y, float w, float h, float angle, int mode) override;
     void DrawParticlesFiltered(int filter) override;
@@ -239,6 +241,7 @@ public:
     bool cursorDrawn_ = false;
     bool gameDrawn_ = false, gameDrawnLast_ = false;   // Rio: drawGameNative ran this / the last frame (the particles of a level end with it)
     bool menuParticlesByScript_ = false;      // 2.0.0 draws the level's particles itself, in two layers (drawLevelParticlesNative)
+    void SetScalePivot(bool on, float x, float y) override { state_.hasScalePivot = on; state_.spX = x; state_.spY = y; }
     void SetAlpha(float a) override { state_.alpha = a < 0 ? 0 : (a > 1 ? 1 : a); }
     void SetTint(float r, float g, float b) override { state_.tintR = r < 0 ? 0 : r; state_.tintG = g < 0 ? 0 : g; state_.tintB = b < 0 ? 0 : b; }
     void GetTint(float& r, float& g, float& b) override { r = state_.tintR; g = state_.tintG; b = state_.tintB; }
@@ -261,7 +264,10 @@ public:
     void RotateThemeSprites(float dt) override;
     void StepThemeAnimations(float dt);
     void ScrollThemeLayers(float dt, bool force) override;
+    void ScrollWaterLayers(float dt) override { for (size_t i = 0; i < fgWater_.size() && i < fgOffset_.size() && i < fgAuto_.size(); i++) if (fgWater_[i].water) fgOffset_[i] += fgAuto_[i] * dt * 60.0f; waterTime_ += dt; }
+    float waterTime_ = 0;
     bool IsSeasonsScripts();
+    std::vector<std::string> extraScriptFiles;     // .lua files from the command line (drag and drop), loaded once the game scripts are up
     void ResSetClipRect(float x, float y, float w, float h) override;
     void CanvasInit(int w, int h) override;
     void CanvasClear(float r, float g, float b, float a) override;
@@ -284,6 +290,8 @@ public:
     void SetMaxWorldScale(float s) override { zoomMax_ = s; }
     // 0x403b00: one mouse-wheel step (notches, positive = away from the user)
     void Wheel(int notches);
+    void SetWheelFine(bool on) { wheelFine_ = on; }   // Shift held: the wheel zooms in 5% steps (0x403b00 scales its step by 0.05 when its flag at +0x236 is set)
+    bool wheelFine_ = false;
     void SetTheme(const std::string& theme) override;
     void DrawBackground() override;
     void DrawForeground() override;
@@ -345,6 +353,7 @@ private:
     // The persistent state set by setRenderState (0x408630): translation, scale, angle, pivot.
     struct RenderState {
         float tx = 0, ty = 0, sx = 1, sy = 1, angle = 0, pivotX = 0, pivotY = 0;
+        bool hasScalePivot = false; float spX = 0, spY = 0;   // the pivot argument of a drawing call: the scale grows from here
         bool flipX = false;              // Rio: the sprite is drawn mirrored
         float alpha = 1;                 // 2.0.0: setRenderState's 8th value and setAlpha (render state +0x40)
         // v2.2 additions to setRenderState (arguments 9 to 14): shear and bend of what is drawn, and a draw order for sprites
@@ -407,7 +416,7 @@ private:
     std::map<std::string, BirdFace> birdFaces_;
 
     struct BgLayer { float dx = 0, dy = 0; bool hidden = false;   // Lua: extra offset in screen pixels, skip the layer
-                     std::string sprite; float speed = 1, scale = 1; bool looping = true; float autoScroll = 0, offset = 0; bool space = false; float offX = 0, offY = 0, baseOffY = 0;
+                     std::string sprite; float speed = 1, scale = 1; bool looping = true, hasFixedX = false; float autoScroll = 0, offset = 0; bool space = false; float offX = 0, offY = 0, baseOffY = 0;
                      // Space (0x48bdd0 / 0x467f70): the layer's own numbers
                      bool empty = false; float zDist = 0, xMult = 1, yMult = 1, angleMult = 0, posX = 0, posY = 0, scaleSpeed = 1, angle = 0;
                      // NEW_THEME_SYSTEM (0x44c1b0): scaleX / scaleY (0xbc / 0xc0), the flag bits (0xa4: 1 OVERSTRETCH_ANCHOR_V, 2 V_REPEAT, 4 H_REPEAT, 0x20 ANCHOR_V, 0x40, 0x100 / 0x200 REPEAT_LEFT_ONLY / REPEAT_RIGHT_ONLY) and the rocks spawnParameters scatters
@@ -495,6 +504,8 @@ private:
     std::vector<std::string> fgLayers_;
     struct FgNamed { bool named = false, fill = false; float offY = 0, r = 0, g = 0, b = 0; };
     std::vector<FgNamed> fgNamed_;
+    struct FgWater { bool water = false; float wobbleY = 0; };      // Piglantis: a foreground layer with water = true sits on the water surface (objects.waterLevel) instead of the ground
+    std::vector<FgWater> fgWater_;
     std::map<int, std::string> fgParticles_;
     bool swTheme_ = false;
     bool swBg_ = false;                            // a Star Wars theme (its table has textureScale): backgrounds are drawn at the retail Star Wars scale

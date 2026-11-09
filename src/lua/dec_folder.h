@@ -20,6 +20,9 @@ int DecryptTree(const std::string& dataRoot, const std::string& decRoot, const s
 // writes goto) beside the exe and in the working folder. A decompiled file counts only if Lua 5.1 loads it.
 std::vector<std::string> FindUnluac(const std::string& exeFolder);
 
+// The names in a folder (folders with a trailing "/"); empty when the folder does not exist.
+std::vector<std::string> ListFolder(const std::string& dir);
+
 // From now on ReadLuaFile looks for a file below `dataRoot` in `decRoot` first.
 void UseDecFolder(const std::string& dataRoot, const std::string& decRoot);
 

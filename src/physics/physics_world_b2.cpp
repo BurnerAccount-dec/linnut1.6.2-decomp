@@ -76,6 +76,13 @@ public:
     void ApplyImpulse(float ix, float iy, float px, float py) override { Wake("ApplyImpulse"); b_->ApplyLinearImpulse(b2Vec2(ix, iy), b2Vec2(px, py)); }
     void ApplyForce(float fx, float fy, float px, float py) override { Wake("ApplyForce"); b_->ApplyForce(b2Vec2(fx, fy), b2Vec2(px, py)); }
     void SetRestitution(float r) override { for (b2Fixture* f = b_->GetFixtureList(); f; f = f->GetNext()) f->SetRestitution(r); }
+    void SetFriction(float f) override { for (b2Fixture* fx = b_->GetFixtureList(); fx; fx = fx->GetNext()) fx->SetFriction(f); }
+    void ResizeCircle(float r) override {
+        for (b2Fixture* fx = b_->GetFixtureList(); fx; fx = fx->GetNext())
+            if (fx->GetShape()->GetType() == b2Shape::e_circle) const_cast<b2CircleShape*>(static_cast<const b2CircleShape*>(fx->GetShape()))->m_radius = r;
+        b_->ResetMassData();
+        b_->SetTransform(b_->GetPosition(), b_->GetAngle());     // refreshes the broad-phase boxes
+    }
     void SetDensity(float d) override {
         for (b2Fixture* f = b_->GetFixtureList(); f; f = f->GetNext()) f->SetDensity(d);
         b_->ResetMassData();

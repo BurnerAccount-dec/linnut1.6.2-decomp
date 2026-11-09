@@ -74,6 +74,13 @@ void InputBridge::Apply(lua_State* L) {
     lua_pushnumber(L, down ? 1 : 0);
     lua_setfield(L, -2, "touchcount");
     lua_getfield(L, -1, "touches");
+    if (lua_isnumber(L, -1)) {         // Angry Birds 1.0: touches is the finger count
+        lua_pop(L, 1);
+        lua_pushnumber(L, down ? 1 : 0); lua_setfield(L, -2, "touches");
+        lua_pop(L, 1);
+        wheel_ = 0;
+        return;
+    }
     if (lua_istable(L, -1)) {
         if (down) {
             lua_newtable(L);

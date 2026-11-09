@@ -18,6 +18,7 @@ You can also put the exe next to the game's `data` folder, where the original ex
 ### Opening an Android .apk or iPhone .ipa
 
 Drag an `.apk` (Android) or `.ipa` (iPhone) file onto `AngryBirdsEngine.exe`, choose the exe in "Open with", or run `AngryBirdsEngine.exe C:\path\AngryBirds_1.3.5.apk`. The first time, the engine unpacks the game's data (an .apk's `assets/data`, an .ipa's `Payload/<name>.app/data_iphone`) into `%LOCALAPPDATA%\AngryBirdsEngine\apk\<file name>\data` (a few seconds; the next start reuses it, delete the folder to unpack again) and starts the game from there. The `config.lua` it writes next to that data (window size, `deviceModel = "android"` or `"iphone"`, `isLiteVersion` for the Lite iPhone game, folder names, `product` for the save folder) can be edited. Only the game's data is used; the native code is not run. iPhone textures in PVRTC format are decoded when loaded. Checked with Angry Birds 1.3.5 and 2.1.0 (.apk) and Angry Birds Free 1.0.0 (.ipa): menus, level select and a level.
+Drop `.lua` files onto the exe together with it (select the `.apk`/`.ipa` and the scripts, then drag them all onto the exe): each script is loaded once the game is up. Try `extras/extra_scripts.lua` with 1.3.5 or the Angry Birds Free `.ipa`.
 
 ### Options
 
@@ -29,7 +30,8 @@ Drag an `.apk` (Android) or `.ipa` (iPhone) file onto `AngryBirdsEngine.exe`, ch
 ### Controls added by the engine
 
 - Alt+Enter: window / full screen.
-- Hold Shift: the game runs at twice the speed.
+- Hold Alt: the game runs at twice the speed.
+- Hold Shift while turning the mouse wheel: the zoom moves in much smaller steps.
 - Ctrl+minus / Ctrl+plus: slow down / speed up in 0.25x steps (0.25x to 8x) until the game closes.
 
 Set the environment variable `AB_SLOWFRAMES=1` to print a line for every frame that took over 25 ms (a debugging aid for stutter).
@@ -42,6 +44,54 @@ The developers' tools in the scripts are switched on in every game (set `AB_NODE
 - C (or K in the older versions): clear the level. G (Rio): fail the level. Space (Rio): single step. Shift+Left / Shift+Right: previous / next level (where the scripts have it, for example 2.0.0).
 - Main menu, "Editor" button: pick a level and edit it. Ctrl+S saves it over the level file (an encrypted original becomes a plain Lua file, which the game reads just the same; a copy for playtesting goes to `temp/` next to it). Shift+P plays the level you are editing, and returns to the editor when you leave it. Tab switches the physics on and off, Shift+C / Shift+B store the castle / bird camera, Delete removes the selection. Right button drag selects, left button drag moves the selection; the Rio block palette is on the keys of `groups.lua` (Q/W wood, A/S glass, 1/2 stone and so on). The level files are written into the game's own `data/levels` folder.
 
+### Editor keys
+
+Two editors exist. The **classic editor** is Rovio's own (the 1.6.2 editor, which the engine also brings to games whose scripts have none: 1.6.3.1, Seasons 2.x, and the games that use it as they ship it). Angry Birds Space and Star Wars have the engine's small **Space editor**. A game whose scripts ship their own editor (2.0.0, Seasons 1.0.0 / 2.2.0, Rio) uses it with the keys the game defines; the keys below are the ones the classic editor reads, which those editors are descended from. Open the editor from the "Editor" button of the main menu (in the games that have it); Space: F2 in a level.
+
+**Classic editor (1.6.x, Seasons 2.x, Rio, 2.0.0 and the others that use it)**
+
+| Key | What it does |
+|---|---|
+| Left button | Place the block chosen on the palette; click an object to select it; drag with Space held to move the view |
+| Left button drag | Move the selection; with Ctrl held, add to the selection |
+| Right button / drag | Clear what is being placed or copied; drag a rectangle to select |
+| Mouse wheel | Zoom; with Shift held in steps of 5% |
+| Middle button | Reset the zoom and the view; with Shift only the zoom |
+| The group keys (`keyUp` / `keyDown` of each group of `blocks.lua`, for example Q / W wood, A / S glass, 1 / 2 stone) | Choose the block to place from the group, next / previous |
+| 1 .. 9 (a bird selected) | Set the bird's order (`startNumber`) |
+| Shift + the theme key of `blockTable.themes.settings.keyCode` | Next theme |
+| Arrow keys (selection) | Move the selection; Ctrl held: fine steps |
+| Shift + Left / Right / Up / Down | Mirror the selection across its own middle |
+| Shift + R | Turn the copied objects by 45 degrees |
+| R | Rotate the selected objects |
+| Ctrl + C, then click | Copy the selection and place the copy |
+| Delete | Remove the selection (and its joints) |
+| J, or F1 .. F5 (two objects selected; Shift + J in some games) | Open the joint window (F1 distance, F2 weld, F3 revolute, F4 prismatic, F5 "destroy attached") |
+| Tab | Physics on / off (the level is restored when it is switched off) |
+| Shift + P | Play the level, Escape (also on the clear / failed page) comes back to the editor |
+| Ctrl + S | Save the level |
+| Shift + C / Shift + B | Store the castle / the bird camera |
+| Ctrl + Shift + C / End, Ctrl + Shift + B / Home | Go to the stored castle / bird camera; End alone: the castle camera |
+| Ctrl + Shift + Space | Show the debug cameras (needs the game's `g_camerasList`; ignored in games without it) |
+| **Shift + G / Ctrl + G / Shift + Ctrl + G** | **New in 3.1:** world gravity +1 / -1 / back to 20; saved in the level as `worldGravity` |
+| Escape | Close the joint window; else leave the editor |
+
+**Space editor (Angry Birds Space and Star Wars, F2 in a level)**
+
+| Key | What it does |
+|---|---|
+| F2 | Turn the editor on or off (the physics stops while it is on) |
+| Arrow keys / wheel | Pan / zoom |
+| Shift + wheel, PageUp / PageDown | Choose the block on the palette |
+| Left button (drag) | Select an object / move it |
+| N | Place the palette block at the cursor |
+| D | Copy the selected object |
+| Q / E | Turn the selection (Shift: in small steps) |
+| Delete / Backspace | Remove the selection |
+| Ctrl + S | Save the level |
+
+Space levels have no world gravity of their own (the planets pull), so the gravity keys do not exist there. Angry Birds Seasons 2.4.1 (iPad / iPhone) uses its own editor, which has Shift + G (+1) and Ctrl + G (-1) for the gravity as well.
+
 Everything else is the original game's own keyboard and mouse handling (for example R restarts a level in the versions where the scripts support it).
 
 ## Command line and environment variables
@@ -53,6 +103,7 @@ Everything else is the original game's own keyboard and mouse handling (for exam
 | `--scripts <folder>`, `--data <folder>` | where the game's scripts and data are |
 | `--config <file>` | window settings (title, size, fullscreen, cursor) |
 | `--userdata <folder>` | keep saves here (`.` = working folder); default `original` shares progress with the original game |
+| `--retina` | an `.ipa` with a 960x640 / 2048x1536 picture set uses it (off by default: the smaller set is used) |
 | `--decrypt [folder]` | write the game's scripts into a plain-text `dec` folder and exit (details below) |
 | `--use-dec [folder]` | read the scripts from that folder (where a file exists there) instead of the game's own |
 | `--cmd "<line>"`, `--startup <file>`, `--prompt` | console commands run before the game starts (see "New in 2.2" in `CHANGELOG.md`) |

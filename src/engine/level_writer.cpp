@@ -140,7 +140,7 @@ bool WriteLevelFile(lua_State* L, const std::string& path, bool seasons, std::st
         lua_getfield(L, objects, key.first.c_str());
         bool emptyList = lua_istable(L, -1) && lua_objlen(L, -1) == 0 && SortedKeys(L, lua_gettop(L)).empty();
         if (emptyList && key.first != "joints" && key.first != "counts") { lua_pop(L, 1); continue; }   // editor leftovers such as themeSprites = {}
-        if (lua_istable(L, -1) || key.first == "physicsToWorld" || lua_type(L, -1) == LUA_TBOOLEAN || lua_type(L, -1) == LUA_TSTRING) {
+        if (lua_istable(L, -1) || key.first == "physicsToWorld" || lua_type(L, -1) == LUA_TBOOLEAN || lua_type(L, -1) == LUA_TSTRING || (lua_type(L, -1) == LUA_TNUMBER && key.first == "worldGravity")) {   // worldGravity: the editor's G keys
             out += key.first + " = ";
             WriteValue(L, out, 0);
             out += "\n";

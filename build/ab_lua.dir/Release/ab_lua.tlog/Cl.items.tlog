@@ -1,0 +1,12 @@
+C:\Users\Hugofritz\Downloads\engine\src\lua\aes.cpp;C:\Users\Hugofritz\Downloads\engine\build\ab_lua.dir\Release\aes.obj
+C:\Users\Hugofritz\Downloads\engine\src\lua\sevenzip.cpp;C:\Users\Hugofritz\Downloads\engine\build\ab_lua.dir\Release\sevenzip.obj
+C:\Users\Hugofritz\Downloads\engine\src\lua\dec_folder.cpp;C:\Users\Hugofritz\Downloads\engine\build\ab_lua.dir\Release\dec_folder.obj
+C:\Users\Hugofritz\Downloads\engine\src\lua\lua_api.cpp;C:\Users\Hugofritz\Downloads\engine\build\ab_lua.dir\Release\lua_api.obj
+C:\Users\Hugofritz\Downloads\engine\src\lua\script_host.cpp;C:\Users\Hugofritz\Downloads\engine\build\ab_lua.dir\Release\script_host.obj
+C:\Users\Hugofritz\Downloads\engine\src\lua\lua_frame_host.cpp;C:\Users\Hugofritz\Downloads\engine\build\ab_lua.dir\Release\lua_frame_host.obj
+C:\Users\Hugofritz\Downloads\engine\build\generated\editor_classic_lua.cpp;C:\Users\Hugofritz\Downloads\engine\build\ab_lua.dir\Release\editor_classic_lua.obj
+C:\Users\Hugofritz\Downloads\engine\build\generated\hatchery_natives_lua.cpp;C:\Users\Hugofritz\Downloads\engine\build\ab_lua.dir\Release\hatchery_natives_lua.obj
+C:\Users\Hugofritz\Downloads\engine\build\generated\space_natives_lua.cpp;C:\Users\Hugofritz\Downloads\engine\build\ab_lua.dir\Release\space_natives_lua.obj
+C:\Users\Hugofritz\Downloads\engine\build\generated\space_editor_lua.cpp;C:\Users\Hugofritz\Downloads\engine\build\ab_lua.dir\Release\space_editor_lua.obj
+C:\Users\Hugofritz\Downloads\engine\build\generated\compo_image_lua.cpp;C:\Users\Hugofritz\Downloads\engine\build\ab_lua.dir\Release\compo_image_lua.obj
+C:\Users\Hugofritz\Downloads\engine\build\generated\invisible_button_lua.cpp;C:\Users\Hugofritz\Downloads\engine\build\ab_lua.dir\Release\invisible_button_lua.obj

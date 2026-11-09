@@ -83,6 +83,10 @@ bool FileExists(const std::string& p) { std::ifstream f(p.c_str(), std::ios::bin
 bool Decompile(const std::string& jar, const std::string& in, const std::string& out, const std::string& err) {
     // -Xmx / -Xss: the big scripts need more memory and a deeper stack than Java gives by default
     std::string cmd = "java -Xmx1g -Xss64m -XX:+ExitOnOutOfMemoryError -jar \"" + jar + "\" \"" + in + "\" > \"" + out + "\" 2> \"" + err + "\"";
+#ifndef _WIN32
+    // AB_DEC_TIMEOUT=<seconds>: a script that unluac cannot finish is given up instead of holding the whole run (it is listed as not decompiled)
+    if (const char* t = std::getenv("AB_DEC_TIMEOUT")) cmd = std::string("timeout ") + t + " " + cmd;
+#endif
 #ifdef _WIN32
     cmd = "\"" + cmd + "\"";                                    // cmd.exe /c strips the outer pair of quotes
     for (char& c : cmd) if (c == '/') c = '\\';
@@ -138,6 +142,8 @@ void Walk(const std::string& src, const std::string& dst, const std::vector<std:
 }
 
 }  // namespace
+
+std::vector<std::string> ListFolder(const std::string& dir) { return List(Slashes(dir)); }
 
 std::vector<std::string> FindUnluac(const std::string& exeFolder) {
     std::vector<std::string> candidates, found;

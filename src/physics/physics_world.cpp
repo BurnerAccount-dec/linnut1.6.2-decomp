@@ -173,6 +173,8 @@ bool PhysicsWorld::BodyCommand(const std::string& n, int cmd, float a, float& re
     PhysObject* o = Find(n);
     if (!o) return false;
     PhysBody& b = *o->pbody;
+    if (cmd == 30) { o->filterMask = (int)a; o->filterUsed = true; return true; }   // setFilterMask (3.x)
+    if (cmd == 31) { o->filterCat = (int)a; o->filterUsed = true; return true; }    // setFilterCategory (3.x)
     if (cmd == 10) { o->gravMask = (int)a; return true; }
     if (cmd == 11) { o->gravCat = (int)a; return true; }
     if (cmd == 12) { o->gravMin = a; return true; }
@@ -658,6 +660,7 @@ void PhysicsWorld::ApplyVelocityChange(const VelocityChange& v) {
 // 0x40c440. Collide only if both objects have `collision` set, except that a circle created with
 // z_order 999 never collides with an object whose material is "immovable".
 bool PhysicsWorld::ShouldCollideObjects(const PhysObject* a, const PhysObject* b) const {
+    if (a && b && (a->filterUsed || b->filterUsed) && (!(a->filterMask & b->filterCat) || !(b->filterMask & a->filterCat))) return false;   // setFilterMask / setFilterCategory
     bool base = ShouldCollideBase(a, b);
     if (luaFilter && a && b) { int v = luaFilter(a, b); if (v == 0) return false; if (v == 1) return true; }
     return base;

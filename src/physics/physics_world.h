@@ -59,6 +59,8 @@ public:
     virtual void SetLinearDamping(float d) = 0;
     virtual void SetFixedRotation(bool on) = 0;
     virtual void SetRestitution(float r) { (void)r; }      // Star Wars setRestitution (0x419d10): the value goes into the body's shape data (+0x14 of the record at +100)
+    virtual void SetFriction(float f) { (void)f; }         // 3.x setFriction: every fixture
+    virtual void ResizeCircle(float r) { (void)r; }        // 3.x resizeCircle: the radius of every circle fixture, the mass is worked out again
     virtual void SetDensity(float d) { (void)d; }          // v2.5: every fixture, then the mass is worked out again
     virtual void SetActive(bool on) = 0;
     virtual float ShapeRadius() const = 0;               // the first fixture's skin radius (polygons) or radius (circles)
@@ -119,6 +121,8 @@ struct PhysObject : FrameObject {
     bool stopOnExit = false;                         // Space id 34 (+0x1a5): leaving a flagged sensor sets the linear damping to 100 (0x470380)
     int sensorKind = 0;                              // id 21: 2 gravitation, 3 stream (+0x15c)
     bool gravOn = false;                             // id 22 (+0x19f)
+    int filterMask = 0xFFFFFF, filterCat = 1;        // 3.x setFilterMask / setFilterCategory (Box2D rules: both sides must accept the other); filterUsed once either is set
+    bool filterUsed = false;
     int gravMask = -1, gravCat = -1;                 // setSensorGravityMask (+0x160) / setObjectGravityCategory (+0x180); -1: no filtering
     float gravExt = 0;                               // id 35 (+0x178): extent of a directional field
     float gravMin = 0, gravMax = 0, gravRadius = -1; // ids 25, 26, 27 (+0x168, +0x16c, +0x170); radius <= -1: a directional field

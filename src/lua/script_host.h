@@ -49,15 +49,19 @@ public:
     bool IsStarWars() const { return starWars_; }   // Angry Birds Star Wars: the common script path holds gamelogic.lua
     bool IsSpace() const { return space_; }    // Angry Birds Space: the scripts load their own block files; the exe calls draw() after update()
     bool IsRio() const { return rio_; }        // Angry Birds Rio: data in many files, and the exe calls draw() after update()
+    bool IsFirstGame() const { return first_; }   // Angry Birds 1.0: no loadlist.lua, blocks start asleep
     bool Draw() { return Call("draw"); }
     void RunString(const char* code);             // test hook: runs a snippet among the scripts' globals
     bool BirdCollision(const std::string& a, const std::string& b, float force, float damage);
-    bool BlockCollision(const std::string& a, const std::string& b, float force, bool wasDamageDone);
+    bool BlockCollision(const std::string& a, const std::string& b, float force, bool wasDamageDone, float damage = 0);
     // Angry Birds Star Wars (0x42f9d0): birdCollision(a, b, force, damage, pointX, pointY, normalX, normalY) and
     // blockCollision(a, b, force, wasDamageDone, false, damage, pointX, pointY, normalX, normalY)
     bool BirdCollisionSW(const std::string& a, const std::string& b, float force, float damage, const float pn[4]);
     bool BlockCollisionSW(const std::string& a, const std::string& b, float force, bool wasDamageDone, float damage, const float pn[4]);
     bool RemoveBlocks() { return Call("removeBlocks"); }
+    bool ApplyForcesAtPhysicsStep() { return Call("applyForcesAtPhysicsStep"); }   // 3.x: applyForce(...) queues a function, run before every physics step
+    bool ClearLuaForceFunctions() { return Call("clearLuaForceFunctions"); }
+    bool PerStepForces() { return Call("__abPerStepForces"); }
     bool GamePaused() { return Call("gamePaused"); }
     bool GameResumed() { return Call("gameResumed"); }
     bool ResolutionChanged(float w, float h);
@@ -70,6 +74,9 @@ public:
 private:
     std::set<std::string> reportedErrors_;      // frame errors already printed (Space builds go on after them)
     bool rio_ = false;
+    bool first_ = false;
+    bool pausePops_ = false;
+    bool nativeDots_ = false;
     bool space_ = false;
     bool starWars_ = false;
     bool Call(const char* name);

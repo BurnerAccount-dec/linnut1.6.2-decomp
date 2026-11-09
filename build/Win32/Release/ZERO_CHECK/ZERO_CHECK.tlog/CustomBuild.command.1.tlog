@@ -1,0 +1,10 @@
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\7B1EA66A6DE105D9CE2AE47463877FBA\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/Hugofritz/Downloads/engine -BC:/Users/Hugofritz/Downloads/engine/build --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file C:/Users/Hugofritz/Downloads/engine/build/ab_engine.slnx
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
