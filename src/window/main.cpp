@@ -114,7 +114,7 @@ struct WindowConfig {
     std::string publisher = "Rovio";
     int width = 1280, height = 720;
     bool fullscreen = false, showCursor = true;
-    bool console = true;                            // 3.7: config.lua console = false closes the command prompt window the exe opens (Windows)
+    bool console = true;                            // 3.7.1: config.lua console = false closes the command prompt window the exe opens (Windows)
     std::string deviceModel = "windows";            // v2.5: config.lua deviceModel / isLiteVersion pick the asset folder in the scripts (for example "meego" + lite = 864x480_lite)
     bool isLiteVersion = false, isBetaVersion = false;
     std::string audioPath = "audio", localizationPath = "localization", levelPath = "levels";
@@ -484,7 +484,7 @@ static int GameMain(int argc, char** argv) {
     }
     ReadConfigLua(configPath, wc);
 #ifdef _WIN32
-    // 3.7: config.lua console = false: the command prompt window is closed (the game runs without it; the typed console commands and the printed lines are gone with it).
+    // 3.7.1: config.lua console = false: the command prompt window is closed (the game runs without it; the typed console commands and the printed lines are gone with it).
     // It stays when the prompt was asked for (--prompt) or the exe was started from a prompt that is already open and its output is redirected.
     if (!wc.console && !promptFirst && !shotFrames) FreeConsole();
 #endif

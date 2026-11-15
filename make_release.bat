@@ -1,11 +1,11 @@
 @echo off
 setlocal
-rem Usage:  make_release.bat v3.7            builds the clean exe and zips it as AngryBirdsEngine-v3.7.zip
-rem         make_release.bat v3.7 publish    the same, then makes the GitHub release v3.7 with the zip (needs the GitHub CLI, `gh auth login` once; the changes must be pushed first)
+rem Usage:  make_release.bat v3.7.1            builds the clean exe and zips it as AngryBirdsEngine-v3.7.zip
+rem         make_release.bat v3.7.1 publish    the same, then makes the GitHub release v3.7.1 with the zip (needs the GitHub CLI, `gh auth login` once; the changes must be pushed first)
 rem See docs/RELEASING.md for the whole routine, from a change to a published release.
 set "VER=%~1"
 if "%VER%"=="" (
-  echo Usage: make_release.bat v3.7 [publish]
+  echo Usage: make_release.bat v3.7.1 [publish]
   exit /b 1
 )
 set "ZIP=AngryBirdsEngine-%VER%.zip"

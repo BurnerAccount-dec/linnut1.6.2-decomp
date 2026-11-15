@@ -280,7 +280,7 @@ bool Capture(lua_State* L, bool leaving = false) {
                     if (CallEnv(L, "getVelocity", name, {}, 3)) { vx = Num(L, -2); vy = Num(L, -1); lua_pop(L, 3); }
                     if (CallEnv(L, "getAngularVelocity", name, {}, 1)) { w = Num(L, -1); lua_pop(L, 1); }
                     lua_pushboolean(L, 1); lua_setfield(L, -2, "moves");
-                    // 3.7: the body type (the game keeps the birds that wait as static bodies and makes the next one dynamic): without it a restored bird stays where it is
+                    // 3.7.1: the body type (the game keeps the birds that wait as static bodies and makes the next one dynamic): without it a restored bird stays where it is
                     GetG(L, "getBodyType");
                     if (lua_isfunction(L, -1)) {
                         lua_pushstring(L, name.c_str());
@@ -461,7 +461,7 @@ bool Apply(lua_State* L) {
     if (lua_istable(L, -1)) {
         PushEnv(L);
         for (const std::string& n : Keys(L, -2)) { lua_getfield(L, -2, n.c_str()); lua_setfield(L, -2, n.c_str()); }
-        // 3.7: a listed variable that was empty (nil) when the level was saved is not in the saved table; the freshly loaded level may have set it (the bird that is
+        // 3.7.1: a listed variable that was empty (nil) when the level was saved is not in the saved table; the freshly loaded level may have set it (the bird that is
         // sent to the slingshot first), so it is emptied again
         for (const std::string& n : CfgList(L, "globals")) {
             lua_getfield(L, -2, n.c_str());

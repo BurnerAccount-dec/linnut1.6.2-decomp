@@ -2,12 +2,12 @@
 
 Everything below is typed in the **x86 Native Tools Command Prompt for VS** (Start menu, "Visual Studio"; use the x64 one for a 64-bit build), inside the engine folder. Nothing needs a browser or the GitHub website except the very first sign-in.
 
-Replace `v3.7` with the version you are releasing. Versions are `vMAJOR.MINOR`; the number must match the `## New in 3.7` heading of `CHANGELOG.md` (the release notes are cut from that section) and the version in the first lines of `README.md`.
+Replace `v3.7.1` with the version you are releasing. Versions are `vMAJOR.MINOR` or `vMAJOR.MINOR.PATCH`; the number must match the `## New in 3.7.1` heading of `CHANGELOG.md` (the release notes are cut from that section) and the version in the first lines of `README.md`.
 
 ## One command
 
     cd /d C:\path\to\engine
-    publish.bat v3.7 "what changed"
+    publish.bat v3.7.1 "what changed"
 
 `publish.bat` does the six steps below in order and stops at the first that fails: build, tests, personal-name check, commit, push, release. Without the message it only does the first three (a dry run). Everything else in this file explains the steps, so you can do one by hand or fix one that stopped.
 
@@ -41,7 +41,7 @@ Replace `v3.7` with the version you are releasing. Versions are `vMAJOR.MINOR`; 
 
 ## The steps, one by one
 
-1. **Update the notes.** Each change gets an entry in `CHANGELOG.md` under `## New in 3.7`, the user-visible list in `README.md` is brought up to date, and anything a script writer can call or change is in `docs/SCRIPTING.md` (what it does, its arguments, an example). A change that has no entry here is not finished.
+1. **Update the notes.** Each change gets an entry in `CHANGELOG.md` under `## New in 3.7.1`, the user-visible list in `README.md` is brought up to date, and anything a script writer can call or change is in `docs/SCRIPTING.md` (what it does, its arguments, an example). A change that has no entry here is not finished.
 
 2. **Build.**
 
@@ -71,19 +71,19 @@ Replace `v3.7` with the version you are releasing. Versions are `vMAJOR.MINOR`; 
 
 6. **Build the release zip from a clean copy.** This clones the committed repository to `C:\abbuild`, so only committed files are in it, builds with a static runtime and zips the exe with the licences, README, CHANGELOG, `docs`, `tools` and `extras`:
 
-       make_release.bat v3.7
+       make_release.bat v3.7.1
 
-   The zip is `C:\abbuild\AngryBirdsEngine-v3.7.zip` and the notes `C:\abbuild\release-notes.md`.
+   The zip is `C:\abbuild\AngryBirdsEngine-v3.7.1.zip` and the notes `C:\abbuild\release-notes.md`.
 
 7. **Publish it on GitHub.**
 
-       make_release.bat v3.7 publish
+       make_release.bat v3.7.1 publish
 
    or, by hand, from the folder where the zip is:
 
-       gh release create v3.7 AngryBirdsEngine-v3.7.zip --repo BurnerAccount-dec/linnut1.6.2-decomp --title "v3.7" --notes-file release-notes.md
+       gh release create v3.7.1 AngryBirdsEngine-v3.7.1.zip --repo BurnerAccount-dec/linnut1.6.2-decomp --title "v3.7.1" --notes-file release-notes.md
 
-   `gh release view v3.7 --repo BurnerAccount-dec/linnut1.6.2-decomp --web` opens it.
+   `gh release view v3.7.1 --repo BurnerAccount-dec/linnut1.6.2-decomp --web` opens it.
 
 ## When something stops
 
@@ -93,7 +93,7 @@ Replace `v3.7` with the version you are releasing. Versions are `vMAJOR.MINOR`; 
 | `gh auth login` asked again / `HTTP 401` | `gh auth status`, then `gh auth login`. |
 | `git push` says `rejected ... fetch first` | Someone (or another computer) pushed: `git pull --rebase origin main`, then push again. |
 | `Author identity unknown` | Setup step 3. |
-| `release already exists` | The version was published: use a new version number, or `gh release delete v3.7 --yes --repo BurnerAccount-dec/linnut1.6.2-decomp` and publish again. To only replace the zip: `gh release upload v3.7 AngryBirdsEngine-v3.7.zip --clobber --repo BurnerAccount-dec/linnut1.6.2-decomp`. |
+| `release already exists` | The version was published: use a new version number, or `gh release delete v3.7.1 --yes --repo BurnerAccount-dec/linnut1.6.2-decomp` and publish again. To only replace the zip: `gh release upload v3.7.1 AngryBirdsEngine-v3.7.1.zip --clobber --repo BurnerAccount-dec/linnut1.6.2-decomp`. |
 | `STOP: the exe still contains a personal path` | Do not publish. The script prints where it is. |
 | `FAILED` in `make_release.bat` | Read the lines above it. The usual cause is a file that is not committed (the clean copy is made from commits, not from the folder). |
 | CMake cannot find SDL2 | Needs internet on the first configure, or the `SDL2-2.30.9.tar.gz` next to `make_release.bat`. |
@@ -105,4 +105,4 @@ Source (`src`, `third_party`, `tests`, `tools`, `extras`, `docs`), `CMakeLists.t
 ## Versions
 
 - The engine version is written in the first lines of `README.md`, the newest `## New in` heading of `CHANGELOG.md`, and the release tag. Features carry the version they appeared in in the docs ("since 3.5").
-- 3.6 was the last version published before 3.7, so the 3.7 notes cover what came after it.
+- 3.7 was the last version published before 3.7.1, so the 3.7.1 notes cover what came after it.

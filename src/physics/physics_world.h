@@ -45,7 +45,7 @@ public:
     virtual void SetAwake(bool awake) = 0;               // false also zeroes the velocities
     virtual void SetStatic(bool isStatic) = 0;           // b2_staticBody or b2_dynamicBody
     virtual void SetKinematic() = 0;                     // b2_kinematicBody (Friends 2.0.0's setBodyType)
-    virtual int Type() const { return 1; }               // 3.7: 0 static, 1 dynamic, 2 kinematic (getBodyType)
+    virtual int Type() const { return 1; }               // 3.7.1: 0 static, 1 dynamic, 2 kinematic (getBodyType)
     virtual void SetTransform(float x, float y, float angle) = 0;
     virtual void WorldPoint(float lx, float ly, float& wx, float& wy) const = 0;
     virtual void LocalPoint(float wx, float wy, float& lx, float& ly) const = 0;

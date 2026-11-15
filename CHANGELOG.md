@@ -2,10 +2,14 @@
 
 What changed in each version of the engine, newest first. The README has the current status; the reference for script writers is in [`docs/SCRIPTING.md`](docs/SCRIPTING.md) and how to run and debug in [`docs/USAGE.md`](docs/USAGE.md).
 
-## New in 3.7
+## New in 3.7.1
 * **Saved levels put birds back properly.** Four faults are fixed: (1) the object a variable points to (`flyingBird`, `selectedBird`, `cameraTargetObject`) was written under the wrong key, so a level saved while a bird was flying came back with no flying bird and the Blue Bird's tap did nothing; (2) a variable that was empty when the level was saved (the bird that is sent to the slingshot first) kept the value of the freshly loaded level, so the level's first bird jumped to the slingshot and took the place of the first bird; (3) the body type was not kept: the games hold the birds that wait as static bodies and make the next one dynamic, so a restored bird that was launched did not move (and a Blue Bird split in that state ended in an invalid position); (4) the trail of dots (`birdTrajectory`) and `allowTrajectoryClearing` are saved, so the trail is still there. `getBodyType(name)` is the new counterpart of `setBodyType`.
-* **Blue Bird split fixes:** when a level is restarted, the pieces of a Blue Bird that split (the one that is `flyingBird` first) move back to where the Blue Bird stood when the level loaded, like any other object. A saved level brings back birds that did not exist when it loaded, so split Blue Birds are kept instead of deleted, and `flyingBird` and the other saved references find them.
 * **`console = false` in `config.lua`** closes the command prompt window that opens with the engine, so the game runs with only its own window (`true`, the default, keeps it; `--prompt` keeps it too).
+
+3.7 was published on GitHub; this section is everything after it.
+
+## New in 3.7
+* **Blue Bird split fixes:** when a level is restarted, the pieces of a Blue Bird that split (the one that is `flyingBird` first) move back to where the Blue Bird stood when the level loaded, like any other object. A saved level brings back birds that did not exist when it loaded, so split Blue Birds are kept instead of deleted, and `flyingBird` and the other saved references find them.
 * **Level spawner (F1):** in a level, F1 stops the game and opens a picker: Left / Right choose another level of the folder, Up / Down another folder, Return (or a click on the panel) puts that level's blocks, pigs and joints into the level that is being played, around the cursor; Escape closes it. It is made the way the vehicles of Red's Mighty Feathers (3.3.0) are: every object is created with `createObject` under a new name (`levelSpawner.prefix`, a number and the old name) and every joint is tied to the new names. The ground and the birds of the spawned level are left out. A level file dragged onto the window while a level is played is spawned at the cursor the same way (`levelSpawner.drop = false` brings back loading it as the level). `levelSpawner` in `extra_scripts.lua` sets the key, the skipped definitions and the texts.
 
 3.6 was published on GitHub; this section is everything after it.

@@ -1380,7 +1380,7 @@ Tell us about a game or call that misbehaves and it will be fixed.
 
 ---
 
-### `getBodyType(name)` (3.7)
+### `getBodyType(name)` (3.7.1)
 
 Returns `"static"`, `"dynamic"` or `"kinematic"` for an object (what `setBodyType` and `setObjectParameter(name, 2, 0 or 1)` set; the games keep birds that wait as static bodies), or `nil` for a name that is not in the world. Save states keep it, so a restored bird is as movable as it was.
 

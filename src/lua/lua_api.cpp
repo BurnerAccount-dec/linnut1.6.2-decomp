@@ -2282,7 +2282,7 @@ int l_getIntersectingObjects(lua_State* L) {
 }
 // setBodyType(name, "static" | "dynamic" | "kinematic") (Friends 2.0.0: the Christmas slingshot and the Halloween pigs move objects that
 // forces do not push, then let them fall again)
-// getBodyType(name): "static", "dynamic" or "kinematic" (3.7; what setBodyType and setObjectParameter(name, 2, ...) set)
+// getBodyType(name): "static", "dynamic" or "kinematic" (3.7.1; what setBodyType and setObjectParameter(name, 2, ...) set)
 int l_getBodyType(lua_State* L) {
     float t = 1;
     if (!P(L)->BodyCommand(S(L, 1), 95, 0, t)) { lua_pushnil(L); return 1; }
