@@ -38,7 +38,7 @@ An unofficial, from-scratch reimplementation of the Angry Birds PC engine, rebui
 
 ## Quick start
 
-1. **Build it** (Windows, Visual Studio and CMake; see [Build](#build)) or take the exe from a release zip (`AngryBirdsEngine-v3.2.zip`, made by `make_release.bat`).
+1. **Build it** (Windows, Visual Studio and CMake; see [Build](#build)) or take the exe from a release zip (`AngryBirdsEngine-v3.3.zip`, made by `make_release.bat`).
 2. **Start it from inside the game's folder**, the one that holds `config.lua`:
 
        cd /d "C:\Program Files (x86)\Rovio\Angry Birds"
@@ -95,7 +95,7 @@ More in [`docs/USAGE.md`](docs/USAGE.md): the command line, controls, the typed 
 
 (Use `-A x64` for a 64-bit build.) SDL2 is downloaded and built on the first configure if CMake cannot find it (internet needed). The program is `build\Release\AngryBirdsEngine.exe` (`Debug` for a debug build).
 
-`make_release.bat` builds a release configuration and zips the exe with the licences into `AngryBirdsEngine-v3.2.zip`.
+`make_release.bat` builds a release configuration and zips the exe with the licences into `AngryBirdsEngine-v3.3.zip`.
 
 ## How it works
 
