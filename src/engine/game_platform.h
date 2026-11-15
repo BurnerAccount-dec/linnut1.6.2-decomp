@@ -372,6 +372,23 @@ public:
     void SetCustomTrajectorySprites(const std::string& a, const std::string& b, const std::string& c, const std::string& d) override {
         trajCustom_[trajSet_ / 3][0] = a; trajCustom_[trajSet_ / 3][1] = b; trajCustom_[trajSet_ / 3][2] = c; trajCustom_[trajSet_ / 3][3] = d;
     }
+    void GetTrajectory(std::vector<float>& out) const override {
+        out.clear(); out.push_back((float)trajSet_);
+        for (const auto* lists : {trajDots_, trajPuffs_})
+            for (int i = 0; i < 6; i++) { out.push_back((float)lists[i].size()); for (const TrajectoryPoint& p : lists[i]) { out.push_back(p.x); out.push_back(p.y); } }
+    }
+    void SetTrajectory(const std::vector<float>& in) override {
+        size_t at = 0;
+        if (in.empty()) return;
+        trajSet_ = (int)in[at++] == 3 ? 3 : 0;
+        for (auto* lists : {trajDots_, trajPuffs_})
+            for (int i = 0; i < 6; i++) {
+                lists[i].clear();
+                if (at >= in.size()) return;
+                const size_t n = (size_t)in[at++];
+                for (size_t k = 0; k < n && at + 1 < in.size(); k++, at += 2) lists[i].push_back({in[at], in[at + 1]});
+            }
+    }
     void AddToTrajectory(float i, float x, float y) override { int n = (int)i + trajSet_; if (n >= 1 && n <= 6) trajDots_[n - 1].push_back({x, y}); }
     void AddPuffToTrajectory(float i, float x, float y) override { int n = (int)i + trajSet_; if (n >= 1 && n <= 6) trajPuffs_[n - 1].push_back({x, y}); }
 

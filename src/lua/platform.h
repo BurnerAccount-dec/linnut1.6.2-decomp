@@ -253,6 +253,9 @@ public:
     virtual void SetTheme(const std::string& theme) { (void)theme; }
     virtual void SetTrailSprite(bool special, const std::string& name) { (void)special; (void)name; }
     virtual void StartNewTrajectory() {}
+    // 3.7.1: the trail that is drawn (the dots and puffs of both sets, flat: set, then for the six dot lists and the six puff lists a count and that many x, y), for the save states
+    virtual void GetTrajectory(std::vector<float>& out) const { out.clear(); }
+    virtual void SetTrajectory(const std::vector<float>& in) { (void)in; }
     virtual void AddToTrajectory(float i, float x, float y) { (void)i; (void)x; (void)y; }
     virtual void AddPuffToTrajectory(float i, float x, float y) { (void)i; (void)x; (void)y; }
     // the iPad's setCustomTrajectorySprites(dot1, dot2, dot3, puff): the trajectory being recorded is drawn with these sprites

@@ -13,6 +13,7 @@
 #include "lua/platform.h"
 #include "lua/aes.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -254,10 +255,14 @@ bool HasWorld(lua_State* L) {
 }
 
 // `leaving`: the game mode has just left updateGame, the objects are still there
+bool g_explain = false;     // 3.7.1: a save that was asked for says on the console why it kept nothing
 bool Capture(lua_State* L, bool leaving = false) {
-    if (!CfgBool(L, "enabled", true) || g.suspended || !g.ready || !(leaving ? HasWorld(L) : IsRunning(L)) || g.curId.empty()) return false;
-    for (const std::string& n : CfgList(L, "skipWhen")) if (Truthy(L, n)) { Forget(L, g.curId); return false; }
-    for (const std::string& n : CfgList(L, "skipWhenPositive")) if (Positive(L, n)) { Forget(L, g.curId); return false; }
+    if (!CfgBool(L, "enabled", true) || g.suspended || !g.ready || !(leaving ? HasWorld(L) : IsRunning(L)) || g.curId.empty()) {
+        if (g_explain) std::fprintf(stderr, "save state: nothing kept (%s%s%s)\n", g.suspended ? "this level is in skipLevels or saving is off; " : "", g.ready ? "" : "the level was not set up yet; ", "the level is not running");
+        return false;
+    }
+    for (const std::string& n : CfgList(L, "skipWhen")) if (Truthy(L, n)) { if (g_explain) std::fprintf(stderr, "save state: nothing kept, %s is true (the level is finished)\n", n.c_str()); Forget(L, g.curId); return false; }
+    for (const std::string& n : CfgList(L, "skipWhenPositive")) if (Positive(L, n)) { if (g_explain) std::fprintf(stderr, "save state: nothing kept, %s is above 0 (the level is failed)\n", n.c_str()); Forget(L, g.curId); return false; }
     LoadFile(L);
     const int top = lua_gettop(L);
     lua_newtable(L);                              // the state
@@ -319,6 +324,15 @@ bool Capture(lua_State* L, bool leaving = false) {
         lua_pop(L, 1);
     }
     lua_setfield(L, st, "refs");
+    {   // 3.7.1: the trail that is drawn (kept by the engine, not by a script table)
+        std::vector<float> trail;
+        g.platform->GetTrajectory(trail);
+        if (trail.size() > 1) {
+            lua_newtable(L);
+            for (size_t i = 0; i < trail.size(); i++) { lua_pushnumber(L, trail[i]); lua_rawseti(L, -2, (int)i + 1); }
+            lua_setfield(L, st, "trail");
+        }
+    }
     GetG(L, "cameraFunction");
     if (lua_isfunction(L, -1)) {
         for (const std::string& n : CfgList(L, "cameras")) {
@@ -511,6 +525,14 @@ bool Apply(lua_State* L) {
         lua_pop(L, 1);
     }
     lua_pop(L, 1);
+    lua_getfield(L, st, "trail");
+    if (lua_istable(L, -1)) {
+        std::vector<float> trail;
+        const int n = (int)lua_objlen(L, -1);
+        for (int i = 1; i <= n; i++) { lua_rawgeti(L, -1, i); trail.push_back((float)Num(L, -1)); lua_pop(L, 1); }
+        g.platform->SetTrajectory(trail);
+    }
+    lua_pop(L, 1);
     lua_getfield(L, st, "camera");
     if (lua_isstring(L, -1)) { GetG(L, lua_tostring(L, -1)); PushEnv(L); lua_pushvalue(L, -2); lua_setfield(L, -2, "cameraFunction"); lua_pop(L, 2); }
     lua_pop(L, 1);
@@ -566,7 +588,7 @@ bool SaveNow(lua_State* L, bool leaving = false) {
 }
 
 // ---- Lua: saveStates.save(), apply(), forget([id]), clearAll(), has([id])
-int s_save(lua_State* L) { lua_pushboolean(L, SaveNow(L, true)); return 1; }      // asked for by a script: saved whenever the level's objects are there (the pause page too)
+int s_save(lua_State* L) { g_explain = true; const bool r = SaveNow(L, true); g_explain = false; if (r) std::fprintf(stderr, "save state of %s written\n", g.curId.c_str()); lua_pushboolean(L, r); return 1; }      // asked for by a script: saved whenever the level's objects are there (the pause page too)
 int s_apply(lua_State* L) { lua_pushboolean(L, Apply(L)); return 1; }
 int s_forget(lua_State* L) { Forget(L, lua_isstring(L, 1) ? lua_tostring(L, 1) : g.curId); return 0; }
 int s_has(lua_State* L) { LoadFile(L); lua_pushboolean(L, HasState(L, lua_isstring(L, 1) ? lua_tostring(L, 1) : g.curId)); return 1; }
@@ -592,13 +614,14 @@ void RegisterSaveStates(lua_State* L, Platform* platform) {
         "  file = 'savestates.lua',   -- in the save folder\n"
         "  autosave = 0,              -- seconds (real time) between writes while a level runs; 0: no automatic writes\n"
         "  saveOnLeave = false,       -- true: the state is also written when the level is left or the game is closed; false: only when saveStates.save() is called (the leave pop-up does)\n"
+        "  snapshotEvery = 0.05,      -- seconds (real time) between the copies kept in memory for a save made while the game is paused; the pause page changes variables, so the copy is what the level was just before\n"
         "  restartWindow = 2,         -- a level that is loaded again within this many seconds after it was left is a restart: its state is cleared\n"
         "  readyVariable = 'levelStartPosition',  -- the level is set up when this variable is there (a table: with x not 0)\n"
         "  globals = { 'currentBirdIndex', 'currentBirdName', 'birdToSlingshotBirdName', 'birdSpecialtyAvailable', 'birdFired', 'birdReady', 'fillInNextBird',\n"
         "    'birdSelected', 'showTapIcon', 'birdsShot', 'birdsCounter', 'score', 'nextBirdTimer', 'allowTrajectoryClearing',\n"
         "    'levelCompleteTimer' },\n"
         "                             -- (3.6) the camera (the screen table, the zoom, the camera function) is not kept: the game's own camera starts again, and a camera put back alone left the view beside the slingshot\n"
-        "  tables = { 'scoreTable', 'birdTrajectory' },\n"
+        "  tables = { 'scoreTable', 'birdTrajectory', 'otherBirds' },\n"
         "  objectGlobals = { 'flyingBird', 'selectedBird', 'cameraTargetObject' },\n"
         "  objectTables = { 'birds', 'otherBirds', 'levelGoals' },\n"
         "  cameras = {},                -- camera functions to keep: none by default (names of global functions)\n"
@@ -658,7 +681,12 @@ void SaveStatesFrame(lua_State* L, double realDt) {
         g.ready = true;
         if (done) std::fprintf(stderr, "save state of %s put back\n", g.curId.c_str());
     } else if (g.ready && running) {
-        if (g.clock - g.lastSnap >= 0.5) { g.lastSnap = g.clock; Snapshot(L); }
+        if (g.clock - g.lastSnap >= CfgNum(L, "snapshotEvery", 0.05)) {
+            g.lastSnap = g.clock;
+            const auto t0 = std::chrono::steady_clock::now();
+            Snapshot(L);
+            if (std::getenv("AB_SNAPTIME")) { static double sum = 0; static int n = 0; sum += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count(); if (++n % 200 == 0) std::fprintf(stderr, "snapshot: %.3f ms on average\n", sum / n); }
+        }
         const double every = CfgNum(L, "autosave", 5);
         if (every > 0 && g.clock - g.lastWrite >= every) { if (!SaveNow(L)) g.lastWrite = g.clock; }
     }

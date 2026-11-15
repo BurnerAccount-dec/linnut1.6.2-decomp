@@ -310,10 +310,11 @@ The settings are the global table `saveStates`; the engine makes it with these v
 | `file` | `"savestates.lua"` | The file in the save folder. Delete it to forget every level. |
 | `autosave` | `0` | Seconds (real time) between writes while a level runs; `0`: none. |
 | `saveOnLeave` | `false` | `true`: the state is also written when the level is left and when the game is closed. |
+| `snapshotEvery` | `0.05` | Seconds between the copies of the running level that are kept in memory. A level that is saved from the pause page is written from the latest copy, so a save made right after a bird was launched keeps the launch (it used to be every half second). |
 | `restartWindow` | `2` | A level that is loaded again within this many seconds after it was left is a restart, not a visit: its state is cleared and it starts from the beginning. |
 | `readyVariable` | `"levelStartPosition"` | The level counts as set up when this script variable exists and (for a table) has `x` not 0; `""`: at the first frame the level runs. |
 | `globals` | the bird queue (`currentBirdIndex`, `currentBirdName`, `birdFired`, `birdReady`, `birdsShot`, ...), `score` and the timers (not the camera, since 3.6: add `worldScale`, `zoomLevel` and the `screen` table to `tables` to keep it) | Script variables (numbers, strings, flags) that are saved. Add the names of your own. |
-| `tables` | `{"scoreTable", "birdTrajectory"}` | Global tables whose plain values (down to three levels) are saved and merged back. |
+| `tables` | `{"scoreTable", "birdTrajectory", "otherBirds"}` | Global tables whose plain values (down to three levels) are saved and merged back. |
 | `objectGlobals` | `{"flyingBird", "selectedBird", "cameraTargetObject"}` | Variables that hold one of the level's objects (saved by name). |
 | `objectTables` | `{"birds", "otherBirds", "levelGoals"}` | Tables keyed by object name that an object is taken out of when it is gone. |
 | `cameras` | none (since 3.6) | Names of the functions `cameraFunction` can be, so it can be put back. |
