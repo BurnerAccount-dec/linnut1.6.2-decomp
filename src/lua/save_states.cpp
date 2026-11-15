@@ -681,11 +681,14 @@ void SaveStatesFrame(lua_State* L, double realDt) {
         g.ready = true;
         if (done) std::fprintf(stderr, "save state of %s put back\n", g.curId.c_str());
     } else if (g.ready && running) {
-        if (g.clock - g.lastSnap >= CfgNum(L, "snapshotEvery", 0.05)) {
+        // the copy costs time on a big level, so the interval grows until it takes at most about 2 % of the run
+        static double s_cost = 0;
+        if (g.clock - g.lastSnap >= std::max(CfgNum(L, "snapshotEvery", 0.05), s_cost * 50)) {
             g.lastSnap = g.clock;
             const auto t0 = std::chrono::steady_clock::now();
             Snapshot(L);
-            if (std::getenv("AB_SNAPTIME")) { static double sum = 0; static int n = 0; sum += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count(); if (++n % 200 == 0) std::fprintf(stderr, "snapshot: %.3f ms on average\n", sum / n); }
+            const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+            s_cost = s_cost * 0.8 + (ms / 1000.0) * 0.2;
         }
         const double every = CfgNum(L, "autosave", 5);
         if (every > 0 && g.clock - g.lastWrite >= every) { if (!SaveNow(L)) g.lastWrite = g.clock; }

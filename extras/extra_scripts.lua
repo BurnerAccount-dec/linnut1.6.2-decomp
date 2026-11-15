@@ -97,6 +97,7 @@ end
 if _G.type(originalSetGameMode) == "function" then
 	setGameMode = function(mode, ...)
 		-- (3.6) no wipe in the level editor, nor on the way to it: a load that starts while the game mode is the editor's is not wiped
+		if mode == updateEditor then screenwipe.editorLoad = screenwipe.editor ~= false end
 		if mode == updateLoading or mode == updateLoadingEx then screenwipe.editorLoad = screenwipe.editor ~= false and currentGameMode == updateEditor
 		elseif mode == updateGame or mode == updateMenu then screenwipe.editorLoad = false end
 		if screenwipe.skip or screenwipe.editorLoad then return originalSetGameMode(mode, ...) end
@@ -117,7 +118,8 @@ loadLevel = function(...)
 		screenwipe.skip = false
 		return originalLoadLevel(...)
 	end
-	if screenwipe.editorLoad then return originalLoadLevel(...) end
+	-- (3.7.3.1) the editor is never wiped: the level pages of the editor set the editor's mode before the level is loaded, the play test and the way back to the editor load while startedFromEditor is set
+	if screenwipe.editorLoad or (screenwipe.editor ~= false and (currentGameMode == updateEditor or startedFromEditor == true)) then return originalLoadLevel(...) end
 	if screenwipe.timer ~= nil or screenwipe.waiting then
 		_G.res.releaseSpriteSheet(screenwipe.sprite)
 	end
