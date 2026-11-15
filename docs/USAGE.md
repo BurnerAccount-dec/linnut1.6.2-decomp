@@ -36,6 +36,7 @@ Instead of starting the engine from a shortcut or a copy next to the game, the e
 ### Options
 
 - `--scripts <folder>`, `--data <folder>`: where the scripts and data are.
+- `console = false` in `config.lua` (3.7): the command prompt window the engine opens beside the game is closed, so only the game window shows. The printed lines and the typed console commands are gone with it; `--prompt` keeps the window. The default is `true`.
 - `--config <file>`: window settings (title, size, fullscreen, cursor); by default the `config.lua` above `--data`.
 - `--size <width> <height>`: window size for `--screenshot` test renders.
 - `--userdata <folder>`: keep saves in this folder instead (`.` is the working folder). The default, `original`, uses `%APPDATA%\<publisher>\<product>` (from `config.lua`) and shares progress with the original game. The first overwrite of a file keeps a copy as `<file>.original-backup`.

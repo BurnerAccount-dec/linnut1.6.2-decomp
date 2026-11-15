@@ -280,6 +280,12 @@ bool Capture(lua_State* L, bool leaving = false) {
                     if (CallEnv(L, "getVelocity", name, {}, 3)) { vx = Num(L, -2); vy = Num(L, -1); lua_pop(L, 3); }
                     if (CallEnv(L, "getAngularVelocity", name, {}, 1)) { w = Num(L, -1); lua_pop(L, 1); }
                     lua_pushboolean(L, 1); lua_setfield(L, -2, "moves");
+                    // 3.7: the body type (the game keeps the birds that wait as static bodies and makes the next one dynamic): without it a restored bird stays where it is
+                    GetG(L, "getBodyType");
+                    if (lua_isfunction(L, -1)) {
+                        lua_pushstring(L, name.c_str());
+                        if (lua_pcall(L, 1, 1, 0) == 0 && lua_isstring(L, -1)) lua_setfield(L, -2, "bt"); else lua_pop(L, 1);
+                    } else lua_pop(L, 1);
                     lua_pushnumber(L, vx); lua_setfield(L, -2, "vx");
                     lua_pushnumber(L, vy); lua_setfield(L, -2, "vy");
                     lua_pushnumber(L, w); lua_setfield(L, -2, "w");
@@ -309,7 +315,7 @@ bool Capture(lua_State* L, bool leaving = false) {
     lua_newtable(L);                              // objects the variables point to
     for (const std::string& n : CfgList(L, "objectGlobals")) {
         GetG(L, n.c_str());
-        if (lua_istable(L, -1)) { lua_getfield(L, -1, "name"); if (lua_isstring(L, -1)) lua_setfield(L, -4, n.c_str()); else lua_pop(L, 1); }
+        if (lua_istable(L, -1)) { lua_getfield(L, -1, "name"); if (lua_isstring(L, -1)) lua_setfield(L, -3, n.c_str()); else lua_pop(L, 1); }
         lua_pop(L, 1);
     }
     lua_setfield(L, st, "refs");
@@ -435,6 +441,9 @@ bool Apply(lua_State* L) {
                 const double vx = Num(L, -4), vy = Num(L, -3), w = Num(L, -2);
                 const bool rest = lua_toboolean(L, -1) != 0;
                 lua_pop(L, 4);
+                lua_getfield(L, o, "bt");
+                if (lua_isstring(L, -1)) { GetG(L, "setBodyType"); if (lua_isfunction(L, -1)) { lua_pushstring(L, name.c_str()); lua_pushvalue(L, -3); if (lua_pcall(L, 2, 0, 0) != 0) lua_pop(L, 1); } else lua_pop(L, 1); }
+                lua_pop(L, 1);
                 CallEnv(L, "setPosition", name, {x, y}, 0);
                 CallEnv(L, "setRotation", name, {a}, 0);
                 CallEnv(L, "setVelocity", name, {vx, vy}, 0);
@@ -452,6 +461,14 @@ bool Apply(lua_State* L) {
     if (lua_istable(L, -1)) {
         PushEnv(L);
         for (const std::string& n : Keys(L, -2)) { lua_getfield(L, -2, n.c_str()); lua_setfield(L, -2, n.c_str()); }
+        // 3.7: a listed variable that was empty (nil) when the level was saved is not in the saved table; the freshly loaded level may have set it (the bird that is
+        // sent to the slingshot first), so it is emptied again
+        for (const std::string& n : CfgList(L, "globals")) {
+            lua_getfield(L, -2, n.c_str());
+            const bool saved = !lua_isnil(L, -1);
+            lua_pop(L, 1);
+            if (!saved) { lua_pushnil(L); lua_setfield(L, -2, n.c_str()); }
+        }
         lua_pop(L, 1);
     }
     lua_pop(L, 1);
@@ -561,10 +578,10 @@ void RegisterSaveStates(lua_State* L, Platform* platform) {
         "  restartWindow = 2,         -- a level that is loaded again within this many seconds after it was left is a restart: its state is cleared\n"
         "  readyVariable = 'levelStartPosition',  -- the level is set up when this variable is there (a table: with x not 0)\n"
         "  globals = { 'currentBirdIndex', 'currentBirdName', 'birdToSlingshotBirdName', 'birdSpecialtyAvailable', 'birdFired', 'birdReady', 'fillInNextBird',\n"
-        "    'birdSelected', 'showTapIcon', 'birdsShot', 'birdsCounter', 'score', 'nextBirdTimer',\n"
+        "    'birdSelected', 'showTapIcon', 'birdsShot', 'birdsCounter', 'score', 'nextBirdTimer', 'allowTrajectoryClearing',\n"
         "    'levelCompleteTimer' },\n"
         "                             -- (3.6) the camera (the screen table, the zoom, the camera function) is not kept: the game's own camera starts again, and a camera put back alone left the view beside the slingshot\n"
-        "  tables = { 'scoreTable' },\n"
+        "  tables = { 'scoreTable', 'birdTrajectory' },\n"
         "  objectGlobals = { 'flyingBird', 'selectedBird', 'cameraTargetObject' },\n"
         "  objectTables = { 'birds', 'otherBirds', 'levelGoals' },\n"
         "  cameras = {},                -- camera functions to keep: none by default (names of global functions)\n"

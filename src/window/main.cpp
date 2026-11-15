@@ -114,6 +114,7 @@ struct WindowConfig {
     std::string publisher = "Rovio";
     int width = 1280, height = 720;
     bool fullscreen = false, showCursor = true;
+    bool console = true;                            // 3.7: config.lua console = false closes the command prompt window the exe opens (Windows)
     std::string deviceModel = "windows";            // v2.5: config.lua deviceModel / isLiteVersion pick the asset folder in the scripts (for example "meego" + lite = 864x480_lite)
     bool isLiteVersion = false, isBetaVersion = false;
     std::string audioPath = "audio", localizationPath = "localization", levelPath = "levels";
@@ -140,6 +141,7 @@ static void ReadConfigLua(const std::string& path, WindowConfig& out) {
         lua_getglobal(L, "height"); if (lua_isnumber(L, -1)) out.height = (int)lua_tonumber(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "fullscreen"); if (lua_isboolean(L, -1)) out.fullscreen = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
         lua_getglobal(L, "showCursor"); if (lua_isboolean(L, -1)) out.showCursor = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
+        lua_getglobal(L, "console"); if (lua_isboolean(L, -1)) out.console = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
         lua_getglobal(L, "box2d");                  // 21, 22, "2.1.1", "2.2.0" ...
         if (lua_isstring(L, -1)) {
             std::string v = lua_tostring(L, -1);
@@ -481,6 +483,11 @@ static int GameMain(int argc, char** argv) {
         if (f) { std::fclose(f); configPath = beside; } else configPath = "config.lua";
     }
     ReadConfigLua(configPath, wc);
+#ifdef _WIN32
+    // 3.7: config.lua console = false: the command prompt window is closed (the game runs without it; the typed console commands and the printed lines are gone with it).
+    // It stays when the prompt was asked for (--prompt) or the exe was started from a prompt that is already open and its output is redirected.
+    if (!wc.console && !promptFirst && !shotFrames) FreeConsole();
+#endif
     if (shotFrames) { WindowConfig keep = wc; wc = WindowConfig(); if (testW > 0) { wc.width = testW; wc.height = testH; } wc.product = keep.product; wc.imagePath = keep.imagePath; wc.fontPath = keep.fontPath; wc.deviceModel = keep.deviceModel; wc.isLiteVersion = keep.isLiteVersion; wc.isBetaVersion = keep.isBetaVersion; wc.audioPath = keep.audioPath; wc.localizationPath = keep.localizationPath; wc.levelPath = keep.levelPath; wc.showCursor = keep.showCursor; wc.box2d = keep.box2d; }   // test runs use the default window
 
     BootConfig cfg;

@@ -313,7 +313,7 @@ The settings are the global table `saveStates`; the engine makes it with these v
 | `restartWindow` | `2` | A level that is loaded again within this many seconds after it was left is a restart, not a visit: its state is cleared and it starts from the beginning. |
 | `readyVariable` | `"levelStartPosition"` | The level counts as set up when this script variable exists and (for a table) has `x` not 0; `""`: at the first frame the level runs. |
 | `globals` | the bird queue (`currentBirdIndex`, `currentBirdName`, `birdFired`, `birdReady`, `birdsShot`, ...), `score` and the timers (not the camera, since 3.6: add `worldScale`, `zoomLevel` and the `screen` table to `tables` to keep it) | Script variables (numbers, strings, flags) that are saved. Add the names of your own. |
-| `tables` | `{"scoreTable"}` | Global tables whose plain values (down to three levels) are saved and merged back. |
+| `tables` | `{"scoreTable", "birdTrajectory"}` | Global tables whose plain values (down to three levels) are saved and merged back. |
 | `objectGlobals` | `{"flyingBird", "selectedBird", "cameraTargetObject"}` | Variables that hold one of the level's objects (saved by name). |
 | `objectTables` | `{"birds", "otherBirds", "levelGoals"}` | Tables keyed by object name that an object is taken out of when it is gone. |
 | `cameras` | none (since 3.6) | Names of the functions `cameraFunction` can be, so it can be put back. |
@@ -1379,6 +1379,10 @@ Every function and event of this chapter was run with a smoke script (it calls e
 Tell us about a game or call that misbehaves and it will be fixed.
 
 ---
+
+### `getBodyType(name)` (3.7)
+
+Returns `"static"`, `"dynamic"` or `"kinematic"` for an object (what `setBodyType` and `setObjectParameter(name, 2, 0 or 1)` set; the games keep birds that wait as static bodies), or `nil` for a name that is not in the world. Save states keep it, so a restored bird is as movable as it was.
 
 ### Level spawner (3.7)
 

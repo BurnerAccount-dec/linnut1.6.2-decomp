@@ -66,6 +66,7 @@ public:
     void SetAngularVelocity(float w) override { Wake("SetAngularVelocity"); b_->SetAngularVelocity(w); }
     void SetAwake(bool awake) override { if (awake && !b_->IsAwake() && std::getenv("AB_WAKEDBG")) std::fprintf(stderr, "WAKE SetAwake\n"); b_->SetAwake(awake); }
     void SetKinematic() override { b_->SetType(b2_kinematicBody); }
+    int Type() const override { return b_->GetType() == b2_staticBody ? 0 : b_->GetType() == b2_kinematicBody ? 2 : 1; }
     void SetStatic(bool isStatic) override { if (!isStatic && !b_->IsAwake() && std::getenv("AB_WAKEDBG")) std::fprintf(stderr, "WAKE SetStatic\n"); b_->SetType(isStatic ? b2_staticBody : b2_dynamicBody); }
     void SetTransform(float x, float y, float angle) override { b_->SetTransform(b2Vec2(x, y), angle); }
     void WorldPoint(float lx, float ly, float& wx, float& wy) const override {

@@ -2282,6 +2282,13 @@ int l_getIntersectingObjects(lua_State* L) {
 }
 // setBodyType(name, "static" | "dynamic" | "kinematic") (Friends 2.0.0: the Christmas slingshot and the Halloween pigs move objects that
 // forces do not push, then let them fall again)
+// getBodyType(name): "static", "dynamic" or "kinematic" (3.7; what setBodyType and setObjectParameter(name, 2, ...) set)
+int l_getBodyType(lua_State* L) {
+    float t = 1;
+    if (!P(L)->BodyCommand(S(L, 1), 95, 0, t)) { lua_pushnil(L); return 1; }
+    lua_pushstring(L, (int)t == 0 ? "static" : (int)t == 2 ? "kinematic" : "dynamic");
+    return 1;
+}
 int l_setBodyType(lua_State* L) {
     std::string t = lua_isstring(L, 2) ? lua_tostring(L, 2) : "dynamic";
     P(L)->SetObjectParameter(S(L, 1), 9000, t == "static" ? 0.0f : t == "kinematic" ? 2.0f : 1.0f);
@@ -3353,7 +3360,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"getGravityForceMultiplier", l_getGravityForceMultiplier}, {"setAngularDamping", l_setAngularDamping},
         {"setFixedRotation", l_setFixedRotation}, {"setActive", l_setActive}, {"multiplyVelocity", l_multiplyVelocity}, {"setAsSensor", l_setAsSensor}, {"setSensor", l_setAsSensor}, {"setFilterMask", l_setFilterMask}, {"setFilterCategory", l_setFilterCategory},
         {"getAngularVelocity", l_getAngularVelocity}, {"setSleeping", l_setSleeping},
-        {"getAngle", l_getAngle}, {"getWorldPoint", l_getWorldPoint}, {"setObjectParameter", l_setObjectParameter}, {"setBodyType", l_setBodyType}, {"setScale", l_setScale}, {"getScale", l_getScale}, {"setSpeedCap", l_setSpeedCap}, {"getSpeedCap", l_getSpeedCap}, {"clearSpeedCap", l_clearSpeedCap}, {"getTouchingObjects", l_getTouchingObjects}, {"rayCast", l_rayCast}, {"fileExists", l_fileExists},
+        {"getAngle", l_getAngle}, {"getWorldPoint", l_getWorldPoint}, {"setObjectParameter", l_setObjectParameter}, {"setBodyType", l_setBodyType}, {"getBodyType", l_getBodyType}, {"setScale", l_setScale}, {"getScale", l_getScale}, {"setSpeedCap", l_setSpeedCap}, {"getSpeedCap", l_getSpeedCap}, {"clearSpeedCap", l_clearSpeedCap}, {"getTouchingObjects", l_getTouchingObjects}, {"rayCast", l_rayCast}, {"fileExists", l_fileExists},
         {"setPhysicsSimulationScale", l_setPhysicsSimulationScale}, {"setPhysicsEnabled", l_setPhysicsEnabled}, {"setThemeOffsetY", l_setThemeOffsetY}, {"setStartingCameraValue", l_setStartingCameraValue},
         {"isPhysicsEnabled", l_isPhysicsEnabled}, {"setLevelLimits", l_setLevelLimits},
         {"setTopLeft", l_setTopLeft}, {"getCamera", l_getCamera}, {"getThemeLayers", l_getThemeLayers}, {"setThemeLayer", l_setThemeLayer}, {"setWorldScale", l_setWorldScale}, {"setMaxWorldScale", l_setMaxWorldScale}, {"resetMouseWheelScale", l_resetMouseWheelScale},
