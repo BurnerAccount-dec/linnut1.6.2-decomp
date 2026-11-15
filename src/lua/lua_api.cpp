@@ -1212,6 +1212,27 @@ int l_createSilhouette(lua_State* L) {
     if (n < 0) lua_pushnil(L); else lua_pushinteger(L, n);
     return 1;
 }
+// createPolygonSprite(newName, sourceSprite, {{x=, y=}, ...} [, outlineWidth [, darken [, fill]]]) -> pixels inside, or nil
+//   A copy of sourceSprite cut to a polygon, for the sprite of a polygon block that is not a box: the points are 0..1 over the sprite (what a block's
+//   `vertices` hold), any outline works, concave too. outlineWidth (pixels, default 0) darkens the edge by `darken` (default 0.55) so the cut has an edge. fill = true fills the holes of the source (the wood square is a frame) with its average colour.
+int l_createPolygonSprite(lua_State* L) {
+    std::vector<float> v;
+    if (lua_istable(L, 3)) {
+        int n = (int)lua_objlen(L, 3);
+        for (int i = 1; i <= n; i++) {
+            lua_rawgeti(L, 3, i);
+            if (lua_istable(L, -1)) {
+                lua_getfield(L, -1, "x"); lua_rawgeti(L, -2, 1); float x = lua_isnumber(L, -2) ? (float)lua_tonumber(L, -2) : (float)lua_tonumber(L, -1); lua_pop(L, 2);
+                lua_getfield(L, -1, "y"); lua_rawgeti(L, -2, 2); float y = lua_isnumber(L, -2) ? (float)lua_tonumber(L, -2) : (float)lua_tonumber(L, -1); lua_pop(L, 2);
+                v.push_back(x); v.push_back(y);
+            }
+            lua_pop(L, 1);
+        }
+    }
+    int n = P(L)->CreatePolygonSprite(S(L, 1), S(L, 2), v, lua_isnoneornil(L, 4) ? 0 : (int)N(L, 4), lua_isnoneornil(L, 5) ? 0.0f : N(L, 5), lua_toboolean(L, 6) != 0);
+    if (n < 0) lua_pushnil(L); else lua_pushinteger(L, n);
+    return 1;
+}
 int l_loadCanvasSprite(lua_State* L) { lua_pushboolean(L, P(L)->CanvasLoadSprite(S(L, 1), S(L, 2), (int)N(L, 3), (int)N(L, 4))); return 1; }
 
 // ---- physics
@@ -2049,11 +2070,41 @@ int l_getTouchingObjects(lua_State* L) {
     for (size_t i = 0; i < names.size(); i++) { lua_pushlstring(L, names[i].data(), names[i].size()); lua_rawseti(L, -2, (int)i + 1); }
     return 1;
 }
-// rayCast(x1, y1, x2, y2 [, all]) with Box2D's own ray cast. Without `all`: name, hitX, hitY, normalX, normalY, fraction of the nearest object (nil if none).
-// With all = true: a table of { name, x, y, nx, ny, fraction } for every object the segment crosses, nearest first.
+// rayCast(x1, y1, x2, y2 [, all [, shape]]) with Box2D's own ray cast. Without `all`: name, hitX, hitY, normalX, normalY, fraction, centreX, centreY of the nearest object (nil if none).
+// With all = true: a table of { name, x, y, nx, ny, fraction, cx, cy } for every object the segment crosses, nearest first.
+// `shape` (a table) turns the ray into a shape cast: the shape is swept along the segment (Box2D time of impact) and cx, cy are where its centre is when it touches.
+//   { radius = r }                    circle
+//   { sides = n, radius = r }         regular polygon (n 3..8; 8 = octagon), radius = centre to corner
+//   { w = w, h = h }                  box (full width / height)
+//   { points = {x1, y1, x2, y2, ...} } convex polygon around the centre (3..8 points)
+//   angle = a rotates the shape; skip = "name" leaves that object out (the caster)
 int l_rayCast(lua_State* L) {
     std::vector<Platform::RayCastHit> hits;
-    P(L)->RayCastObjects(N(L, 1), N(L, 2), N(L, 3), N(L, 4), hits);
+    Platform::CastShapeSpec spec;
+    std::string skip;
+    if (lua_istable(L, 6)) {
+        auto num = [&](const char* k, float d) { lua_getfield(L, 6, k); float v = lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : d; lua_pop(L, 1); return v; };
+        float r = num("radius", 0), sides = num("sides", 0), w = num("w", 0), h = num("h", 0);
+        spec.angle = num("angle", 0);
+        lua_getfield(L, 6, "skip"); if (lua_isstring(L, -1)) skip = lua_tostring(L, -1); lua_pop(L, 1);
+        lua_getfield(L, 6, "points");
+        if (lua_istable(L, -1)) {
+            int n = (int)lua_objlen(L, -1);
+            for (int i = 1; i <= n; i++) { lua_rawgeti(L, -1, i); spec.pts.push_back((float)lua_tonumber(L, -1)); lua_pop(L, 1); }
+            if (spec.pts.size() >= 6) spec.kind = 2;
+        }
+        lua_pop(L, 1);
+        if (spec.kind == 0 && sides >= 3 && r > 0) {
+            int n = sides > 128 ? 128 : (int)sides;
+            for (int i = 0; i < n; i++) { float a = 6.2831853f * i / n; spec.pts.push_back(r * std::cos(a)); spec.pts.push_back(r * std::sin(a)); }
+            spec.kind = 2;
+        } else if (spec.kind == 0 && w > 0 && h > 0) {
+            spec.pts = {-w / 2, -h / 2, w / 2, -h / 2, w / 2, h / 2, -w / 2, h / 2};
+            spec.kind = 2;
+        } else if (spec.kind == 0 && r > 0) { spec.kind = 1; spec.radius = r; }
+    }
+    if (spec.kind != 0) P(L)->ShapeCastObjects(N(L, 1), N(L, 2), N(L, 3), N(L, 4), spec, skip, hits);
+    else P(L)->RayCastObjects(N(L, 1), N(L, 2), N(L, 3), N(L, 4), hits);
     std::stable_sort(hits.begin(), hits.end(), [](const Platform::RayCastHit& a, const Platform::RayCastHit& b) { return a.fraction < b.fraction; });
     if (lua_toboolean(L, 5)) {
         lua_newtable(L);
@@ -2066,6 +2117,8 @@ int l_rayCast(lua_State* L) {
             lua_pushnumber(L, h.nx); lua_setfield(L, -2, "nx");
             lua_pushnumber(L, h.ny); lua_setfield(L, -2, "ny");
             lua_pushnumber(L, h.fraction); lua_setfield(L, -2, "fraction");
+            lua_pushnumber(L, spec.kind ? h.cx : h.px); lua_setfield(L, -2, "cx");
+            lua_pushnumber(L, spec.kind ? h.cy : h.py); lua_setfield(L, -2, "cy");
             lua_rawseti(L, -2, i++);
         }
         return 1;
@@ -2074,7 +2127,8 @@ int l_rayCast(lua_State* L) {
     const auto& h = hits[0];
     lua_pushlstring(L, h.name.data(), h.name.size());
     lua_pushnumber(L, h.px); lua_pushnumber(L, h.py); lua_pushnumber(L, h.nx); lua_pushnumber(L, h.ny); lua_pushnumber(L, h.fraction);
-    return 6;
+    lua_pushnumber(L, spec.kind ? h.cx : h.px); lua_pushnumber(L, spec.kind ? h.cy : h.py);
+    return 8;
 }
 // fileExists(path) -> bool: a file of the game folder (relative to where the game runs) or of the user data (saves), nothing is opened for reading by the game
 int l_fileExists(lua_State* L) {
@@ -2297,6 +2351,27 @@ int l_drawBoxNative(lua_State* L) {
 // getCurrentTime() -> {year, month, day, hour, min, sec}; getTimeDifference(a, b) -> {days, hours, minutes, seconds}
 // where a is the later time
 // v3.1: rewind([frames]) puts the physics objects back that many frames (1 when left out or nil); returns the frames gone back
+// getRewindDepth() -> frames that can be gone back; getRewindState(back) -> { name = {x, y, angle, vx, vy, w, awake} } for that many frames ago (nil when there is no such frame);
+// setRewindLimit(frames) -> how many frames are kept (default 600, 0 turns the history off)
+int l_getRewindDepth(lua_State* L) { lua_pushinteger(L, P(L)->RewindDepth()); return 1; }
+int l_setRewindLimit(lua_State* L) { P(L)->SetRewindLimit((int)N(L, 1)); return 0; }
+int l_getRewindState(lua_State* L) {
+    std::vector<Platform::RewindInfo> list;
+    if (!P(L)->RewindFrame((int)N(L, 1), list)) { lua_pushnil(L); return 1; }
+    lua_createtable(L, 0, (int)list.size());
+    for (const auto& r : list) {
+        lua_createtable(L, 0, 7);
+        lua_pushnumber(L, r.x); lua_setfield(L, -2, "x");
+        lua_pushnumber(L, r.y); lua_setfield(L, -2, "y");
+        lua_pushnumber(L, r.a); lua_setfield(L, -2, "angle");
+        lua_pushnumber(L, r.vx); lua_setfield(L, -2, "vx");
+        lua_pushnumber(L, r.vy); lua_setfield(L, -2, "vy");
+        lua_pushnumber(L, r.w); lua_setfield(L, -2, "w");
+        lua_pushboolean(L, r.awake); lua_setfield(L, -2, "awake");
+        lua_setfield(L, -2, r.name.c_str());
+    }
+    return 1;
+}
 int l_rewind(lua_State* L) { int n = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : 1; lua_pushinteger(L, P(L)->Rewind(n)); return 1; }
 
 int l_getCurrentTime(lua_State* L) {
@@ -2379,7 +2454,7 @@ int l_setBlendMode(lua_State* L) {
 int ShaderFrom(lua_State* L, int i) {
     if (lua_isnumber(L, i)) return (int)lua_tonumber(L, i);
     std::string s = lua_type(L, i) == LUA_TSTRING ? lua_tostring(L, i) : "";
-    if (s != "none" && !s.empty()) { const int custom = P(L)->ShaderByName(s); if (custom >= 6) return custom; }     // v3.3: a shader of that name (a file shaders/<name>.frag, or createShader)
+    if (s != "none" && !s.empty()) { const int custom = P(L)->ShaderByName(s); if (custom >= 6) return custom; }     // v3.4: a shader of that name (a file shaders/<name>.frag, or createShader)
     static const char* names[] = {"none", "grayscale", "sepia", "invert", "chromatic", "glow"};
     for (int k = 0; k < 6; k++) if (s == names[k]) return k;
     if (s == "greyscale" || s == "gray" || s == "grey") return 1;
@@ -2391,7 +2466,7 @@ int l_setShader(lua_State* L) {
     if (t.empty()) P(L)->SetShaderEffect(m); else P(L)->SetRenderOverride(t, 8, (float)m, 0, 0);
     return 0;
 }
-// v3.3: shaders written in GLSL (docs/SCRIPTING.md, "Shaders"):
+// v3.4: shaders written in GLSL (docs/SCRIPTING.md, "Shaders"):
 //   createShader(name, source) -> true | false, errors     compiles a fragment shader from text; setShader(name [, target]) then uses it
 //   setShaderParam(name, slot, x [, y, z, w])               the shader's vec4 uniform u_param<slot> (slot 0..3)
 //   getShaderError(name) -> "" when it compiled, else the compiler's messages
@@ -2434,7 +2509,7 @@ int l_setVisualRotation(lua_State* L) {
     else P(L)->SetRenderOverride(t, 9, N(L, 1), 0, 0);
     return 0;
 }
-// v3.3: the layout of a target (a game object, a sprite or sprite group, or "background" / "foreground" / "trajectory" / "particles"), in the pixels the target is drawn in:
+// v3.4: the layout of a target (a game object, a sprite or sprite group, or "background" / "foreground" / "trajectory" / "particles"), in the pixels the target is drawn in:
 //   setOffset(dx, dy, target)                 moves everything of the target by (dx, dy)
 //   setLayoutScale(sx [, sy] [, px, py], target)   scales it: about each sprite's own centre, or (with px, py) about that point shared by everything of the target
 //   setMirror(on, target)                     mirrors the sprites left to right
@@ -2992,7 +3067,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"requireFile", l_requireFile}, {"loadLuaFileToObject", l_loadLuaFileToObject}, {"loadLuaFile", l_loadLuaFileToObject},   // 2.0.0: the same without an object
         {"loadLevel", l_loadLevel}, {"loadLevelEditor", l_loadLevelEditor}, {"saveLevel", l_saveLevel}, {"saveLevelForReload", l_saveLevelForReload}, {"saveLuaFile", l_saveLuaFile}, {"checkForPersistentFile", l_checkForPersistentFile}, {"loadPersistentFileWrapper", l_loadPersistentFileWrapper},
         {"initializePainter", l_initializePainter}, {"clearCanvas", l_clearCanvas}, {"paintToCanvas", l_paintToCanvas}, {"drawCanvasWithMask", l_drawCanvasWithMask},
-        {"getDominantCanvasColors", l_getDominantCanvasColors}, {"createSpriteFromCanvas", l_createSpriteFromCanvas}, {"loadCanvasSprite", l_loadCanvasSprite}, {"createSilhouette", l_createSilhouette}, {"predictCollision", l_predictCollision}, {"setObjectGravity", l_setObjectGravity}, {"setObjectGravityScale", l_setObjectGravityScale}, {"resetObjectGravity", l_resetObjectGravity}, {"getObjectGravity", l_getObjectGravity}, {"setupCompoObject", l_setupCompoObject},
+        {"getDominantCanvasColors", l_getDominantCanvasColors}, {"createSpriteFromCanvas", l_createSpriteFromCanvas}, {"loadCanvasSprite", l_loadCanvasSprite}, {"createSilhouette", l_createSilhouette}, {"createPolygonSprite", l_createPolygonSprite}, {"predictCollision", l_predictCollision}, {"setObjectGravity", l_setObjectGravity}, {"setObjectGravityScale", l_setObjectGravityScale}, {"resetObjectGravity", l_resetObjectGravity}, {"getObjectGravity", l_getObjectGravity}, {"setupCompoObject", l_setupCompoObject},
         {"createDirectory", l_createDirectory}, {"checkDirectory", l_checkDirectory}, {"checkForLuaFile", l_checkForLuaFile},
         {"createBox", l_createBox}, {"createCircle", l_createCircle}, {"createPolygon", l_createPolygon}, {"createLineShape", l_createLineShape},
         {"clearVertices", l_clearVertices}, {"addVertex", l_addVertex},
@@ -3047,7 +3122,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"removeThemeSprite", l_removeThemeSprite},
         {"updateThemeSprite", l_updateThemeSprite},
         {"drawLayer", l_nothing},
-        {"drawRectLines", l_drawRectLines}, {"drawBoxNative", l_drawBoxNative}, {"getCurrentTime", l_getCurrentTime}, {"rewind", l_rewind},
+        {"drawRectLines", l_drawRectLines}, {"drawBoxNative", l_drawBoxNative}, {"getCurrentTime", l_getCurrentTime}, {"rewind", l_rewind}, {"getRewindDepth", l_getRewindDepth}, {"getRewindState", l_getRewindState}, {"setRewindLimit", l_setRewindLimit},
         {"getTimeDifference", l_getTimeDifference}, {"setAlpha", l_setAlpha}, {"setBlendMode", l_setBlendMode}, {"setShader", l_setShader}, {"setTintChannel", l_setTintChannel}, {"setVisualRotation", l_setVisualRotation}, {"setOffset", l_setOffset}, {"getOffset", l_getOffset}, {"setLayoutScale", l_setLayoutScale}, {"setMirror", l_setMirror}, {"createShader", l_createShader}, {"setShaderParam", l_setShaderParam}, {"getShaderError", l_getShaderError}, {"listShaders", l_listShaders}, {"resetRenderOverrides", l_resetRenderOverrides}, {"setTint", l_setTint}, {"getTint", l_getTint}, {"resetTint", l_resetTint}, {"setSkew", l_setSkew}, {"setBend", l_setBend}, {"setRenderZ", l_setRenderZ}, {"setBlur", l_setBlur}, {"setPixelate", l_setPixelate}, {"resetBlur", l_resetBlur}, {"resetPixelate", l_resetPixelate}, {"drawUITextNative", l_drawUITextNative},
         {"getTImeDifferenceInSeconds", l_getTimeDifferenceInSeconds}, {"getTimeDifferenceInSeconds", l_getTimeDifferenceInSeconds}, {"checkRegistrationResult", l_false}, {"getClipboardText", l_emptyString},
         {"canOpenProgram", l_false}, {"openProgram", l_nothing}, {"hasLocationCapability", l_false}, {"drawLevelParticlesNative", l_drawLevelParticlesNative},

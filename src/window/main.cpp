@@ -38,6 +38,7 @@ extern "C" {
 #include "engine/input.h"
 #include "engine/png_decoder.h"
 #include "window/gl_backend.h"
+#include "window/exe_replace.h"
 
 // ---- the console: lines typed into the command prompt window are read on a thread and run on the main thread, once per frame
 static SDL_mutex* g_consoleLock = nullptr;
@@ -256,6 +257,8 @@ static int GameMain(int argc, char** argv) {
     std::vector<std::pair<int, int>> wheels;     // test: --wheel <frame> <notches>
     std::vector<std::pair<int, std::string>> keys;   // test: --key <frame> <name>, a key press of 3 frames
     std::vector<std::string> extraLua;            // v3.0: .lua files named on the command line (dragged onto the exe with an .apk / .ipa / the game): loaded like extra_scripts.lua
+    std::vector<std::string> exeTargets;           // v3.4: .exe files named on the command line (dragged onto the engine): the engine takes their place (--restore-exe: gives them back)
+    bool restoreExe = false, askNo = false;
     std::vector<std::string> startupCmds;          // v2.2: --cmd "<command>" (repeatable), --startup <file> (one command per line), --prompt (type them before the game starts)
     std::vector<std::pair<int, std::string>> timedCmds;
     struct TimedResize { int frame, w, h; };
@@ -281,6 +284,10 @@ static int GameMain(int argc, char** argv) {
             else std::printf("--startup: cannot open %s\n", argv[i]);
         }
         else if (!std::strcmp(argv[i], "--prompt")) promptFirst = true;
+        else if (!std::strcmp(argv[i], "--replace-exe") && i + 1 < argc) exeTargets.push_back(argv[++i]);
+        else if (!std::strcmp(argv[i], "--restore-exe") && i + 1 < argc) { exeTargets.push_back(argv[++i]); restoreExe = true; }
+        else if (!std::strcmp(argv[i], "--yes")) askNo = true;           // no questions asked (for --replace-exe / --restore-exe)
+        else if (argv[i][0] != '-' && std::strlen(argv[i]) > 4 && !strcasecmp_ab(argv[i] + std::strlen(argv[i]) - 4, ".exe")) exeTargets.push_back(argv[i]);
         else if (argv[i][0] != '-' && std::strlen(argv[i]) > 4 && !strcasecmp_ab(argv[i] + std::strlen(argv[i]) - 4, ".lua")) extraLua.push_back(argv[i]);
         else if (argv[i][0] != '-' && std::strlen(argv[i]) > 4 && (!strcasecmp_ab(argv[i] + std::strlen(argv[i]) - 4, ".apk") || !strcasecmp_ab(argv[i] + std::strlen(argv[i]) - 4, ".ipa"))) apkPath = argv[i];
         else if (!std::strcmp(argv[i], "--fps") && i + 1 < argc) startFps = std::atoi(argv[++i]);
@@ -289,6 +296,14 @@ static int GameMain(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--screenshot") && i + 2 < argc) { shot = argv[++i]; shotFrames = std::atoi(argv[++i]); }
         else if (!std::strcmp(argv[i], "--resize-at") && i + 3 < argc) { resizes.push_back({std::atoi(argv[i + 1]), std::atoi(argv[i + 2]), std::atoi(argv[i + 3])}); i += 3; }
         else if (!std::strcmp(argv[i], "--size") && i + 2 < argc) { testW = std::atoi(argv[++i]); testH = std::atoi(argv[++i]); }
+    }
+    if (!exeTargets.empty()) {       // v3.4: an .exe was dragged onto the engine (or named with --replace-exe / --restore-exe): the engine takes its place, or gives it back, and ends
+        int worst = 0;
+        for (const std::string& target : exeTargets) {
+            int r = restoreExe ? ab::RestoreExe(target, !askNo) : ab::ReplaceOrRestoreExe(target, !askNo);
+            if (r == 2) worst = 2; else if (r == 1 && worst == 0) worst = 1;
+        }
+        return worst == 2 ? 2 : 0;
     }
     if (promptFirst && !shotFrames) {        // v2.2: the commands are typed before the game starts; they run on the first frame, when the scripts are loaded
         std::printf("Startup prompt: type console commands (help lists them); an empty line or start runs the game.\n");

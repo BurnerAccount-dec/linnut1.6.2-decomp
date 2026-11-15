@@ -32,6 +32,8 @@ extern const unsigned char kStellaNativesLua[];
 extern const unsigned char kAchievementsPageLua[];
 extern const unsigned int kAchievementsPageLuaSize;
 extern const unsigned int kStellaNativesLuaSize;
+extern const unsigned char kMotionLua[];
+extern const unsigned int kMotionLuaSize;
 extern const unsigned char kSpaceEditorLua[];
 extern const unsigned int kSpaceEditorLuaSize;
 
@@ -198,6 +200,14 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
         "    end\n"
         "end\n"
         "env.engine = engine\n");
+    {   // v3.4: the motion library (tweens, teleport, any movement, the rewind history as a movement), src/lua/motion.lua
+        lua_getfield(L_, LUA_REGISTRYINDEX, "ab.env");
+        if (luaL_loadbuffer(L_, (const char*)kMotionLua, kMotionLuaSize, "motion.lua") == 0) {
+            lua_pushvalue(L_, -2);
+            if (lua_pcall(L_, 1, 0, 0) != 0) { std::fprintf(stderr, "motion: %s\n", lua_tostring(L_, -1)); lua_pop(L_, 1); }
+        } else { std::fprintf(stderr, "motion: %s\n", lua_tostring(L_, -1)); lua_pop(L_, 1); }
+        lua_pop(L_, 1);
+    }
     GetEnvField("native");
     if (!lua_istable(L_, -1)) { lua_pop(L_, 1); NewGlobalTable("native"); GetEnvField("native"); }
     // Seasons 4.x reads it as `_G.native.xxx` (createStartUpAssets), `_G` being the real global table, so the same table is put there too

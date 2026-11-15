@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <vector>
 
 #include "lua/aes.h"
 extern "C" {
@@ -16,7 +17,11 @@ extern "C" {
 #include <direct.h>
 #else
 #include <dirent.h>
+#include <signal.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <ctime>
 #endif
 
 namespace ab {
@@ -79,19 +84,62 @@ void MakePath(const std::string& dir) {          // every folder of the path
 
 bool FileExists(const std::string& p) { std::ifstream f(p.c_str(), std::ios::binary); return (bool)f; }
 
-// `java -jar unluac.jar in > out`: true if the output is not empty
+// Runs a shell command and waits at most `seconds` for it (0: as long as it takes). Returns the exit code, or -1 when the time ran out and the command (and
+// everything it started) was killed. v3.4: unluac 1.2.2 never finishes on some scripts (Seasons 4.1.0's scripts/menu_flow.lua is one: it loops for ever on a
+// loop it cannot rebuild), and the run waited for it for ever, so the second decompiler (unluac-alt, which does finish) never got its turn.
+int RunWithTimeout(const std::string& cmd, int seconds) {
+#ifdef _WIN32
+    HANDLE job = CreateJobObjectA(nullptr, nullptr);
+    if (job) {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION info = {};
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;       // closing the job kills java too, not only cmd.exe
+        SetInformationJobObject(job, JobObjectExtendedLimitInformation, &info, sizeof(info));
+    }
+    std::string line = "cmd.exe /c " + cmd;
+    std::vector<char> buf(line.begin(), line.end());
+    buf.push_back(0);
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+    if (!CreateProcessA(nullptr, buf.data(), nullptr, nullptr, FALSE, CREATE_SUSPENDED | CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) { if (job) CloseHandle(job); return std::system(cmd.c_str()); }
+    if (job) AssignProcessToJobObject(job, pi.hProcess);
+    ResumeThread(pi.hThread);
+    DWORD wait = WaitForSingleObject(pi.hProcess, seconds > 0 ? (DWORD)seconds * 1000 : INFINITE);
+    int rc = -1;
+    if (wait == WAIT_OBJECT_0) { DWORD code = 1; GetExitCodeProcess(pi.hProcess, &code); rc = (int)code; }
+    else if (job) TerminateJobObject(job, 1); else TerminateProcess(pi.hProcess, 1);
+    CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
+    if (job) CloseHandle(job);
+    return rc;
+#else
+    pid_t pid = fork();
+    if (pid < 0) return std::system(cmd.c_str());
+    if (pid == 0) { setsid(); execl("/bin/sh", "sh", "-c", cmd.c_str(), (char*)nullptr); _exit(127); }
+    const time_t start = time(nullptr);
+    for (;;) {
+        int status = 0;
+        pid_t r = waitpid(pid, &status, WNOHANG);
+        if (r == pid) return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+        if (r < 0) return 1;
+        if (seconds > 0 && time(nullptr) - start >= seconds) { kill(-pid, SIGKILL); waitpid(pid, &status, 0); return -1; }
+        usleep(50000);
+    }
+#endif
+}
+
+// `java -jar unluac.jar in > out`: true if the output is not empty. AB_DEC_TIMEOUT=<seconds> changes how long one try may take (default 90, 0: no limit);
+// a script that a decompiler cannot finish in that time is given up on and the next decompiler tries it.
 bool Decompile(const std::string& jar, const std::string& in, const std::string& out, const std::string& err) {
     // -Xmx / -Xss: the big scripts need more memory and a deeper stack than Java gives by default
     std::string cmd = "java -Xmx1g -Xss64m -XX:+ExitOnOutOfMemoryError -jar \"" + jar + "\" \"" + in + "\" > \"" + out + "\" 2> \"" + err + "\"";
-#ifndef _WIN32
-    // AB_DEC_TIMEOUT=<seconds>: a script that unluac cannot finish is given up instead of holding the whole run (it is listed as not decompiled)
-    if (const char* t = std::getenv("AB_DEC_TIMEOUT")) cmd = std::string("timeout ") + t + " " + cmd;
-#endif
 #ifdef _WIN32
     cmd = "\"" + cmd + "\"";                                    // cmd.exe /c strips the outer pair of quotes
     for (char& c : cmd) if (c == '/') c = '\\';
 #endif
-    int rc = std::system(cmd.c_str());
+    int seconds = 90;
+    if (const char* t = std::getenv("AB_DEC_TIMEOUT")) seconds = std::atoi(t);
+    const int rc = RunWithTimeout(cmd, seconds);
+    if (rc == -1) { std::printf("dec: %s gave up after %d s on %s\n", jar.c_str(), seconds, in.c_str()); std::fflush(stdout); }
     std::ifstream o(out.c_str(), std::ios::binary | std::ios::ate);
     return rc == 0 && o && o.tellg() > 0;
 }
@@ -147,7 +195,12 @@ std::vector<std::string> ListFolder(const std::string& dir) { return List(Slashe
 
 std::vector<std::string> FindUnluac(const std::string& exeFolder) {
     std::vector<std::string> candidates, found;
-    if (const char* e = std::getenv("AB_UNLUAC")) candidates.push_back(e);
+    if (const char* e = std::getenv("AB_UNLUAC")) {
+        candidates.push_back(e);
+        std::string dir = e;                                             // v3.4: the alternative decompiler beside it is the next one to try
+        const size_t cut = dir.find_last_of("/\\");
+        candidates.push_back((cut == std::string::npos ? std::string() : dir.substr(0, cut + 1)) + "unluac-alt.jar");
+    }
     for (const char* name : {"tools/unluac.jar", "unluac.jar", "tools/unluac-alt.jar", "unluac-alt.jar"}) { candidates.push_back(exeFolder + name); candidates.push_back(name); }
     for (const std::string& c : candidates) {
         if (!FileExists(c)) continue;

@@ -492,6 +492,7 @@ void GamePlatform::FileDropped(const std::string& path) {
 }
 
 void GamePlatform::RecordRewind() {
+    if (rewindLimit_ <= 0) { rewind_.clear(); return; }
     std::vector<RewindBody> snap;
     for (const auto& o : Physics().Objects()) {
         if (!o || !o->pbody) continue;
@@ -499,7 +500,15 @@ void GamePlatform::RecordRewind() {
         snap.push_back(RewindBody{o->name, b.PosX(), b.PosY(), b.Angle(), b.VelX(), b.VelY(), b.AngularVelocity(), b.IsAwake()});
     }
     rewind_.push_back(std::move(snap));
-    while (rewind_.size() > 600) rewind_.pop_front();
+    while ((int)rewind_.size() > rewindLimit_ + 1) rewind_.pop_front();
+}
+
+// v3.4: the state of every body `back` frames ago (0 = the newest snapshot, the frame being shown), for scripts that move things along the history themselves
+bool GamePlatform::RewindFrame(int back, std::vector<RewindInfo>& out) {
+    out.clear();
+    if (back < 0 || back >= (int)rewind_.size()) return false;
+    for (const RewindBody& r : rewind_[rewind_.size() - 1 - back]) out.push_back(RewindInfo{r.name, r.x, r.y, r.a, r.vx, r.vy, r.w, r.awake});
+    return true;
 }
 
 // rewind(frames): back that many frames (1 when left out); objects made since then stay where they are, destroyed ones do not come back.
@@ -1494,7 +1503,7 @@ GamePlatform::QueuedQuad GamePlatform::MakeQuad(int tex, float alpha, float r, f
     QueuedQuad q = {};
     q.tex = tex; q.mask = -1; q.alpha = alpha; q.r = r; q.g = g; q.b = b; q.blend = state_.blend;
     if (state_.effect >= 1 && state_.effect <= 3 && tex >= 0) q.tex = VariantTexture(tex, state_.effect);
-    if (state_.effect >= 6) q.prog = state_.effect - 6 + 1;      // v3.3: a shader of the user's
+    if (state_.effect >= 6) q.prog = state_.effect - 6 + 1;      // v3.4: a shader of the user's
     if (drawingCursor_) q.kind = 0;
     else if (drawingNative_) { q.kind = 1; q.key = nativeKey_; }
     else if (state_.z != 0) { q.kind = 2; q.key = state_.z; }
@@ -1552,7 +1561,7 @@ void GamePlatform::FlushZ() {
     int program = -1;
     for (const QueuedQuad& c : q) {
         backend_->SetBlend(c.blend);
-        const int want = (c.mask < 0 && c.prog > 0) ? ShaderProgram(c.prog - 1) : -1;     // v3.3
+        const int want = (c.mask < 0 && c.prog > 0) ? ShaderProgram(c.prog - 1) : -1;     // v3.4
         if (want != program || want >= 0) { backend_->SetProgram(want, want >= 0 ? ShaderParams(c.prog - 1) : nullptr); program = want; }
         if (c.mask >= 0) { backend_->SetTileTint(c.r, c.g, c.b); backend_->DrawMaskedQuad(c.tex, c.mask, c.xy, c.tuv, c.uv, c.alpha); }
         else backend_->DrawQuad(c.tex, c.xy, c.uv, c.r, c.g, c.b, c.alpha);
@@ -1861,7 +1870,7 @@ void GamePlatform::ApplyOverride(const RenderOverride& o) {
     if (o.rot) state_.angle += o.rotV;
     if (o.mirror) state_.flipX = !state_.flipX;
 }
-// v3.3: the layout of a target: offset (dx, dy in the pixels the sprite is drawn in) and scale (about the sprite's own centre, or about a point
+// v3.4: the layout of a target: offset (dx, dy in the pixels the sprite is drawn in) and scale (about the sprite's own centre, or about a point
 // shared by everything of the target, so that a group such as the trajectory dots or a row of background layers moves and grows as one). The
 // anchors are resolved first so that the sprite is described by its top left corner and size alone.
 void GamePlatform::ApplyLayouts(const Sprite& sp, float& x, float& y, int& vAnchor, int& hAnchor, bool& sized, float& width, float& height) {
@@ -3597,7 +3606,27 @@ bool GamePlatform::AimSimulate(const std::string& bird, float vx, float vy, int 
     std::vector<std::pair<float, float>> pts;
     float mass = o->pbody->Mass();
     if (mass <= 0) return false;
-    if (!Physics().SimulateFlight(bird, vx / mass, vy / mass, points, 1, 1.0f / 30.0f, pts, start, force) || pts.empty()) return false;   // vx, vy are the impulse: the real launch is applyImpulse, and the world steps 1/30 s with 10 + 10 iterations
+    // v3.4: the global aimGravityZones, a list of {x =, y =, r =, gx =, gy =}: round areas that give a bird its own gravity (a script's sensor zone); the arc bends inside them like the real flight does
+    std::vector<float> zones;
+    if (scripts_) {
+        lua_State* L = scripts_->State();
+        int top = lua_gettop(L);
+        lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+        lua_getfield(L, -1, "aimGravityZones");
+        if (lua_istable(L, -1)) {
+            for (int i = 1; i <= 16; i++) {
+                lua_rawgeti(L, -1, i);
+                if (!lua_istable(L, -1)) { lua_pop(L, 1); break; }
+                float z[5] = {0, 0, 0, 0, 0};
+                GetNumber(L, lua_gettop(L), "x", z[0]); GetNumber(L, lua_gettop(L), "y", z[1]); GetNumber(L, lua_gettop(L), "r", z[2]);
+                GetNumber(L, lua_gettop(L), "gx", z[3]); GetNumber(L, lua_gettop(L), "gy", z[4]);
+                zones.insert(zones.end(), z, z + 5);
+                lua_pop(L, 1);
+            }
+        }
+        lua_settop(L, top);
+    }
+    if (!Physics().SimulateFlight(bird, vx / mass, vy / mass, points, 1, 1.0f / 30.0f, pts, start, force, zones.empty() ? nullptr : zones.data(), (int)(zones.size() / 5)) || pts.empty()) return false;   // vx, vy are the impulse: the real launch is applyImpulse, and the world steps 1/30 s with 10 + 10 iterations
     aimPts_.clear();
     aimPts_.push_back(start ? TrajectoryPoint{start[0], start[1]} : TrajectoryPoint{o->pbody->PosX(), o->pbody->PosY()});
     for (auto& p : pts) aimPts_.push_back({p.first, p.second});
@@ -4315,7 +4344,7 @@ void GamePlatform::ConsoleCommand(const std::string& raw) {
         else if (n >= 1) { Physics().SetMaxTranslation(a); std::printf("console: max translation %g\n", a); }
         else std::printf("console: usage: maxtranslation <t>\n");
     } else if (cmd == "shader" && ShaderConsole(arg)) {
-        // v3.3: shader list / new / export / reload / apply / param (shaders.cpp)
+        // v3.4: shader list / new / export / reload / apply / param (shaders.cpp)
     } else if (cmd == "scale" || cmd == "speedcap" || cmd == "blend" || cmd == "shader") {
         std::istringstream ss(arg);
         std::string name, w1, w2;
@@ -4751,6 +4780,83 @@ int GamePlatform::CreateSilhouette(const std::string& name, const std::string& s
             uint8_t* px = &out.rgba[((size_t)y * w + x) * 4];
             const float pa = (al / 255.0f) * ca;      // the sprite sheets are premultiplied by their alpha: a see-through colour stored plain would draw brighter (additive looking)
             px[0] = (uint8_t)std::lround(cr * pa); px[1] = (uint8_t)std::lround(cg * pa); px[2] = (uint8_t)std::lround(cb * pa); px[3] = (uint8_t)std::lround(255.0f * pa);
+        }
+    TextureInfo info; info.handle = backend_->CreateTexture(out); info.width = w; info.height = h;
+    textures_["canvas:/" + name] = info;
+    AddRuntimeSprite(sprites_, name, w, h, sp->pivotX, sp->pivotY);
+    return count;
+}
+
+// A copy of a sprite cut to a polygon: pixels outside it become clear (with 4 x 4 samples per pixel for a soft edge), pixels inside keep the source colour.
+// The vertices are 0..1 over the sprite (the same numbers a block's `vertices` hold), so the result fits the physics shape of a polygon block. With an outline
+// width the pixels that close to the edge are darkened by `darken` (0..1, 0.55 when left out), which gives the cut shape an edge instead of a flat cut.
+int GamePlatform::CreatePolygonSprite(const std::string& name, const std::string& source, const std::vector<float>& verts, int outline, float darken, bool fill) {
+    if (!backend_ || verts.size() < 6) return -1;
+    const SpriteSheet* sheet = nullptr;
+    const Sprite* sp = sprites_.Find(source, &sheet);
+    if (!sp || !sheet) return -1;
+    Image whole;
+    std::string error;
+    if (!LoadPngFile(sheet->directory + "/" + sheet->image, whole, &error)) { Print("createPolygonSprite: " + error); return -1; }
+    const int w = sp->w, h = sp->h;
+    if (w <= 0 || h <= 0) return -1;
+    std::vector<float> px, py;
+    for (size_t i = 0; i + 1 < verts.size(); i += 2) { px.push_back(verts[i] * w); py.push_back(verts[i + 1] * h); }
+    const size_t n = px.size();
+    auto inside = [&](float x, float y) {           // even-odd rule
+        bool in = false;
+        for (size_t i = 0, j = n - 1; i < n; j = i++)
+            if (((py[i] > y) != (py[j] > y)) && (x < (px[j] - px[i]) * (y - py[i]) / (py[j] - py[i]) + px[i])) in = !in;
+        return in;
+    };
+    auto edgeDistance = [&](float x, float y) {
+        float best = 1e9f;
+        for (size_t i = 0, j = n - 1; i < n; j = i++) {
+            float ex = px[i] - px[j], ey = py[i] - py[j], l2 = ex * ex + ey * ey;
+            float t = l2 > 0 ? std::max(0.0f, std::min(1.0f, ((x - px[j]) * ex + (y - py[j]) * ey) / l2)) : 0.0f;
+            float dx = x - (px[j] + t * ex), dy = y - (py[j] + t * ey);
+            best = std::min(best, std::sqrt(dx * dx + dy * dy));
+        }
+        return best;
+    };
+    const float dk = darken > 0 ? std::min(1.0f, darken) : 0.55f;
+    // fill: a source with holes (the wood square is a frame) gets them filled with its own average colour, so the cut shape is solid
+    float avg[3] = {0, 0, 0};
+    if (fill) {
+        long cnt = 0, sum[3] = {0, 0, 0};
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+            int sx = sp->x + x, sy = sp->y + y;
+            if (sx >= whole.width || sy >= whole.height) continue;
+            const uint8_t* c = &whole.rgba[((size_t)sy * whole.width + sx) * 4];
+            if (c[3] < 250) continue;
+            sum[0] += c[0]; sum[1] += c[1]; sum[2] += c[2]; cnt++;
+        }
+        if (cnt > 0) for (int k = 0; k < 3; k++) avg[k] = (float)sum[k] / cnt;
+    }
+    Image out;
+    out.width = w; out.height = h;
+    out.rgba.assign((size_t)w * h * 4, 0);
+    int count = 0;
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++) {
+            int sx = sp->x + x, sy = sp->y + y;
+            if (sx >= whole.width || sy >= whole.height) continue;
+            const uint8_t* src = &whole.rgba[((size_t)sy * whole.width + sx) * 4];
+            if (src[3] == 0 && !fill) continue;
+            int hits = 0;
+            for (int j = 0; j < 4; j++) for (int i = 0; i < 4; i++) if (inside(x + (i + 0.5f) / 4, y + (j + 0.5f) / 4)) hits++;
+            if (hits == 0) continue;
+            float cover = hits / 16.0f, shade = 1.0f;
+            if (outline > 0) { float d = edgeDistance(x + 0.5f, y + 0.5f); if (d < outline) shade = dk + (1.0f - dk) * (d / outline); }
+            uint8_t* o = &out.rgba[((size_t)y * w + x) * 4];
+            float c0 = src[0], c1 = src[1], c2 = src[2], ca = src[3];
+            if (fill && src[3] < 250) {            // a hole or a soft edge: the average colour fills in what the source leaves clear
+                float k = 1.0f - src[3] / 255.0f;
+                c0 += avg[0] * k; c1 += avg[1] * k; c2 += avg[2] * k; ca = 255.0f;
+            }
+            o[0] = (uint8_t)std::lround(std::min(255.0f, c0) * cover * shade); o[1] = (uint8_t)std::lround(std::min(255.0f, c1) * cover * shade); o[2] = (uint8_t)std::lround(std::min(255.0f, c2) * cover * shade);
+            o[3] = (uint8_t)std::lround(ca * cover);      // the sheets are premultiplied: the colour is scaled by the coverage as well
+            count++;
         }
     TextureInfo info; info.handle = backend_->CreateTexture(out); info.width = w; info.height = h;
     textures_["canvas:/" + name] = info;

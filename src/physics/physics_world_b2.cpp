@@ -9,6 +9,7 @@
 #include <map>
 
 #include "physics/physics_world.h"
+#include "physics/polygon_decompose.h"
 
 #ifdef AB_BOX2D_V22
 #define AB_B2_NAMESPACE box2d_v22
@@ -271,7 +272,7 @@ public:
     }
     // The aiming aid's arc (extension of the retail trail, which is the bird's free flight): the bird alone in a world with the same gravity, launched with
     // the given velocity and stepped like the real world (1/30 s, 10 + 10 iterations, the speed caps after every step). No blocks, no ground.
-    bool SimulateFlight(const std::string& bird, float vx, float vy, int steps, int every, float h, std::vector<std::pair<float, float>>& out, const float* start = nullptr, const float* force = nullptr) override {   // force: a push applied before every step, like a script's applyForce each frame (the Boomerang Bird's lift)
+    bool SimulateFlight(const std::string& bird, float vx, float vy, int steps, int every, float h, std::vector<std::pair<float, float>>& out, const float* start = nullptr, const float* force = nullptr, const float* zones = nullptr, int zoneCount = 0) override {   // zones: 5 numbers each (x, y, radius, gx, gy), round areas where the bird has its own gravity (v3.4); force: a push applied before every step, like a script's applyForce each frame (the Boomerang Bird's lift)
         PhysObject* o = Find(bird);
         if (!o || !o->pbody) return false;
         b2Body* src = BodyOf(o);
@@ -286,8 +287,21 @@ public:
         }
         { b2MassData md; src->GetMassData(&md); bb->SetMassData(&md); }      // v3.1: the copy weighs what the real bird weighs (a pushed bird, like the Boomerang, flew with the wrong mass)
         bb->SetLinearVelocity(b2Vec2(vx, vy));
+        const float bodyR = o->pbody->ShapeRadius();
+        const b2Vec2 worldG = world_.GetGravity();
         for (int i = 0; i < steps; i++) {
             if (force) bb->ApplyForce(b2Vec2(force[0], force[1]), bb->GetWorldCenter());
+            // v3.4: inside a gravity area the bird accelerates by the area's gravity instead of the world's (what setObjectGravity does in the real world, as a script's sensor zone uses it)
+            for (int z = 0; z < zoneCount; z++) {
+                const float* a = zones + z * 5;
+                b2Vec2 p0 = bb->GetPosition();
+                float dx = p0.x - a[0], dy = p0.y - a[1], reach = a[2] + bodyR;
+                if (dx * dx + dy * dy < reach * reach) {
+                    float m = bb->GetMass();
+                    bb->ApplyForce(b2Vec2(m * (a[3] - worldG.x), m * (a[4] - worldG.y)), bb->GetWorldCenter());
+                    break;
+                }
+            }
             scratch.Step(h, 10, 10);
             scratch.ClearForces();      // forces are not cleared by the step here (as in the exe): the frame loop clears them, so the copy does too
             if (o->capVx > 0 || o->capVy > 0 || o->capSpeed > 0) {
@@ -316,6 +330,78 @@ public:
         } cb;
         cb.hits = &out;
         world_.RayCast(&cb, b2Vec2(x1, y1), b2Vec2(x2, y2));
+    }
+    void ShapeCastAll(float x1, float y1, float x2, float y2, const CastShape& cs, const std::string& skip, std::vector<RayHit>& out) const override {
+        if (cs.kind == 0) { RayCastAll(x1, y1, x2, y2, out); return; }
+        // the swept shape: a circle, or convex pieces of any number of points (a concave outline is split; the distance proxy has no vertex limit)
+        b2CircleShape circle;
+        std::vector<std::vector<b2Vec2>> pieces;
+        std::vector<b2DistanceProxy> proxies;
+        float ext = cs.radius;
+        if (cs.kind == 1) {
+            circle.m_p.SetZero(); circle.m_radius = cs.radius;
+            b2DistanceProxy px;
+#ifdef AB_BOX2D_V22
+            px.Set(&circle, 0);
+#else
+            px.Set(&circle);
+#endif
+            proxies.push_back(px);
+        } else {
+            float c = std::cos(cs.angle), s = std::sin(cs.angle);
+            std::vector<polydecomp::Pt> pp;
+            for (size_t i = 0; i + 1 < cs.pts.size(); i += 2) pp.push_back({cs.pts[i] * c - cs.pts[i + 1] * s, cs.pts[i] * s + cs.pts[i + 1] * c});
+            std::vector<std::vector<polydecomp::Pt>> parts;
+            polydecomp::Decompose(pp, 256, parts);
+            for (const auto& part : parts) {
+                std::vector<b2Vec2> v;
+                for (const polydecomp::Pt& q : part) { v.push_back(b2Vec2(q.x, q.y)); ext = std::max(ext, std::sqrt(q.x * q.x + q.y * q.y)); }
+                if (v.size() >= 3) pieces.push_back(v);
+            }
+            if (pieces.empty()) return;
+            for (const auto& v : pieces) { b2DistanceProxy px; px.m_vertices = v.data(); px.m_count = (int)v.size(); px.m_radius = 0.0f; proxies.push_back(px); }
+        }
+        ext += 0.1f;
+        b2AABB box; box.lowerBound.Set(std::min(x1, x2) - ext, std::min(y1, y2) - ext); box.upperBound.Set(std::max(x1, x2) + ext, std::max(y1, y2) + ext);
+        struct Q : b2QueryCallback { std::vector<b2Fixture*> f; bool ReportFixture(b2Fixture* x) override { f.push_back(x); return true; } } q;
+        world_.QueryAABB(&q, box);
+        float dx = x2 - x1, dy = y2 - y1, len = std::sqrt(dx * dx + dy * dy);
+        for (b2Fixture* f : q.f) {
+            PhysObject* o = static_cast<PhysObject*>(f->GetUserData());
+            if (f->IsSensor() || !o || (!skip.empty() && o->name == skip)) continue;
+            b2Body* body = f->GetBody();
+            b2DistanceProxy proxyB;
+#ifdef AB_BOX2D_V22
+            proxyB.Set(f->GetShape(), 0);
+#else
+            proxyB.Set(f->GetShape());
+#endif
+            // every convex piece of the swept shape against this fixture: the earliest touch counts
+            float bestT = 2.0f; size_t best = 0;
+            for (size_t k = 0; k < proxies.size(); k++) {
+                b2TOIInput in; in.proxyA = proxies[k]; in.proxyB = proxyB; in.tMax = 1.0f;
+                in.sweepA.localCenter.SetZero(); in.sweepA.c0.Set(x1, y1); in.sweepA.c.Set(x2, y2); in.sweepA.a0 = in.sweepA.a = 0;
+                in.sweepB.localCenter = body->GetLocalCenter(); in.sweepB.c0 = in.sweepB.c = body->GetWorldCenter(); in.sweepB.a0 = in.sweepB.a = body->GetAngle();
+                b2TOIOutput out2; b2TimeOfImpact(&out2, &in);
+                // the bundled 2.1 solver (exe-matched) reports only t and leaves the state unknown: t < 1 is a hit there
+                bool hit = out2.state == b2TOIOutput::e_touching || out2.state == b2TOIOutput::e_overlapped || (out2.state == b2TOIOutput::e_unknown && out2.t < 1.0f);
+                if (!hit) continue;
+                float t = out2.state == b2TOIOutput::e_overlapped ? 0.0f : out2.t;
+                if (t < bestT) { bestT = t; best = k; }
+            }
+            if (bestT > 1.0f) continue;
+            float t = bestT;
+            float cxp = x1 + dx * t, cyp = y1 + dy * t;
+            b2Transform xa; xa.Set(b2Vec2(cxp, cyp), 0);
+            b2DistanceInput di; di.proxyA = proxies[best]; di.proxyB = proxyB; di.transformA = xa; di.transformB = body->GetTransform(); di.useRadii = true;
+            b2SimplexCache cache; cache.count = 0; b2DistanceOutput dout; b2Distance(&dout, &cache, &di);
+            RayHit h; h.obj = o; h.fraction = t; h.cx = cxp; h.cy = cyp;
+            b2Vec2 n(dx, dy);
+            if (dout.distance > 1e-5f) { n = dout.pointA - dout.pointB; n.Normalize(); h.px = dout.pointB.x; h.py = dout.pointB.y; }
+            else { if (len > 1e-6f) n = b2Vec2(-dx / len, -dy / len); h.px = cxp; h.py = cyp; }
+            h.nx = n.x; h.ny = n.y;
+            out.push_back(h);
+        }
     }
     void GetGravity(float& x, float& y) const override { b2Vec2 g = world_.GetGravity(); x = g.x; y = g.y; }
 
@@ -372,11 +458,15 @@ public:
             } else if (cs.kind == 1 && cs.verts.size() >= 6) {
                 float ca = std::cos(cs.angle), sa = std::sin(cs.angle);
                 std::vector<b2Vec2> pts;
-                for (size_t i = 0; i + 1 < cs.verts.size() && pts.size() < 8; i += 2)
+                for (size_t i = 0; i + 1 < cs.verts.size(); i += 2)
                     pts.push_back(b2Vec2(cs.x + ca * cs.verts[i] - sa * cs.verts[i + 1], cs.y + sa * cs.verts[i] + ca * cs.verts[i + 1]));
-                b2PolygonShape poly;
-                poly.Set(pts.data(), (int)pts.size());
-                MakeFixture(body, o, poly, d);
+                std::vector<polydecomp::Pt> pp;
+                for (const b2Vec2& v : pts) pp.push_back({v.x, v.y});
+                if (pts.size() <= 8 && (polydecomp::IsConvex(pp) || polydecomp::IsConvex(std::vector<polydecomp::Pt>(pp.rbegin(), pp.rend())))) {
+                    b2PolygonShape poly;
+                    poly.Set(pts.data(), (int)pts.size());
+                    MakeFixture(body, o, poly, d);
+                } else AddConcaveFixtures(body, o, pts, d);      // concave, or more points than Box2D takes in one shape
             } else {
                 b2PolygonShape box;
                 float hh = cs.kind == 2 ? 0.05f : cs.h * 0.5f;
@@ -412,7 +502,16 @@ public:
         for (size_t i = 0; i < pts.size(); i++) { const b2Vec2& p = pts[i]; const b2Vec2& q = pts[(i + 1) % pts.size()]; area2 += p.x * q.y - q.x * p.y; }
         if (area2 < 0) std::reverse(pts.begin(), pts.end());
         if (pts.size() >= 3 && std::fabs(area2) < 2e-5f) pts.resize(2);    // no area: made as the small box below
-        if (pts.size() >= 3 && (int)pts.size() <= b2_maxPolygonVertices) {
+        bool concave = false;
+        if (pts.size() >= 3) {
+            std::vector<polydecomp::Pt> pp;
+            for (const b2Vec2& v : pts) pp.push_back({v.x, v.y});
+            concave = !polydecomp::IsConvex(pp);
+        }
+        if (concave) {
+            // a concave outline (a star, a crescent, an L): convex pieces of at most b2_maxPolygonVertices points, one fixture each; they share the body, so it moves as one
+            AddConcaveFixtures(BodyOf(o), o, pts, d);
+        } else if (pts.size() >= 3 && (int)pts.size() <= b2_maxPolygonVertices) {
             b2PolygonShape shape;
             shape.Set(pts.data(), (int)pts.size());
             MakeFixture(BodyOf(o), o, shape, d);
@@ -650,6 +749,21 @@ private:
         return o;
     }
 
+    // fixtures for a concave (or very large) outline: convex pieces of at most b2_maxPolygonVertices points
+    static void AddConcaveFixtures(b2Body* body, PhysObject* o, const std::vector<b2Vec2>& pts, const BodyDef& d) {
+        std::vector<polydecomp::Pt> pp;
+        for (const b2Vec2& v : pts) pp.push_back({v.x, v.y});
+        std::vector<std::vector<polydecomp::Pt>> pieces;
+        polydecomp::Decompose(pp, (size_t)b2_maxPolygonVertices, pieces);
+        for (const auto& pc : pieces) {
+            std::vector<b2Vec2> v;
+            for (const polydecomp::Pt& q : pc) v.push_back(b2Vec2(q.x, q.y));
+            if (v.size() < 3) continue;
+            b2PolygonShape shape;
+            shape.Set(v.data(), (int)v.size());
+            MakeFixture(body, o, shape, d);
+        }
+    }
     static void MakeFixture(b2Body* body, PhysObject* o, const b2Shape& shape, const BodyDef& d) {
         b2FixtureDef fd;
         fd.shape = &shape;

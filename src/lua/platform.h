@@ -113,8 +113,11 @@ public:
     virtual bool SetOwnGravityScale(const std::string& n, float scale) { (void)n; (void)scale; return false; }
     virtual bool ResetOwnGravity(const std::string& n) { (void)n; return false; }
     // Space getRayCastedObjects: the objects a segment crosses (0x46f3f0), with the hit point, the surface normal and the fraction of the segment
-    struct RayCastHit { std::string name; float px = 0, py = 0, nx = 0, ny = 0, fraction = 0; };
+    struct RayCastHit { std::string name; float px = 0, py = 0, nx = 0, ny = 0, fraction = 0, cx = 0, cy = 0; };
     virtual void RayCastObjects(float x1, float y1, float x2, float y2, std::vector<RayCastHit>& out) { (void)x1; (void)y1; (void)x2; (void)y2; (void)out; }
+    // shape: kind 0 = ray, 1 = circle (radius), 2 = convex polygon (pts x,y pairs around the centre, rotated by angle); skip = body left out
+    struct CastShapeSpec { int kind = 0; float radius = 0, angle = 0; std::vector<float> pts; };
+    virtual void ShapeCastObjects(float x1, float y1, float x2, float y2, const CastShapeSpec& shape, const std::string& skip, std::vector<RayCastHit>& out) { (void)shape; (void)skip; RayCastObjects(x1, y1, x2, y2, out); }
     virtual bool GetOwnGravity(const std::string& n, int& mode, float& gx, float& gy, float& scale) { (void)n; mode = 0; gx = gy = 0; scale = 1; return false; }
     virtual void ApplyImpulse(const std::string& n, float ix, float iy, float px, float py) { (void)n; (void)ix; (void)iy; (void)px; (void)py; }
     virtual void ApplyForce(const std::string& n, float fx, float fy, float px, float py) { (void)n; (void)fx; (void)fy; (void)px; (void)py; }
@@ -211,7 +214,7 @@ public:
     // v2.4: SetBlendMode / SetShader on the render state itself (setRenderState's arguments 20 and 21)
     virtual void SetBlendMode(int mode) { (void)mode; }
     virtual void SetShaderEffect(int effect) { (void)effect; }
-    // v3.3: shaders written in GLSL. ShaderByName: the effect number to use with setShader for a shader of that name (a file shaders/<name>.frag or one made by
+    // v3.4: shaders written in GLSL. ShaderByName: the effect number to use with setShader for a shader of that name (a file shaders/<name>.frag or one made by
     // createShader), -1 if there is none; CreateShaderFromSource compiles one from text (error: the compiler's messages)
     virtual int ShaderByName(const std::string& name) { (void)name; return -1; }
     virtual bool CreateShaderFromSource(const std::string& name, const std::string& source, std::string& error) { (void)name; (void)source; error = "no shaders here"; return false; }
@@ -321,6 +324,8 @@ public:
     virtual bool CanvasMakeSprite(const std::string& name, int width, int height, int pivotX, int pivotY, bool save, const std::string& file) { (void)name; (void)width; (void)height; (void)pivotX; (void)pivotY; (void)save; (void)file; return false; }
     // createSilhouette(newName, sourceSprite, r, g, b, a, outlineWidth): a new sprite with the shape of the source filled with one colour (outlineWidth > 0: only that many pixels along the edge)
     virtual int CreateSilhouette(const std::string& name, const std::string& source, float r, float g, float b, float a, int outline) { (void)name; (void)source; (void)r; (void)g; (void)b; (void)a; (void)outline; return -1; }
+    // createPolygonSprite: a copy of `source` cut to a polygon (vertices x,y in 0..1 over the sprite, any outline, concave too); outline > 0 darkens that many pixels along the edge. Returns the pixels inside, -1 if the sprite is unknown
+    virtual int CreatePolygonSprite(const std::string& name, const std::string& source, const std::vector<float>& verts, int outline, float darken, bool fill = false) { (void)fill; (void)name; (void)source; (void)verts; (void)outline; (void)darken; return -1; }
     virtual bool CanvasLoadSprite(const std::string& name, const std::string& file, int pivotX, int pivotY) { (void)name; (void)file; (void)pivotX; (void)pivotY; return false; }
     virtual void ResGetSpriteBounds(const std::string& sheet, const std::string& sprite, float& w, float& h) { (void)sheet; (void)sprite; w = h = 0; }
     virtual void ResGetSpritePivot(const std::string& sheet, const std::string& sprite, float& px, float& py) { (void)sheet; (void)sprite; px = py = 0; }
@@ -349,6 +354,11 @@ public:
     virtual void ResPauseAudio(bool paused, int track) { (void)paused; (void)track; }
     virtual bool ResIsAudioPaused(int track) { (void)track; return false; }
     virtual void ResSetMasterVolume(float v) { (void)v; }
+    // v3.4: the history behind rewind. RewindDepth() is how many frames can be gone back, RewindFrame(back, out) copies the state of every body that many frames ago (0 = the newest), SetRewindLimit sets how many frames are kept
+    struct RewindInfo { std::string name; float x, y, a, vx, vy, w; bool awake; };
+    virtual int RewindDepth() { return 0; }
+    virtual bool RewindFrame(int back, std::vector<RewindInfo>& out) { (void)back; (void)out; return false; }
+    virtual void SetRewindLimit(int frames) { (void)frames; }
     virtual int Rewind(int frames) { (void)frames; return 0; }   // v3.1: rewind(frames): the physics objects go back that many frames (positions, angles, speeds)
     virtual float ResGetMasterVolume() { return 1; }
     virtual void ResSetAudioClipVolume(const std::string& n, float v) { (void)n; (void)v; }

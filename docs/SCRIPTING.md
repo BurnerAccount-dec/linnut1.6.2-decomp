@@ -143,7 +143,7 @@ Every one of these is native, so it works in every game and version the engine r
 | `setScale(name, sx [, sy])`, `getScale(name)` | The scale the object's picture is drawn with: the same value `setObjectParameter(name, 5, v)` sets, without going through it. Leave `sy` out for a uniform scale. `getScale` returns `sx, sy` (nil if there is no such object). It scales the picture only; `resizeCircle` changes the shape (the Time Travel puffer bird calls both). |
 | `setSpeedCap(name, maxSpeed [, maxVx, maxVy])`, `getSpeedCap(name)`, `clearSpeedCap(name)` | A limit for one object only. `maxSpeed` (units per second) **replaces** the global `setMaxTranslation` for that body, inside Box2D's solver: a capped object can go faster than the world's limit (if `maxSpeed` is higher) or be held lower (if it is lower), while every other object keeps the world's limit. `maxVx` / `maxVy` (optional, 0 or nil = none) clamp each axis after every step. `clearSpeedCap` gives the body back to the world's limit. |
 | `getTouchingObjects(name)` | A table of the names of every object the body touches this very step (it walks the body's contact list; sensors and disabled contacts included). |
-| `rayCast(x1, y1, x2, y2 [, all])` | Box2D's own ray cast. Without `all`: `name, hitX, hitY, normalX, normalY, fraction` of the nearest object (nil if none). With `all = true`: a table of `{name, x, y, nx, ny, fraction}` for every object the ray passes through, nearest first (lasers through stacked glass, piercing shots). `getRayCastedObjects` is still there. |
+| `rayCast(x1, y1, x2, y2 [, all [, shape]])` | Box2D's own ray cast. Without `all`: `name, hitX, hitY, normalX, normalY, fraction, centreX, centreY` of the nearest object (nil if none). With `all = true`: a table of `{name, x, y, nx, ny, fraction, cx, cy}` for every object the segment crosses, nearest first. **`shape` (3.4) turns the ray into a shape cast**: the shape is swept along the segment (Box2D's time of impact, against every non-sensor fixture in the swept area) and `cx, cy` is where its centre is when it first touches (for a plain ray they equal the hit point); `fraction` 0 means it already overlaps. `shape` is a table: `{radius = r}` a circle; `{sides = n, radius = r}` a regular polygon of 3 to 128 sides (8 = an octagon, radius = centre to corner); `{w = w, h = h}` a box; `{points = {x1, y1, x2, y2, ...}}` any polygon around the centre, convex or concave, with as many points as you like (a concave one is split into convex pieces and the earliest touch counts); `angle = a` rotates it; `skip = "name"` leaves one object out (the caster). Physics units. |
 | `fileExists(path)` | true if the file exists in the game folder or in the saves folder; nothing is loaded. |
 | `res.setString(group, key, text)` | Sets one text of a text group and makes the group if it is new, so a script can inject wholly new text that `res.getString` and `drawString` then show. The console has the same: `text <group> <key> <text>` and `texts [group]`. |
 
@@ -168,7 +168,7 @@ Already there, nothing new needed:
 
 `resetRenderOverrides(target)` forgets everything set for a target. Examples: `setTint(1, 0.3, 0.3, "background")`, `setBlendMode("add", "pig_3")`, `setShader("grayscale", "foreground")`, `setBlur(4, "TRAIL_WHITE_1")`.
 
-#### Layout of a target (3.3)
+#### Layout of a target (3.4)
 
 The same targets also have a layout, set with their own functions (a target is required):
 
@@ -180,7 +180,7 @@ The same targets also have a layout, set with their own functions (a target is r
 Examples: `setOffset(0, 120, "background")`, `setLayoutScale(1.6, 1.6, 640, 360, "foreground")`, `setOffset(-60, -40, "trajectory")`. Anchors are resolved first, so offset and scale act on the sprite's top left corner and size; `engine.drawSprite`'s `dx`, `dy`, `sx`, `sy` and a target's layout add up.
 
 * `setBlendMode(mode [, target])`: `"normal"`, `"add"`, `"multiply"`, `"screen"` (or 0 to 3). `setRenderState` takes it as its 20th value.
-* `setShader(name [, target])`: `"none"`, `"grayscale"`, `"sepia"`, `"invert"`, `"chromatic"` (colour fringes), `"glow"`, or the name of a shader of your own (3.3, see "Shaders" below). `setRenderState` takes it as its 21st value.
+* `setShader(name [, target])`: `"none"`, `"grayscale"`, `"sepia"`, `"invert"`, `"chromatic"` (colour fringes), `"glow"`, or the name of a shader of your own (3.4, see "Shaders" below). `setRenderState` takes it as its 21st value.
 * `setTintChannel("r" | "g" | "b" | "a", value [, target])`: one channel of the tint (or the alpha) and nothing else; above 1 brightens.
 * All of them also work on the tiled "texture" blocks (the ground and static blocks): tint, blur, bend, pixelation, blend mode and the presets apply to the tile texture seen through the block's shape.
 * `res.getSpritePixel(sprite, x, y)` returns `r, g, b, a` (0 to 255) of the pixel x right and y down from the sprite's top left corner (nil if outside); for collision masks, colour lookups and the like.
@@ -248,6 +248,14 @@ Example, in a script that has the table above:
 
     local name = createObject(blockTable, "BLOCK_LIGHT_1", nil, x, y)
     setColliderType(name, my_types.ice_ghost)
+
+### `createPolygonSprite(newName, sourceSprite, points [, outlineWidth [, darken [, fill]]])` (3.4)
+
+A copy of `sourceSprite` cut to a polygon, for the sprite of a block that is not a box. `points` is `{ {x = 0.5, y = 0}, {x = 1, y = 1}, ... }`, 0 to 1 over the sprite (the numbers a block's `vertices` hold), any outline, concave too; the edge is anti-aliased. `outlineWidth` (pixels, default 0) darkens the edge by `darken` (default 0.55) so the cut has an edge; `fill = true` fills the holes of the source (the wood square is a frame) with its average colour. Returns the number of pixels inside, or nil when the sprite is unknown. Use the new name anywhere a sprite name goes.
+
+### Shape blocks (extra_scripts.lua, 3.4)
+
+`extras/extra_scripts.lua` (section 5, table `shapeBlocks`) adds three blocks to the wood group: `WoodBlock13` a five-pointed star (concave), `WoodBlock14` a wedge, `WoodBlock15` a chevron (concave). They are put into `blockTable.blocks` (a block of type `"polygon"` with `vertices` from 0 to 1), the wood group's `lastIndex` is raised so the level editor's W / Q keys reach them, and the sprites (and the four damage stages) are cut from the wood square with `createPolygonSprite`. A level that names them loads them; from a script, `createObject` makes one. Add your own by putting another entry in `shapeBlocks.blocks`: a name like `WoodBlock16` and a list of points.
 
 ### Polygon skin
 
@@ -367,6 +375,48 @@ Puts every physics object back `frames` frames (1 when left out or nil): positio
 if keyPressed["R"] then rewind(30) end
 ```
 
+### The history and the `motion` library (3.4)
+
+`rewind(frames)` jumps. Three natives give a script the history itself, and the `motion` library (`src/lua/motion.lua`, loaded into every game before its scripts, so it works everywhere) uses them to turn the rewind, and any other movement, into something you shape yourself.
+
+| function | what |
+|---|---|
+| `getRewindDepth()` | how many frames `rewind` can go back now |
+| `getRewindState(back)` | a table `name -> {x, y, angle, vx, vy, w, awake}` for every physics object `back` frames ago (0 = now); `nil` when there is no such frame |
+| `setRewindLimit(frames)` | how many frames are kept (default 600; a longer history costs memory, 0 turns it off) |
+
+**Moving an object: `motion.to(names, props)`.** `names` is an object name, a table of names, or a function `function(name, obj) return true/false end` that picks them. `props`:
+
+| prop | meaning |
+|---|---|
+| `x`, `y`, `angle` | where it ends (physics units, radians); `dx`, `dy`, `dangle` instead: how far it goes from where it is |
+| `from = {x=, y=, angle=}` | where it starts (default: where it is) |
+| `time`, `delay` | seconds (default 1 and 0) |
+| `ease`, `easeX`, `easeY`, `easeAngle` | the tweening function, see below; the last three override `ease` for one axis |
+| `points = {{x, y [, angle]}, ...}` | follow a smooth (Catmull-Rom) line through these points |
+| `path = function(p, obj) return x, y [, angle] end` | **any movement**: `p` is the eased progress (0 to 1, more or less with an elastic or back easing), `obj` is `objects.world[name]`; circles, sine waves, orbits around another object, anything |
+| `loop`, `yoyo` | `true` or a number of repeats; `yoyo` makes every second run go backwards |
+| `release` | what happens to the speed at the end: `"stop"` (default), `"keep"` (the speed it had before), `"throw"` (the speed it was moving with at the end, so a tween can throw an object) or `{vx, vy}` |
+| `realTime` | count real seconds, so slow motion does not slow the movement |
+| `onUpdate(p, name)`, `onDone(name)` | every frame; at the end (not when the move was stopped) |
+
+While a job runs the object's speed is set to 0 every frame, so physics does not fight the move; other objects still collide with it. A new job on an object replaces its old one. `motion.drive(names, function(t, dt, obj) return x, y, angle end [, opts])` calls your function every frame (return `false` to end), for movement that is not a function of time: homing, following the mouse, steering. `motion.teleport(name, x, y [, angle [, keepSpeed]])` is the instant move. `motion.stop(nameOrJob [, release])`, `motion.stopAll()`, `motion.isMoving(name)` end and ask. Jobs end when a level loads.
+
+**Easing functions.** `ease` is a name from `motion.easing`, a function `function(t) return progress end` (t from 0 to 1), a table `{x1, y1, x2, y2}` (a CSS `cubic-bezier`), or nothing (linear). Names: `linear` and, for each of `Quad`, `Cubic`, `Quart`, `Quint`, `Sine`, `Expo`, `Circ`, `Back`, `Elastic`, `Bounce`, the three forms `in...`, `out...`, `inOut...` (`outBounce`, `inOutBack`, `inQuad`). More makers: `motion.easing.steps(n)`, `motion.easing.bezier(x1, y1, x2, y2)`, `motion.easing.spring(stiffness, damping)`. Your own: `motion.easing.wobble = function(t) return t + math.sin(t * 20) * 0.05 end`, then `ease = "wobble"`.
+
+**The rewind as a movement: `motion.rewind(frames [, opts])`.** The objects go back along the recorded history over `opts.time` seconds (0.5), and the easing decides how fast the history goes by: `"inOutQuad"` is a soft rewind, `"outBounce"` bounces against the old state, a function that goes 0 to 1 and back to 0.5 plays the history there and back. `opts.names` limits it to some objects (same forms as above, or use `motion.rewindObject(name, frames, opts)`), `opts.from` and `opts.to` choose the history frames it runs between (0 = now; a `to` smaller than `from` plays the history **forward** again), `opts.release` is `"keep"` by default (the speed the object had in the history frame it ends on), `opts.delay`, `opts.onDone`, `opts.realTime`. It returns the job, or `nil` when there is no history. The part of the history that is used is copied when it starts, so the frames recorded during the movement do not change it.
+
+```lua
+-- R: everything goes back one second and bounces; T: only the selected bird goes back, soft
+if keyPressed["R"] then motion.rewind(60, {time = 1, ease = "outBounce"}) end
+if keyPressed["T"] then motion.rewindObject(selectedBird.name, 60, {time = 0.6, ease = "inOutCubic"}) end
+-- a block that floats up and down forever, and a pig that is thrown along a tween
+motion.to("WoodBlock6_1", {dy = -3, time = 2, ease = "inOutSine", yoyo = true, loop = true})
+motion.to("SmallPiglette_7", {x = 20, y = -10, time = 0.4, ease = "outQuad", release = "throw"})
+-- a block that circles another object
+motion.drive("WoodBlock2_1", function(t) local c = objects.world.ground return c.x + math.cos(t) * 6, c.y - 8 + math.sin(t) * 6 end)
+```
+
 ### `onFileDropped(path)` and the `fileDropped` event
 
 A file dropped on the window calls `engine.on("fileDropped", fn)` handlers with its path, then the script function `onFileDropped(path)` if there is one; returning `true` from it ends there. Without it a level file (a `.lua` with a `world` table) loads as the current level through the game's `loadLevelInternal`, and any other `.lua` runs among the game's scripts. The console command `drop <file>` does the same as dropping the file.
@@ -455,7 +505,7 @@ All of these write the object into `objects.world[name]` (and `objects.joints` f
 |---|---|
 | `createBox(name, sprite, x, y, width, height, density, friction, restitution, collision, controllable, zOrder)` | A rectangle centred on `x, y`. `collision` (boolean, default true) lets other objects hit it, `controllable` marks a bird, `zOrder` is the draw order (higher is in front). |
 | `createCircle(name, sprite, x, y, radius, density, friction, restitution, [collision,] controllable, zOrder)` | A circle. `collision` is only present in Rio and Space calls (11 arguments). |
-| `createPolygon(name, sprite, x, y, width, height, density, friction, restitution, collision, controllable, zOrder)` | A convex polygon from the corners you gave with `clearVertices()` then `addVertex(x, y)`, relative to `x, y`. `createLineShape` (SW) takes the same arguments and builds a chain of edges from the vertices. |
+| `createPolygon(name, sprite, x, y, width, height, density, friction, restitution, collision, controllable, zOrder)` | A polygon from the corners you gave with `clearVertices()` then `addVertex(x, y)`, relative to `x, y`. Since 3.4 the outline may be concave (a star, an L, a chevron) and have any number of points: Box2D only takes convex pieces of 8 points, so a concave outline is split into the fewest convex pieces (ear clipping, then merging), one fixture each on the one body; a convex outline of up to 8 points is made as before. The same goes for the polygon parts of compound objects. `createLineShape` (SW) takes the same arguments and builds a chain of edges from the vertices. |
 | `clearVertices()`, `addVertex(x, y)` | Collect the corners for the next `createPolygon` / `createLineShape`. |
 | `clearShapesArray()`, `addBoxToCompoundList(...)`, `addPolygonToCompoundList(...)`, `addCircleToCompoundList(...)`, `addLineToCompoundList(...)`, `setCompoundShapeLinearDamping(shapes, damping)`, `setCompoundShapeParameter(shapes, id, value)`, `createCompoundObject(name, x, y, _, density, friction, restitution, collision, controllable, zOrder)`, `finalizeCompoundObject()` | Build one body of several shapes: clear the list, add the parts, then create. `setCompoundShapeParameter` takes the ids of `setObjectParameter` and applies them when the body is made. |
 | `createCompoundBodyFromTable(t)` (Space) | The same from a table: `name, x, y, angle, z_order, material` and `children` (one table per part with `x, y, angle` and `blockData`). |
@@ -531,7 +581,7 @@ end)
 |---|---|
 | `setWorldGravity(gx, gy)` / `getWorldGravity()` | The world's gravity in units per second squared (y positive is down). |
 | `setPhysicsEnabled(on)` / `isPhysicsEnabled()` | Stops / resumes the physics step. |
-| `setPhysicsSimulationScale(s)` | Scales the speed of the whole simulation (slow motion). |
+| `setPhysicsSimulationScale(s)` | Kept for the scripts that call it (Classic sets it to 20 at start); it changes nothing in this engine. For slow motion set the global `physicsSpeedFactor` (physics only) or `gameSpeedFactor` (everything), e.g. `physicsSpeedFactor = 0.3`, and `nil` or 1 for normal speed. |
 | `setLevelLimits(left, top, right, bottom)` | The area in which objects live; objects that leave it are removed by the scripts. SW publishes these as `leftLimitWorld` ... |
 | `setTopLeft(x, y)` | The world position of the screen's top left corner. |
 | `setWorldScale(s)`, `setMaxWorldScale(s)`, `resetMouseWheelScale(s)`, `setMaxTranslation(t)` | The zoom (pixels per world unit), its maximum, the zoom the mouse wheel returns to, and the largest distance the camera moves per frame. |
@@ -547,7 +597,7 @@ All drawing functions use the **render state** that `setRenderState` set last. `
 
 | Function | What it does |
 |---|---|
-| `drawRect(r, g, b, a, x1, y1, x2, y2, useRenderState [, pivotX, pivotY])` | A filled rectangle between two corners; colour 0 to 255 (a: 0 to 255). With `useRenderState` false it is in screen pixels. |
+| `drawRect(r, g, b, a, x1, y1, x2, y2, useRenderState [, pivotX, pivotY])` | A filled rectangle between two corners; colour 0 to 1 (a: 0 to 1; `drawLine2D` and `drawRectLines` take 0 to 255). With `useRenderState` false it is in screen pixels. |
 | `drawRectLines(left, top, right, bottom, lineWidth, r, g, b, a)` | The four edges. |
 | `drawLine2D(x1, y1, x2, y2, lineWidth, r, g, b, a [, pivotX, pivotY])` | One line. `res.drawTexturedLine2D(sprite, x1, y1, x2, y2, width [, r, g, b, a])` draws a sprite stretched along a line (Leia's beam). |
 | `drawBoxNative(box, x, y, width, height [, vAnchor, hAnchor])` | A nine-patch box: `box` names the corner and edge sprites (`topLeft`, `top`, ...), used by the menus. |
@@ -563,10 +613,10 @@ All drawing functions use the **render state** that `setRenderState` set last. `
 | `drawString3D(group, text, x, y, z, tilt, turn, depth, alpha)` (SW) | One line of the credits crawl, drawn on a tilted plane. |
 | `renderGravityVisualsNative(sensor, x, y, zoom)` (SW) | See the note below. |
 | `startNewTrajectory()`, `addToTrajectory(index, x, y)`, `addPuffToTrajectory(index, x, y)`, `setCustomTrajectorySprites(dot, ...)`, `setNormalTrailSprite(sprite)`, `setSpecialTrailSprite(sprite)` | The dots drawn behind a flying bird. |
-| `enableAimingAid(on)`, `setAimingAidSprite(sprite, scale)`, `populateAimingAid()`, `clearAimingAid()`, `updateBirdTrajectoryTable([name])`, `simulateAimingAid(bird, impulseX, impulseY [, points, startX, startY, forceX, forceY])` (Space, SW, Classic with `extras`; `forceX, forceY`: a force applied before every simulated step, like a script's `applyForce` each frame) | The aiming aid: `updateBirdTrajectoryTable` fills the path from the simulation, `populateAimingAid` lays out the dots, `clearAimingAid` removes them. The speed and spacing of the dots are the globals `simulationAimSpeed` and `simulationAimSpawnTime`. |
+| `enableAimingAid(on)`, `setAimingAidSprite(sprite, scale)`, `populateAimingAid()`, `clearAimingAid()`, `updateBirdTrajectoryTable([name])`, `simulateAimingAid(bird, impulseX, impulseY [, points, startX, startY, forceX, forceY])` (Space, SW, Classic with `extras`; `forceX, forceY`: a force applied before every simulated step, like a script's `applyForce` each frame) | The aiming aid: `updateBirdTrajectoryTable` fills the path from the simulation, `populateAimingAid` lays out the dots, `clearAimingAid` removes them. The speed and spacing of the dots are the globals `simulationAimSpeed` and `simulationAimSpawnTime`. Since 3.4 the global `aimGravityZones = { {x = , y = , r = , gx = , gy = } }` (round areas with their own gravity, for a script's sensor zone) bends the arc inside them. |
 | `drawSlingScopeNative(vx, vy, flyVerticalForce)` | The Sling Scope power-up's path: the aiming aid's simulation of the current bird launched from the band with that velocity and lift; shown while the game keeps calling it every frame. |
 | `res.getClipRect()` | The clip rectangle set by `res.setClipRect` (x, y, w, h), or the whole screen. |
-| `setAlpha(a [, target])`, `setBlendMode(mode [, target])`, `setShader(effect [, target])`, `setTint(r [, g, b] [, target])`, `getTint([target])`, `resetTint([target])`, `setTintChannel(channel, value [, target])`, `setSkew(x, y [, target])`, `setBend(x, y [, target])`, `setRenderZ(z [, target])`, `setBlur(amount [, target])`, `setPixelate(size [, target])`, `resetBlur`, `resetPixelate`, `setVisualRotation(angle [, target]), `createShader(name, source)`, `setShaderParam(name, slot, x, y, z, w)`, `getShaderError(name)`, `listShaders()`, `setOffset(dx, dy, target)`, `getOffset(target)`, `setLayoutScale(sx [, sy] [, px, py], target)`, `setMirror(on, target)`, `resetRenderOverrides(target)` (2.2 / 2.4 / 3.3) | Single values of the render state with their own functions; with a `target` (an object, sprite or sprite group name) the setting is kept for that target and every later draw of it uses it. See "Graphics settings for one target" above. |
+| `setAlpha(a [, target])`, `setBlendMode(mode [, target])`, `setShader(effect [, target])`, `setTint(r [, g, b] [, target])`, `getTint([target])`, `resetTint([target])`, `setTintChannel(channel, value [, target])`, `setSkew(x, y [, target])`, `setBend(x, y [, target])`, `setRenderZ(z [, target])`, `setBlur(amount [, target])`, `setPixelate(size [, target])`, `resetBlur`, `resetPixelate`, `setVisualRotation(angle [, target]), `createShader(name, source)`, `setShaderParam(name, slot, x, y, z, w)`, `getShaderError(name)`, `listShaders()`, `setOffset(dx, dy, target)`, `getOffset(target)`, `setLayoutScale(sx [, sy] [, px, py], target)`, `setMirror(on, target)`, `resetRenderOverrides(target)` (2.2 / 2.4 / 3.4) | Single values of the render state with their own functions; with a `target` (an object, sprite or sprite group name) the setting is kept for that target and every later draw of it uses it. See "Graphics settings for one target" above. |
 
 **Pivot arguments (3.1).** `drawRect`, `drawLine2D`, `res.drawSprite`, `res.drawTexturedLine2D` (after its colour) and `res.drawString` accept two optional last arguments, `pivotX, pivotY`, a point in the same coordinates as the drawing. When both are numbers the scale (`sx, sy`) of the render state grows from that point: the point stays where it is and the rest of the picture spreads from it. If either one is `nil` or missing the call works as before (the scale grows from the origin of the render state). Without a scale other than 1 it changes nothing. Example: `setRenderState(0, 0, 2, 2, 0); drawRect(0, 200, 0, 150, 300, 300, 400, 400, true, 300, 300)` fills 300..500 on both axes, where without the pivot it would fill 600..800.
 
@@ -827,21 +877,21 @@ Recipe: "bullet time when a bird hits something":
 
 ```
 on contact(a, b):
-    if a or b is a bird: set simulation scale 0.3, remember the time
+    if a or b is a bird: set physicsSpeedFactor 0.3, remember the time
 on update(dt):
-    if slow and 1 second passed: set simulation scale 1
+    if slow and 1 second passed: set physicsSpeedFactor back
 ```
 ```lua
 local slowLeft = 0
 engine.on("contact", function(a, b)
     if string.find(a, "BIRD") or string.find(b, "BIRD") then
-        setPhysicsSimulationScale(0.3); slowLeft = 1
+        physicsSpeedFactor = 0.3; slowLeft = 1
     end
 end)
 engine.on("update", function(dt, realDt)
     if slowLeft > 0 then
         slowLeft = slowLeft - realDt
-        if slowLeft <= 0 then setPhysicsSimulationScale(1) end
+        if slowLeft <= 0 then physicsSpeedFactor = nil end
     end
 end)
 ```
@@ -1254,9 +1304,9 @@ Together with `engine.drawObject` (skip a whole object), the layer functions (`s
 
 Star Wars (Hoth level, blocks kicked with `setVelocity` so they hit each other): `engine.force` 388 calls, `engine.damage` 73, `engine.strengthChange` 73, `engine.drawSprite` about a million calls, the scene visibly tinted and waving. Rio 1.4.2 main menu: `engine.drawSprite` tinted and moved every sprite. Seasons main menu: hook ran with no errors. Classic and Rio hits are covered by the same code as the Star Wars damage test, which was not repeated there.
 
-### Shaders (3.3)
+### Shaders (3.4)
 
-`setShader` takes the built-in names (`"none"`, `"grayscale"`, `"sepia"`, `"invert"`, `"chromatic"`, `"glow"`) and, since 3.3, the name of any shader of your own. It needs a graphics driver with OpenGL 2.0 shaders (every PC of the last fifteen years); without one the presets work as before and your shaders are ignored. `AB_NO_SHADERS=1` turns them off.
+`setShader` takes the built-in names (`"none"`, `"grayscale"`, `"sepia"`, `"invert"`, `"chromatic"`, `"glow"`) and, since 3.4, the name of any shader of your own. It needs a graphics driver with OpenGL 2.0 shaders (every PC of the last fifteen years); without one the presets work as before and your shaders are ignored. `AB_NO_SHADERS=1` turns them off.
 
 **The file.** A shader is `<user data folder>/shaders/<name>.frag`:
 

@@ -156,7 +156,10 @@ struct BodyInfo {
     float linearDamping = 0, angularDamping = 0, mass = 0, shapeRadius = 0;
 };
 
-struct RayHit { PhysObject* obj; float px, py, nx, ny, fraction; };
+struct RayHit { PhysObject* obj; float px, py, nx, ny, fraction; float cx = 0, cy = 0; };  // cx, cy: where the centre of a cast shape is at the hit (ray casts: the hit point)
+
+// A shape swept along a segment (shape cast). kind 0 = none (a plain ray), 1 = circle (radius), 2 = polygon, convex or concave, any number of points (pts: x,y pairs around the centre, rotated by angle)
+struct CastShape { int kind = 0; float radius = 0; float angle = 0; std::vector<float> pts; };
 
 class PhysicsWorld {
 public:
@@ -230,7 +233,7 @@ public:
     // the aiming aid (updateBirdTrajectoryTable): the object flown on from its position and velocity under the gravitation sensors and its damping, one point every `every` steps
     void SimulateTrajectory(const std::string& n, int steps, int every, float h, std::vector<std::pair<float, float>>& out);
     // extension of the retail trail (which is the bird's free flight): the bird alone in a world with the world's gravity, launched with this velocity and stepped like the real world; no blocks, no ground
-    virtual bool SimulateFlight(const std::string& bird, float vx, float vy, int steps, int every, float h, std::vector<std::pair<float, float>>& out, const float* start = nullptr, const float* force = nullptr) { (void)bird; (void)vx; (void)vy; (void)steps; (void)every; (void)h; (void)out; (void)start; (void)force; return false; }
+    virtual bool SimulateFlight(const std::string& bird, float vx, float vy, int steps, int every, float h, std::vector<std::pair<float, float>>& out, const float* start = nullptr, const float* force = nullptr, const float* zones = nullptr, int zoneCount = 0) { (void)zones; (void)zoneCount; (void)bird; (void)vx; (void)vy; (void)steps; (void)every; (void)h; (void)out; (void)start; (void)force; return false; }
     float gravityForceMultiplier = 4;        // setGravityForceMultiplier (game +0x368)
     bool BodyCommand(const std::string& n, int cmd, float a, float& result);
     void SetSleeping(const std::string& n, bool sleeping);
@@ -295,6 +298,8 @@ public:
     virtual void GetGravity(float& x, float& y) const = 0;
     // Every non-sensor fixture the segment (x1, y1) - (x2, y2) crosses, in the order Box2D reports them (the callback at 0x495760 keeps going)
     virtual void RayCastAll(float x1, float y1, float x2, float y2, std::vector<RayHit>& out) const { (void)x1; (void)y1; (void)x2; (void)y2; (void)out; }
+    // Like RayCastAll, but sweeps `shape` (centred on the segment) from (x1,y1) to (x2,y2): Box2D time of impact against every non-sensor fixture in the swept bounds. `skip` (may be empty) is a body that is left out (the caster). fraction 0 = already overlapping
+    virtual void ShapeCastAll(float x1, float y1, float x2, float y2, const CastShape& shape, const std::string& skip, std::vector<RayHit>& out) const { (void)x1; (void)y1; (void)x2; (void)y2; (void)shape; (void)skip; (void)out; }
     virtual BodyInfo Inspect(const std::string& name) const = 0;
     // motor speed and distance-joint frequency / damping of a joint, for the tests; false: no such joint
     virtual bool InspectJoint(const std::string& name, float& motorSpeed, float& frequency, float& dampingRatio) const = 0;

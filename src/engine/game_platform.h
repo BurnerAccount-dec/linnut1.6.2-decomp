@@ -202,6 +202,12 @@ public:
         Physics().RayCastAll(x1, y1, x2, y2, hits);
         for (const RayHit& h : hits) out.push_back({h.obj->name, h.px, h.py, h.nx, h.ny, h.fraction});
     }
+    void ShapeCastObjects(float x1, float y1, float x2, float y2, const CastShapeSpec& s, const std::string& skip, std::vector<RayCastHit>& out) override {
+        CastShape cs; cs.kind = s.kind; cs.radius = s.radius; cs.angle = s.angle; cs.pts = s.pts;
+        std::vector<RayHit> hits;
+        Physics().ShapeCastAll(x1, y1, x2, y2, cs, skip, hits);
+        for (const RayHit& h : hits) out.push_back({h.obj->name, h.px, h.py, h.nx, h.ny, h.fraction, h.cx, h.cy});
+    }
     bool GetOwnGravity(const std::string& n, int& mode, float& gx, float& gy, float& scale) override { return Physics().GetOwnGravity(n, mode, gx, gy, scale); }
     void ApplyImpulse(const std::string& n, float ix, float iy, float px, float py) override { Physics().ApplyImpulse(n, ix, iy, px, py); }
     void ApplyForce(const std::string& n, float fx, float fy, float px, float py) override { Physics().ApplyForce(n, fx, fy, px, py); }
@@ -331,6 +337,7 @@ public:
     void SetupCompoObject(const std::string& object, const std::vector<CompoItem>& items, float scale) override;
     bool CanvasMakeSprite(const std::string& name, int width, int height, int pivotX, int pivotY, bool save, const std::string& file) override;
     int CreateSilhouette(const std::string& name, const std::string& source, float r, float g, float b, float a, int outline) override;
+    int CreatePolygonSprite(const std::string& name, const std::string& source, const std::vector<float>& verts, int outline, float darken, bool fill) override;
     bool CanvasLoadSprite(const std::string& name, const std::string& file, int pivotX, int pivotY) override;
     void DrawRect(float r, float g, float b, float a, float x1, float y1, float x2, float y2, bool inWorld) override;
     void DrawLine2D(float x1, float y1, float x2, float y2, float width, float r, float g, float b, float a) override;
@@ -448,7 +455,7 @@ private:
     std::string drawTag_, compoTag_;     // what is being drawn: "background", an object's name ...; the composite sprite whose parts are drawn
     struct TagScope { GamePlatform* g; std::string old; TagScope(GamePlatform* p, const std::string& t) : g(p), old(p->drawTag_) { g->drawTag_ = t; } ~TagScope() { g->drawTag_ = old; } };
     void ApplyOverride(const RenderOverride& o);
-    // v3.3: shaders written by the user (shaders.cpp). The effect of the render state is 0..5 for the presets and 6 + the index for these.
+    // v3.4: shaders written by the user (shaders.cpp). The effect of the render state is 0..5 for the presets and 6 + the index for these.
     struct CustomShader { std::string name, path, source, error; int program = -1; float params[16] = {0}; long long stamp = 0; };
     std::vector<CustomShader> shaders_;
     double shaderCheck_ = 0;
@@ -465,7 +472,7 @@ private:
     void SetShaderParam(const std::string& name, int slot, float x, float y, float z, float w) override;
     std::string ShaderError(const std::string& name) override;
     void ShaderNames(std::vector<std::string>& out) override;
-    void ApplyLayouts(const Sprite& spr, float& x, float& y, int& vAnchor, int& hAnchor, bool& sized, float& width, float& height);   // v3.3: offset / scale of the targets
+    void ApplyLayouts(const Sprite& spr, float& x, float& y, int& vAnchor, int& hAnchor, bool& sized, float& width, float& height);   // v3.4: offset / scale of the targets
     std::map<int, std::pair<std::string, bool>> handleSource_;     // texture handle -> the png it came from (for the shader variants)
     std::map<long long, int> textureVariants_;                     // handle * 8 + effect -> handle of the converted copy
     int VariantTexture(int handle, int effect);
@@ -515,6 +522,10 @@ private:
     void RecordRewind();
     bool rewindBlock_ = false;
     int Rewind(int frames) override;
+    int RewindDepth() override { return rewind_.empty() ? 0 : (int)rewind_.size() - 1; }
+    bool RewindFrame(int back, std::vector<RewindInfo>& out) override;
+    void SetRewindLimit(int frames) override { rewindLimit_ = frames < 0 ? 0 : (frames > 36000 ? 36000 : frames); while ((int)rewind_.size() > rewindLimit_ + 1 && !rewind_.empty()) rewind_.pop_front(); }
+    int rewindLimit_ = 600;
     std::string bgTheme_;                          // 0x1a4: the theme the reference belongs to (0x435f70 clears it only when the theme changes)
     struct TrajectoryPoint { float x, y; };
     void CallCollisionPair(const char* fn, const std::string& a, const std::string& b);

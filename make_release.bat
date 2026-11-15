@@ -1,5 +1,14 @@
 @echo off
 setlocal
+rem Usage:  make_release.bat v3.4            builds the clean exe and zips it as AngryBirdsEngine-v3.4.zip
+rem         make_release.bat v3.4 publish    the same, then makes the GitHub release v3.4 with the zip (needs the GitHub CLI, `gh auth login` once; the changes must be pushed first)
+rem See docs/RELEASING.md for the whole routine, from a change to a published release.
+set "VER=%~1"
+if "%VER%"=="" (
+  echo Usage: make_release.bat v3.4 [publish]
+  exit /b 1
+)
+set "ZIP=AngryBirdsEngine-%VER%.zip"
 rem Builds a release exe from a clean copy of the committed repository in C:\abbuild,
 rem so no personal folder name ends up inside the exe, then zips it with the licences.
 rem The zip holds the exe, the licences, the README, the CHANGELOG, the docs folder, tools (unluac) and extras. The exe opens PC games from their folder and Android .apk / iPhone .ipa files dropped onto it.
@@ -38,11 +47,20 @@ copy CHANGELOG.md dist\CHANGELOG.md || goto fail
 xcopy /e /i /y docs dist\docs || goto fail
 xcopy /e /i /y tools dist\tools || goto fail
 xcopy /e /i /y extras dist\extras || goto fail
-powershell -NoProfile -Command "Compress-Archive -Force -Path dist\* -DestinationPath AngryBirdsEngine-v3.2.zip" || goto fail
+powershell -NoProfile -Command "Compress-Archive -Force -Path dist\* -DestinationPath %ZIP%" || goto fail
 
 echo.
-echo DONE. The exe is clean. Upload this file to the GitHub release:
-echo   C:\abbuild\AngryBirdsEngine-v3.2.zip
+echo DONE. The exe is clean: C:\abbuild\%ZIP%
+rem the release notes: the "New in" section of this version in CHANGELOG.md
+powershell -NoProfile -Command "$t=Get-Content -Raw CHANGELOG.md; $v='%VER%'.TrimStart('v'); $m=[regex]::Match($t,'(?s)## New in '+[regex]::Escape($v)+'\r?\n(.*?)(\r?\n## New in |\z)'); Set-Content -Encoding UTF8 release-notes.md $m.Groups[1].Value.Trim()" || goto fail
+if /i "%~2"=="publish" goto publish
+echo To upload it, run:
+echo   gh release create %VER% C:\abbuild\%ZIP% --repo BurnerAccount-dec/linnut1.6.2-decomp --title "%VER%" --notes-file C:\abbuild\release-notes.md
+exit /b 0
+
+:publish
+gh release create %VER% "%ZIP%" --repo BurnerAccount-dec/linnut1.6.2-decomp --title "%VER%" --notes-file release-notes.md || goto fail
+echo Published: https://github.com/BurnerAccount-dec/linnut1.6.2-decomp/releases/tag/%VER%
 exit /b 0
 
 :personal

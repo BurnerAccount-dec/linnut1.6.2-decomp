@@ -72,6 +72,7 @@ embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/editor_classic.lua kEditorCla
 embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/hatchery_natives.lua kHatcheryNativesLua ${CMAKE_CURRENT_BINARY_DIR}/generated/hatchery_natives_lua.cpp)
 embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/space_natives.lua kSpaceNativesLua ${CMAKE_CURRENT_BINARY_DIR}/generated/space_natives_lua.cpp)
 embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/space_editor.lua kSpaceEditorLua ${CMAKE_CURRENT_BINARY_DIR}/generated/space_editor_lua.cpp)
+embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/motion.lua kMotionLua ${CMAKE_CURRENT_BINARY_DIR}/generated/motion_lua.cpp)
 embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/fallback/CompoImage.lua kCompoImageLua ${CMAKE_CURRENT_BINARY_DIR}/generated/compo_image_lua.cpp)
 embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/fallback/InvisibleButton.lua kInvisibleButtonLua ${CMAKE_CURRENT_BINARY_DIR}/generated/invisible_button_lua.cpp)
 embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/fallback/editorjointPage.luac kEditorJointPageLua ${CMAKE_CURRENT_BINARY_DIR}/generated/editor_joint_page_lua.cpp)
@@ -84,7 +85,7 @@ embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/friends2_natives.lua kFriends
 embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/stella_natives.lua kStellaNativesLua ${CMAKE_CURRENT_BINARY_DIR}/generated/stella_natives_lua.cpp)
 embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/achievements_page.lua kAchievementsPageLua ${CMAKE_CURRENT_BINARY_DIR}/generated/achievements_page_lua.cpp)
 
-add_library(ab_lua src/lua/aes.cpp src/lua/sevenzip.cpp src/lua/dec_folder.cpp src/lua/lua_api.cpp src/lua/script_host.cpp src/lua/lua_frame_host.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/editor_classic_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/hatchery_natives_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/space_natives_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/space_editor_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/compo_image_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/invisible_button_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/editor_joint_page_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/overlay_page_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/joint_page_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/friends_server_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/friends2_natives_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/stella_natives_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/achievements_page_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/page_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/item_lua.cpp)
+add_library(ab_lua src/lua/aes.cpp src/lua/sevenzip.cpp src/lua/dec_folder.cpp src/lua/lua_api.cpp src/lua/script_host.cpp src/lua/lua_frame_host.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/editor_classic_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/hatchery_natives_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/space_natives_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/space_editor_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/motion_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/compo_image_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/invisible_button_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/editor_joint_page_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/overlay_page_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/joint_page_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/friends_server_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/friends2_natives_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/stella_natives_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/achievements_page_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/page_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/item_lua.cpp)
 target_include_directories(ab_lua PUBLIC src)
 target_link_libraries(ab_lua PUBLIC lua51 ab_game)
 
@@ -136,7 +137,7 @@ if(AB_BUILD_WINDOW)
   add_library(ab_input src/engine/input.cpp)
   target_include_directories(ab_input PUBLIC src)
   target_link_libraries(ab_input PUBLIC lua51)
-  add_executable(angrybirds src/window/main.cpp src/window/gl_backend.cpp)
+  add_executable(angrybirds src/window/main.cpp src/window/gl_backend.cpp src/window/exe_replace.cpp)
   target_link_libraries(angrybirds PRIVATE ab_engine ab_input)
   set_target_properties(angrybirds PROPERTIES OUTPUT_NAME AngryBirdsEngine)   # the file is AngryBirdsEngine.exe, the target keeps its name
   if(TARGET SDL2::SDL2-static)

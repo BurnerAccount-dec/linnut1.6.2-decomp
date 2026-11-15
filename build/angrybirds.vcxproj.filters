@@ -7,6 +7,9 @@
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\src\window\gl_backend.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\src\window\exe_replace.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\CMakeLists.txt" />
