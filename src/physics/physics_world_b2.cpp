@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <algorithm>
 #include <map>
+#include <set>
 
 #include "physics/physics_world.h"
 #include "physics/polygon_decompose.h"
@@ -261,6 +262,7 @@ public:
         b2_contactBaumgarteV21 = Tn("solver.baumgarte", 0.2f); b2_maxRotationV21 = Tn("solver.maxRotation", 1.5707964f); b2_angularSleepToleranceV21 = Tn("solver.angularSleepTolerance", 0.034906585f);
 #endif
         ProcessGearKills();
+        hitsThisStep_.clear();
         world_.Step(dt, velocityIterations, positionIterations);
         for (size_t i = 0; i < joints_.size(); i++)      // v2.2: backAndForth joints turn round at their limits without the scripts having to ask
             if (joints_[i]->backAndForth) CheckJointLimits(joints_[i]->name);
@@ -498,6 +500,38 @@ public:
         o->special999 = (int)d.zOrder == 999;
         if (d.controllable) o->pbody->SetAngularDamping(2.0f);
         AddObject(o, d.controllable);
+        return o->pbody->Mass();
+    }
+
+    float CreateWithHoles(const BodyDef& d, const std::vector<float>& outline, const std::vector<std::vector<float>>& holes) override {
+        PhysObject* o = MakeObject(d, -1.0f, false);
+        std::vector<polydecomp::Pt> out;
+        for (size_t i = 0; i + 1 < outline.size(); i += 2) out.push_back({outline[i], outline[i + 1]});
+        std::vector<std::vector<polydecomp::Pt>> hs;
+        for (const auto& h : holes) {
+            std::vector<polydecomp::Pt> hp;
+            for (size_t i = 0; i + 1 < h.size(); i += 2) hp.push_back({h[i], h[i + 1]});
+            if (hp.size() >= 3) hs.push_back(hp);
+        }
+        std::vector<std::vector<polydecomp::Pt>> pieces;
+        polydecomp::CutHoles(out, hs, (size_t)b2_maxPolygonVertices, pieces);
+        int made = 0;
+        for (const auto& pc : pieces) {
+            std::vector<b2Vec2> v;
+            for (const polydecomp::Pt& q : pc) v.push_back(b2Vec2(q.x, q.y));
+            b2PolygonShape shape;
+            shape.Set(v.data(), (int)v.size());
+            MakeFixture(BodyOf(o), o, shape, d);
+            made++;
+        }
+        o->holed = true;
+        if (made == 0) {     // the holes took everything: a tiny box, so the object still has a body
+            b2PolygonShape shape;
+            shape.SetAsBox(0.05f, 0.05f);
+            MakeFixture(BodyOf(o), o, shape, d);
+        }
+        if (d.controllable) o->pbody->SetAngularDamping(2.0f);
+        AddObject(o, false);
         return o->pbody->Mass();
     }
 
@@ -869,6 +903,11 @@ public:
         PhysObject* b = static_cast<PhysObject*>(c->GetFixtureB()->GetUserData());
         if (!a || !b) return;
         ContactRef ref(c);
+        // a block with holes is many fixtures, and it touches another body with more than one of them at once: that is one hit
+        if (!a->isSensor && !b->isSensor && (a->holed || b->holed)) {
+            const std::pair<PhysObject*, PhysObject*> key = a < b ? std::make_pair(a, b) : std::make_pair(b, a);
+            if (!hitsThisStep_.insert(key).second) return;
+        }
         if (onBeginContact) onBeginContact(*a, *b, ref);
     }
     void EndContact(b2Contact* c) override {
@@ -973,6 +1012,7 @@ private:
     b2Body* mouseGround_ = nullptr;                                          // the fixed body mouse joints pull against (made on first use)
     std::map<b2Joint*, std::pair<b2Joint*, b2Joint*>> gearDeps_;            // gear joint -> the two joints it couples
     std::vector<b2Joint*> gearsToKill_;
+    std::set<std::pair<PhysObject*, PhysObject*>> hitsThisStep_;      // the pairs a block with holes has already hit in this step
 };
 
 }  // namespace

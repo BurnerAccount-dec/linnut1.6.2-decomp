@@ -112,6 +112,7 @@ struct PhysObject : FrameObject {
     float alpha = 1;                                 // setObjectAlpha (engine addition): drawGameNative draws the object with this transparency, 0 invisible .. 1 solid
     // Angry Birds Space (setObjectParameter 20..27, setSensorGravityMask, setObjectGravityCategory): a gravitation sensor pulls the dynamic objects inside it
     std::vector<CompoundShape> parts;                // a compound body: what each part looks like (drawn about the body)
+    bool holed = false;                              // 3.6: made by CreateWithHoles (many fixtures; their simultaneous contacts count as one hit)
     bool isSensor = false;                           // setAsSensor: contacts go to enterCollision / exitCollision instead of blockCollision
     bool revertGravity = false, revertMulti = false;   // setRevertGravity / setRevertGravityWithMultiplier (exe +0x18a, +0x18b)
     float revertMult = 0, revertMaxSpeed = 0;           // +0x18c (stored negated), +0x190
@@ -192,6 +193,8 @@ public:
     virtual float CreateCompound(const BodyDef& d, const std::vector<CompoundShape>& shapes, float damping) = 0;
     virtual float CreateCircle(const BodyDef& d) = 0;
     virtual float CreatePolygon(const BodyDef& d, const std::vector<float>& verts) = 0;
+    // 3.6: a body of any outline with holes: the outline and every hole are x,y point lists about the body's origin (any shape, any position). One fixture per convex piece that is left.
+    virtual float CreateWithHoles(const BodyDef& d, const std::vector<float>& outline, const std::vector<std::vector<float>>& holes) { (void)holes; return CreatePolygon(d, outline); }
     // createLineShape (Star Wars, 0x439640): a body of edge shapes, one for each pair of neighbouring vertices (Box2D 2.2 only; the 2.1 build makes a polygon)
     virtual float CreateLine(const BodyDef& d, const std::vector<float>& verts) { return CreatePolygon(d, verts); }
 

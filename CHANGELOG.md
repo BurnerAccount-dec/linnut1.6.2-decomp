@@ -2,6 +2,12 @@
 
 What changed in each version of the engine, newest first. The README has the current status; the reference for script writers is in [`docs/SCRIPTING.md`](docs/SCRIPTING.md) and how to run and debug in [`docs/USAGE.md`](docs/USAGE.md).
 
+## New in 3.6
+
+3.5 was published on GitHub; this section is everything after it.
+
+* **Blocks with holes (any outline, holes of any shape at any position): `createShapeWithHoles`, `registerHoles`, the wood blocks `WoodBlock16` (a square with a square hole) and `WoodBlock17` (a wooden circle with three round cut-outs).** The hole is real: the physics body is made of the convex pieces that are left (`polydecomp::CutHoles` in `src/physics/polygon_decompose.h`: the outline and each hole are split into convex pieces, the hole is subtracted piece by piece and neighbouring pieces are joined again), so the mass is lower, a ball goes through, and the block collides along the edge of the hole. The outline can be a box, a circle (a 32-sided polygon) or any polygon, concave too, and a hole can be a box (with an angle), a circle or a polygon, fully inside, in the middle, across an edge or a corner (the top-left corner of a box, say), outside (it does nothing) or overlapping another hole. `createShapeWithHoles(name, sprite, x, y, outline, holes, density, friction, restitution, collision, controllable, zOrder)` makes one from a script (shapes in world units about the body's origin); `registerHoles(sprite, holes [, vertices])` gives every block that starts with that sprite its holes (shapes from 0 to 1 over the block), so a level file or `createObject` makes it with `createBox`, `createCircle` or `createPolygon` as before. `createPolygonSprite` takes the holes as a seventh argument and leaves them clear in the sprite, with the darkened edge along the hole as well. A block with holes counts the contacts of its pieces with another body as one hit. `docs/SCRIPTING.md` has the shape format; `extras/extra_scripts.lua` (section 5, `shapeBlocks`) takes `holes` in an entry; physics tests for masses, hole positions and the ball passing through are in `tests/physics_world_test.cpp`.
+
 ## New in 3.5
 
 3.4 was published on GitHub; this section is everything after it.

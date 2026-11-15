@@ -108,6 +108,7 @@ public:
     virtual float CreateBox(const BodyDef& d) { (void)d; return 0; }
     virtual float CreateCompound(const BodyDef& d, const std::vector<CompoundShape>& shapes, float damping) { (void)d; (void)shapes; (void)damping; return 0; }
     virtual float CreatePolygon(const BodyDef& d, const std::vector<float>& verts /* x,y pairs */) { (void)d; (void)verts; return 0; }
+    virtual float CreateWithHoles(const BodyDef& d, const std::vector<float>& outline, const std::vector<std::vector<float>>& holes) { (void)d; (void)outline; (void)holes; return 0; }   // 3.6
     virtual float CreateLine(const BodyDef& d, const std::vector<float>& verts /* x,y pairs */) { (void)d; (void)verts; return 0; }   // Star Wars createLineShape
     virtual float CreateCircle(const BodyDef& d) { (void)d; return 0; }
     // d has the defaults applied; the call may change x1..y2 (coordType 0 writes the body positions).
@@ -335,7 +336,7 @@ public:
     // createSilhouette(newName, sourceSprite, r, g, b, a, outlineWidth): a new sprite with the shape of the source filled with one colour (outlineWidth > 0: only that many pixels along the edge)
     virtual int CreateSilhouette(const std::string& name, const std::string& source, float r, float g, float b, float a, int outline) { (void)name; (void)source; (void)r; (void)g; (void)b; (void)a; (void)outline; return -1; }
     // createPolygonSprite: a copy of `source` cut to a polygon (vertices x,y in 0..1 over the sprite, any outline, concave too); outline > 0 darkens that many pixels along the edge. Returns the pixels inside, -1 if the sprite is unknown
-    virtual int CreatePolygonSprite(const std::string& name, const std::string& source, const std::vector<float>& verts, int outline, float darken, bool fill = false) { (void)fill; (void)name; (void)source; (void)verts; (void)outline; (void)darken; return -1; }
+    virtual int CreatePolygonSprite(const std::string& name, const std::string& source, const std::vector<float>& verts, int outline, float darken, bool fill = false, const std::vector<std::vector<float>>& holes = {}) { (void)holes; (void)fill; (void)name; (void)source; (void)verts; (void)outline; (void)darken; return -1; }
     virtual bool CanvasLoadSprite(const std::string& name, const std::string& file, int pivotX, int pivotY) { (void)name; (void)file; (void)pivotX; (void)pivotY; return false; }
     virtual void ResGetSpriteBounds(const std::string& sheet, const std::string& sprite, float& w, float& h) { (void)sheet; (void)sprite; w = h = 0; }
     virtual void ResGetSpritePivot(const std::string& sheet, const std::string& sprite, float& px, float& py) { (void)sheet; (void)sprite; px = py = 0; }

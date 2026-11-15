@@ -666,11 +666,15 @@ do
 	end
 end
 
------------------------------------------------------------------- 5. shape blocks (3.4): a star and a wedge in the wood group
+------------------------------------------------------------------ 5. shape blocks (3.4): a star and a wedge in the wood group; with holes (3.6)
 -- Blocks of any outline. A block of type "polygon" has `vertices` (x, y from 0 to 1 over the block's size) and the physics takes concave outlines too (the engine splits them
 -- into convex pieces, so a star or a chevron is one body that collides along its real edge). The sprite is cut to the same outline with createPolygonSprite, one for each
 -- damage stage. The blocks are added to blockTable.blocks as WoodBlock13, 14 and 15 and to the wood group of the level editor (its W / Q keys), so a level that names them
 -- loads them, and `createObject` makes one from a script. To add your own: put another entry in shapeBlocks.blocks (a name and a list of {x=, y=} points).
+-- Blocks with holes (3.6): an entry can have `holes`, a list of shapes in 0..1 over the block ({type="box", x=, y=, w=, h=, angle=}, {type="circle", x=, y=, radius=},
+-- {type="polygon", points={...}}), at any position, even over an edge or a corner. The physics is made with the holes cut out (registerHoles) and the sprites
+-- are cut to match. WoodBlock16 is the wood square with a square hole in the middle, WoodBlock17 a wooden circle with three round cut-outs. An entry without
+-- `vertices` is a box (`type = "box"`).
 shapeBlocks = {
 	enabled = true,
 	source = "BLOCK_WOOD_4X4_",   -- the sprite of the undamaged block (this name plus 1); the damage stages are those of the template
@@ -691,6 +695,14 @@ do
 	end
 	shapeBlocks.blocks.WoodBlock13 = { vertices = star(5, 0.5, 0.21) }                                                    -- a five pointed star (concave)
 	shapeBlocks.blocks.WoodBlock14 = { vertices = { { x = 0, y = 1 }, { x = 1, y = 1 }, { x = 1, y = 0.25 } } }          -- a wedge (a door stop)
+	local function circleOutline(n)
+		local v = {}
+		for i = 0, n - 1 do v[#v + 1] = { x = 0.5 + 0.5 * cos(2 * pi * i / n), y = 0.5 + 0.5 * sin(2 * pi * i / n) } end
+		return v
+	end
+	shapeBlocks.blocks.WoodBlock16 = { type = "box", holes = { { type = "box", x = 0.5, y = 0.5, w = 0.5, h = 0.5 } } }    -- the wood square with a square hole in the middle
+	shapeBlocks.blocks.WoodBlock17 = { vertices = circleOutline(40), holes = {                                                -- a wooden circle with three round cut-outs
+		{ type = "circle", x = 0.5, y = 0.27, radius = 0.13 }, { type = "circle", x = 0.3, y = 0.62, radius = 0.1 }, { type = "circle", x = 0.69, y = 0.65, radius = 0.115 } } }
 	shapeBlocks.blocks.WoodBlock15 = { vertices = { { x = 0, y = 0 }, { x = 0.35, y = 0 }, { x = 0.5, y = 0.55 }, { x = 0.65, y = 0 }, { x = 1, y = 0 }, { x = 0.62, y = 1 }, { x = 0.38, y = 1 } } }   -- a chevron (concave)
 
 	local done = {}
@@ -700,9 +712,10 @@ do
 		if template == nil then return end
 		for name, def in _G.pairs(shapeBlocks.blocks) do
 			if done[name] == nil and blockTable.blocks[name] == nil then
-				local copy = { type = "polygon", controllable = false, group = template.group, material = template.material, strength = template.strength,
-					groupIndex = _G.tonumber(name:match("(%d+)$")) or 0, vertices = def.vertices, damageSprites = {} }
+				local copy = { type = def.type or (def.vertices ~= nil and "polygon" or "box"), controllable = false, group = template.group, material = template.material, strength = template.strength,
+					groupIndex = _G.tonumber(name:match("(%d+)$")) or 0, vertices = def.vertices, holes = def.holes, damageSprites = {} }
 				copy.sprite = shapeBlocks.source .. "1"
+				if def.holes ~= nil and _G.type(registerHoles) == "function" then registerHoles(name .. "_1", def.holes, def.vertices) end    -- the physics of any block made from this sprite gets the holes
 				for stage, d in _G.pairs(template.damageSprites or {}) do copy.damageSprites[stage] = { sprite = d.sprite, min = d.min, max = d.max } end
 				done[name] = { cut = false, def = copy }
 			end
@@ -717,6 +730,7 @@ do
 			end
 		end
 	end
+	local square = { { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 1, y = 1 }, { x = 0, y = 1 } }
 	-- the sprites come from sheets that a level loads, so they are cut when they exist
 	local function cut()
 		if _G.type(createPolygonSprite) ~= "function" or _G.type(spriteExists) ~= "function" then return end
@@ -729,10 +743,10 @@ do
 					for stage, d in _G.pairs(def.damageSprites) do
 						d.original = d.original or d.sprite
 						local cutName = name .. "_" .. stage
-						createPolygonSprite(cutName, d.original, def.vertices, shapeBlocks.outline, 0.55, true)
+						createPolygonSprite(cutName, d.original, def.vertices or square, shapeBlocks.outline, 0.55, true, def.holes)
 						d.sprite = cutName
 					end
-					createPolygonSprite(name .. "_1", shapeBlocks.source .. "1", def.vertices, shapeBlocks.outline, 0.55, true)
+					createPolygonSprite(name .. "_1", shapeBlocks.source .. "1", def.vertices or square, shapeBlocks.outline, 0.55, true, def.holes)
 					def.sprite = name .. "_1"
 					state.cut = true
 				end

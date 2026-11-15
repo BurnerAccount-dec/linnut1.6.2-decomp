@@ -1,6 +1,7 @@
 // Checks for the Box2D-backed world: creation parameters, the exe's constants, filter, joints,
 // and a run through the real frame update. Every check runs against Box2D 2.1.1 and against 2.2.0.
 #include "physics/physics_world.h"
+#include "physics/polygon_decompose.h"
 #include <memory>
 #include <map>
 
@@ -601,9 +602,68 @@ static void ExtraJoints(Box2DVersion ver) {
     }
 }
 
- int main() {
+ // Blocks with holes (3.5): any outline, holes of any shape at any position
+static std::vector<float> RectPts(float cx, float cy, float w, float h) { return {cx - w / 2, cy - h / 2, cx + w / 2, cy - h / 2, cx + w / 2, cy + h / 2, cx - w / 2, cy + h / 2}; }
+static std::vector<float> NGon(float cx, float cy, float r, int n) { std::vector<float> v; for (int i = 0; i < n; i++) { float a = 6.2831853f * i / n; v.push_back(cx + r * std::cos(a)); v.push_back(cy + r * std::sin(a)); } return v; }
+static void Holes(Box2DVersion ver) {
+    auto mass = [&](const std::vector<float>& outline, const std::vector<std::vector<float>>& holes) {
+        auto wp = MakePhysicsWorld(ver);
+        return wp->CreateWithHoles(Def("b", 0, 0, 4, 4, 1), outline, holes);
+    };
+    const std::vector<float> box = RectPts(0, 0, 4, 4);
+    CHECK(Near(mass(box, {}), 16.0f, 1e-3f));
+    CHECK(Near(mass(box, {RectPts(0, 0, 2, 2)}), 12.0f, 1e-3f));                        // a square hole in the middle
+    CHECK(Near(mass(box, {RectPts(-2, -2, 2, 2)}), 15.0f, 1e-3f));                      // a hole over the top-left corner: a quarter of it is inside
+    CHECK(Near(mass(box, {RectPts(-2, 0, 2, 8)}), 12.0f, 1e-3f));                       // a strip across the left edge, running past both ends
+    CHECK(Near(mass(box, {RectPts(9, 9, 2, 2)}), 16.0f, 1e-3f));                        // a hole outside does nothing
+    CHECK(Near(mass(box, {RectPts(0, 0, 2, 2), RectPts(0, 0, 1, 1)}), 12.0f, 1e-3f));   // overlapping holes
+    CHECK(Near(mass(box, {RectPts(-1, 0, 1, 1), RectPts(1, 0, 1, 1)}), 14.0f, 1e-3f));  // two holes
+    CHECK(Near(mass(box, {NGon(0, 0, 1, 64)}), 16.0f - 3.1365f, 2e-2f));                // a round hole in a square
+    {
+        std::vector<float> tri = {0, 0, 2, 0, 0, 2};                                     // a triangular hole over a corner (a polygon hole)
+        float m = mass(box, {tri});
+        CHECK(Near(m, 16.0f - 2.0f, 1e-3f));
+    }
+    {
+        // a concave (L shaped) hole in the middle: area 3
+        std::vector<float> l = {-1, -1, 1, -1, 1, 0, 0, 0, 0, 1, -1, 1};
+        CHECK(Near(mass(box, {l}), 13.0f, 1e-3f));
+    }
+    {
+        // a circle with three round holes: the outline is a 32-gon of radius 2, each hole a 16-gon of radius 0.5
+        float full = mass(NGon(0, 0, 2, 32), {});
+        float holed = mass(NGon(0, 0, 2, 32), {NGon(-1, -0.7f, 0.5f, 16), NGon(1, -0.7f, 0.5f, 16), NGon(0, 0.9f, 0.5f, 16)});
+        CHECK(Near(full - holed, 3 * 0.5f * 16 * 0.25f * std::sin(6.2831853f / 16), 2e-2f));
+    }
+    // the hole is empty: a ball dropped onto a notch cut into the top edge goes down into it; onto a solid block it stays on top
+    for (int solid = 0; solid < 2; solid++) {
+        auto wp = MakePhysicsWorld(ver); PhysicsWorld& w = *wp;
+        w.CreateWithHoles(Def("frame", 0, 0, 4, 4, 0), box, solid ? std::vector<std::vector<float>>() : std::vector<std::vector<float>>{RectPts(0, -2, 2, 2)});
+        BodyDef c = Def("ball", 0, -4, 0.3f, 0.3f, 1); c.w = 0.3f;
+        w.CreateCircle(c);
+        Host h(w); Run(w, h, 2.0f);
+        if (solid) CHECK(w.Inspect("ball").posY < -2.0f); else CHECK(w.Inspect("ball").posY > -1.6f);
+    }
+    // the pieces are put back together: a square hole in a square is four pieces, and a round one does not leave hundreds
+    {
+        auto count = [&](const std::vector<float>& outline, const std::vector<std::vector<float>>& holes) {
+            std::vector<polydecomp::Pt> o; for (size_t i = 0; i + 1 < outline.size(); i += 2) o.push_back({outline[i], outline[i + 1]});
+            std::vector<std::vector<polydecomp::Pt>> hs, out;
+            for (const auto& hh : holes) { std::vector<polydecomp::Pt> p; for (size_t i = 0; i + 1 < hh.size(); i += 2) p.push_back({hh[i], hh[i + 1]}); hs.push_back(p); }
+            polydecomp::CutHoles(o, hs, 8, out);
+            return (int)out.size();
+        };
+        CHECK(count(box, {RectPts(0, 0, 2, 2)}) == 4);
+        CHECK(count(box, {NGon(0, 0, 1, 16)}) <= 24);
+        CHECK(count(NGon(0, 0, 2, 32), {NGon(-1, -0.7f, 0.5f, 12), NGon(1, -0.7f, 0.5f, 12), NGon(0, 0.9f, 0.5f, 12)}) <= 90);
+    }
+}
+
+int main() {
     ExtraJoints(Box2DVersion::V21);
     ExtraJoints(Box2DVersion::V22);
+    Holes(Box2DVersion::V21);
+    Holes(Box2DVersion::V22);
     LineShape();
     StarWarsFilter(Box2DVersion::V21);
     StarWarsFilter(Box2DVersion::V22);

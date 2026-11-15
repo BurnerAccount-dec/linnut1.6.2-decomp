@@ -186,6 +186,7 @@ public:
     float CreateBox(const BodyDef& d) override { return Physics().CreateBox(d); }
     float CreateCircle(const BodyDef& d) override { return Physics().CreateCircle(d); }
     float CreatePolygon(const BodyDef& d, const std::vector<float>& v) override { return Physics().CreatePolygon(d, v); }
+    float CreateWithHoles(const BodyDef& d, const std::vector<float>& o, const std::vector<std::vector<float>>& h) override { return Physics().CreateWithHoles(d, o, h); }
     float CreateLine(const BodyDef& d, const std::vector<float>& v) override { return Physics().CreateLine(d, v); }
     float CreateCompound(const BodyDef& d, const std::vector<CompoundShape>& s, float damping) override { return Physics().CreateCompound(d, s, damping); }
     bool CreateJoint(JointDef& d) override { return Physics().CreateJoint(d); }
@@ -337,7 +338,7 @@ public:
     void SetupCompoObject(const std::string& object, const std::vector<CompoItem>& items, float scale) override;
     bool CanvasMakeSprite(const std::string& name, int width, int height, int pivotX, int pivotY, bool save, const std::string& file) override;
     int CreateSilhouette(const std::string& name, const std::string& source, float r, float g, float b, float a, int outline) override;
-    int CreatePolygonSprite(const std::string& name, const std::string& source, const std::vector<float>& verts, int outline, float darken, bool fill) override;
+    int CreatePolygonSprite(const std::string& name, const std::string& source, const std::vector<float>& verts, int outline, float darken, bool fill, const std::vector<std::vector<float>>& holes) override;
     bool CanvasLoadSprite(const std::string& name, const std::string& file, int pivotX, int pivotY) override;
     void DrawRect(float r, float g, float b, float a, float x1, float y1, float x2, float y2, bool inWorld) override;
     void DrawLine2D(float x1, float y1, float x2, float y2, float width, float r, float g, float b, float a) override;

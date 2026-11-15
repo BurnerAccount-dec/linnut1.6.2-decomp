@@ -249,13 +249,41 @@ Example, in a script that has the table above:
     local name = createObject(blockTable, "BLOCK_LIGHT_1", nil, x, y)
     setColliderType(name, my_types.ice_ghost)
 
-### `createPolygonSprite(newName, sourceSprite, points [, outlineWidth [, darken [, fill]]])` (3.4)
+### `createPolygonSprite(newName, sourceSprite, points [, outlineWidth [, darken [, fill [, holes]]]])` (3.4)
 
 A copy of `sourceSprite` cut to a polygon, for the sprite of a block that is not a box. `points` is `{ {x = 0.5, y = 0}, {x = 1, y = 1}, ... }`, 0 to 1 over the sprite (the numbers a block's `vertices` hold), any outline, concave too; the edge is anti-aliased. `outlineWidth` (pixels, default 0) darkens the edge by `darken` (default 0.55) so the cut has an edge; `fill = true` fills the holes of the source (the wood square is a frame) with its average colour. Returns the number of pixels inside, or nil when the sprite is unknown. Use the new name anywhere a sprite name goes.
 
 ### Shape blocks (extra_scripts.lua, 3.4)
 
 `extras/extra_scripts.lua` (section 5, table `shapeBlocks`) adds three blocks to the wood group: `WoodBlock13` a five-pointed star (concave), `WoodBlock14` a wedge, `WoodBlock15` a chevron (concave). They are put into `blockTable.blocks` (a block of type `"polygon"` with `vertices` from 0 to 1), the wood group's `lastIndex` is raised so the level editor's W / Q keys reach them, and the sprites (and the four damage stages) are cut from the wood square with `createPolygonSprite`. A level that names them loads them; from a script, `createObject` makes one. Add your own by putting another entry in `shapeBlocks.blocks`: a name like `WoodBlock16` and a list of points.
+
+### Blocks with holes (3.6)
+
+A body can have holes that are really empty: the physics is made of the convex pieces that remain, so the body is lighter, things pass through the hole, and it collides along the hole's edge. The outline can be a box, a circle (a 32-sided polygon) or any polygon (concave too). A hole can be any shape, anywhere: fully inside, in the middle, across an edge or a corner (a hole over the top-left corner of a box takes just that corner), or outside (it does nothing); holes may overlap.
+
+A shape is a table:
+
+| Shape | Fields |
+|---|---|
+| box | `{type = "box", x =, y =, w =, h =, angle =}` (centre `x`, `y`; `angle` in radians; `size =` for a square) |
+| circle | `{type = "circle", x =, y =, radius =, segments =}` (`segments` 6 to 64, default 16 for holes and 32 for an outline) |
+| polygon | `{type = "polygon", points = { {x =, y =}, ... }, x =, y =}` (`x`, `y` move the points; a bare list of points is a polygon too; concave is fine) |
+
+`createShapeWithHoles(name, sprite, x, y, outline, holes, density, friction, restitution, collision, controllable, zOrder)` makes the object: `outline` is one shape and `holes` a list of shapes, in world units about the object's origin. It writes `objects.world[name]` like `createPolygon` does (the mass is smaller by the holes' area).
+
+```lua
+-- a 4 x 4 block with a 2 x 2 hole in the middle and a round hole over its top-left corner
+createShapeWithHoles("frame1", "BLOCK_WOOD_4X4_1", 10, -6,
+    {type = "box", w = 4, h = 4},
+    { {type = "box", x = 0, y = 0, w = 2, h = 2}, {type = "circle", x = -2, y = -2, radius = 0.8} },
+    1, 0.5, 0.2, true, false, 5)
+```
+
+`registerHoles(sprite, holes [, vertices])` gives the holes to every block whose first sprite is `sprite`, whichever way it is made (a level file, `createObject`, `createBox`, `createCircle` or `createPolygon`). Here the shapes are 0 to 1 over the block (centre 0.5, like a block's `vertices`) and a polygon block passes its own `vertices` (0 to 1) so that the holes follow its outline. `createPolygonSprite(newName, source, points, outlineWidth, darken, fill, holes)` takes the same holes as its seventh argument and leaves them clear in the sprite, with the darkened edge along them.
+
+`extras/extra_scripts.lua` (section 5, `shapeBlocks`) uses it: `WoodBlock16` is the wood square with a square hole in the middle (a `box`, so `createBox` makes it) and `WoodBlock17` is a wooden circle with three round cut-outs. An entry of `shapeBlocks.blocks` takes `holes` (and `type = "box"` when it has no `vertices`); the damage sprites are cut with the holes as well.
+
+A block with holes is many fixtures; the contacts of its pieces with another body in one step count as one hit.
 
 ### Save states (3.5)
 

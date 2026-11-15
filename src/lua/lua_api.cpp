@@ -122,6 +122,7 @@ int l_setGameOn(lua_State* L) { P(L)->SetGameOn(B(L, 1)); return 0; }
 // createThemeSprite(name, sprite, x, y, scaleX, scaleY, angle, speedX, layer) and friends
 bool RioMode(lua_State* L);
 bool IsSpaceData(lua_State* L);
+void WriteWorldEntry(lua_State* L, const BodyDef& d, const char* type, float mass);
 bool HasNum(lua_State* L, int t, const char* k);
 bool BoolOr(lua_State* L, int t, const char* k, bool def);
 float NumOr(lua_State* L, int t, const char* k, float def);
@@ -1214,7 +1215,127 @@ int l_createSilhouette(lua_State* L) {
     if (n < 0) lua_pushnil(L); else lua_pushinteger(L, n);
     return 1;
 }
-// createPolygonSprite(newName, sourceSprite, {{x=, y=}, ...} [, outlineWidth [, darken [, fill]]]) -> pixels inside, or nil
+// ---- shapes with holes (3.6)
+// A shape spec is a table: { type = "box", x =, y =, w =, h =, angle = } (also "square" with `size`), { type = "circle", x =, y =, radius =, segments = } or
+// { type = "polygon", points = { {x =, y =}, ... }, x =, y = } (a bare list of points is a polygon). The result is a point list (x, y pairs, counter-clockwise).
+bool ReadShapePoly(lua_State* L, int idx, float defX, float defY, int defSegments, std::vector<float>& out) {
+    out.clear();
+    if (!lua_istable(L, idx)) return false;
+    idx = idx < 0 ? lua_gettop(L) + idx + 1 : idx;
+    lua_getfield(L, idx, "type");
+    std::string t = lua_isstring(L, -1) ? lua_tostring(L, -1) : "";
+    lua_pop(L, 1);
+    if (t.empty()) t = lua_objlen(L, idx) >= 3 ? "polygon" : (HasNum(L, idx, "radius") || HasNum(L, idx, "r")) ? "circle" : "box";
+    const float cx = NumOr(L, idx, "x", t == "polygon" ? 0.0f : defX), cy = NumOr(L, idx, "y", t == "polygon" ? 0.0f : defY);
+    const float pi = 3.14159265358979f;
+    if (t == "circle") {
+        float r = HasNum(L, idx, "radius") ? NumOr(L, idx, "radius", 0) : NumOr(L, idx, "r", 0);
+        int seg = std::max(6, std::min(64, (int)NumOr(L, idx, "segments", (float)defSegments)));
+        for (int i = 0; i < seg; i++) { float a = 2 * pi * i / seg; out.push_back(cx + r * std::cos(a)); out.push_back(cy + r * std::sin(a)); }
+    } else if (t == "polygon") {
+        int tbl = idx;
+        lua_getfield(L, idx, "points");
+        if (lua_istable(L, -1)) tbl = lua_gettop(L);
+        int n = (int)lua_objlen(L, tbl);
+        for (int k = 1; k <= n; k++) {
+            lua_rawgeti(L, tbl, k);
+            if (lua_istable(L, -1)) {
+                int e = lua_gettop(L);
+                float x = HasNum(L, e, "x") ? NumOr(L, e, "x", 0) : 0, y = HasNum(L, e, "y") ? NumOr(L, e, "y", 0) : 0;
+                if (!HasNum(L, e, "x")) { lua_rawgeti(L, e, 1); lua_rawgeti(L, e, 2); x = (float)lua_tonumber(L, -2); y = (float)lua_tonumber(L, -1); lua_pop(L, 2); }
+                out.push_back(cx + x); out.push_back(cy + y);
+            }
+            lua_pop(L, 1);
+        }
+        lua_pop(L, 1);
+    } else {        // a box
+        float w = NumOr(L, idx, "w", NumOr(L, idx, "width", NumOr(L, idx, "size", 0))), h = NumOr(L, idx, "h", NumOr(L, idx, "height", NumOr(L, idx, "size", 0)));
+        float ang = NumOr(L, idx, "angle", 0), c = std::cos(ang), s = std::sin(ang);
+        const float cxs[4] = {-0.5f, 0.5f, 0.5f, -0.5f}, cys[4] = {-0.5f, -0.5f, 0.5f, 0.5f};
+        for (int i = 0; i < 4; i++) { float x = cxs[i] * w, y = cys[i] * h; out.push_back(cx + c * x - s * y); out.push_back(cy + s * x + c * y); }
+    }
+    return out.size() >= 6;
+}
+// every table in the list at idx as a point list
+void ReadShapeList(lua_State* L, int idx, float defX, float defY, int defSegments, std::vector<std::vector<float>>& out) {
+    out.clear();
+    if (!lua_istable(L, idx)) return;
+    idx = idx < 0 ? lua_gettop(L) + idx + 1 : idx;
+    // a single spec instead of a list
+    lua_getfield(L, idx, "type");
+    bool single = lua_isstring(L, -1) != 0;
+    lua_pop(L, 1);
+    std::vector<float> pts;
+    if (single) { if (ReadShapePoly(L, idx, defX, defY, defSegments, pts)) out.push_back(pts); return; }
+    int n = (int)lua_objlen(L, idx);
+    for (int k = 1; k <= n; k++) {
+        lua_rawgeti(L, idx, k);
+        if (ReadShapePoly(L, lua_gettop(L), defX, defY, defSegments, pts)) out.push_back(pts);
+        lua_pop(L, 1);
+    }
+}
+// registerHoles(sprite, holes [, vertices]): a block whose first sprite is `sprite` gets these holes (shapes in 0..1 over the block, like `vertices`)
+// whenever createBox, createCircle or createPolygon makes it, so level files and createObject need nothing else. `vertices` (0..1) tells a polygon block how its
+// outline maps to the points it is made from.
+int l_registerHoles(lua_State* L) {
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.holes");
+    if (!lua_istable(L, -1)) { lua_pop(L, 1); lua_newtable(L); lua_pushvalue(L, -1); lua_setfield(L, LUA_REGISTRYINDEX, "ab.holes"); }
+    lua_newtable(L);
+    lua_pushvalue(L, 2); lua_setfield(L, -2, "holes");
+    if (lua_istable(L, 3)) { lua_pushvalue(L, 3); lua_setfield(L, -2, "vertices"); }
+    lua_setfield(L, -2, S(L, 1).c_str());
+    lua_pop(L, 1);
+    return 0;
+}
+// The holes registered for this sprite, in the block's own 0..1 space (outline: the normalized outline, empty = the whole square)
+bool RegisteredHoles(lua_State* L, const std::string& sprite, std::vector<std::vector<float>>& holes, std::vector<float>& normVerts) {
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.holes");
+    if (!lua_istable(L, -1)) { lua_pop(L, 1); return false; }
+    lua_getfield(L, -1, sprite.c_str());
+    if (!lua_istable(L, -1)) { lua_pop(L, 2); return false; }
+    int e = lua_gettop(L);
+    lua_getfield(L, e, "holes");
+    ReadShapeList(L, lua_gettop(L), 0.5f, 0.5f, 16, holes);
+    lua_pop(L, 1);
+    normVerts.clear();
+    lua_getfield(L, e, "vertices");
+    if (lua_istable(L, -1)) { std::vector<float> v; if (ReadShapePoly(L, lua_gettop(L), 0, 0, 16, v)) normVerts = v; }
+    lua_pop(L, 3);
+    return !holes.empty();
+}
+// Makes the body with the holes of a registered block; the outline is given in world units about the body (x, y pairs), `bx0..by1` its bounds
+float CreateRegisteredHoled(lua_State* L, const BodyDef& d, const std::vector<float>& outline, std::vector<std::vector<float>>& holes, const std::vector<float>& normVerts) {
+    float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+    for (size_t i = 0; i + 1 < outline.size(); i += 2) { x0 = std::min(x0, outline[i]); x1 = std::max(x1, outline[i]); y0 = std::min(y0, outline[i + 1]); y1 = std::max(y1, outline[i + 1]); }
+    float nx0 = 0, nx1 = 1, ny0 = 0, ny1 = 1;
+    if (normVerts.size() >= 6) {
+        nx0 = 1e9f; nx1 = -1e9f; ny0 = 1e9f; ny1 = -1e9f;
+        for (size_t i = 0; i + 1 < normVerts.size(); i += 2) { nx0 = std::min(nx0, normVerts[i]); nx1 = std::max(nx1, normVerts[i]); ny0 = std::min(ny0, normVerts[i + 1]); ny1 = std::max(ny1, normVerts[i + 1]); }
+    }
+    const float sx = nx1 > nx0 ? (x1 - x0) / (nx1 - nx0) : 1, sy = ny1 > ny0 ? (y1 - y0) / (ny1 - ny0) : 1;
+    for (auto& h : holes) for (size_t i = 0; i + 1 < h.size(); i += 2) { h[i] = x0 + (h[i] - nx0) * sx; h[i + 1] = y0 + (h[i + 1] - ny0) * sy; }
+    (void)L;
+    return P(L)->CreateWithHoles(d, outline, holes);
+}
+// createShapeWithHoles(name, sprite, x, y, outline, holes, density, friction, restitution, collision, controllable, zOrder)
+//   outline: a shape spec in world units about the body's origin; holes: a list of shape specs (any shape, any position, each about the body's origin).
+int l_createShapeWithHoles(lua_State* L) {
+    BodyDef d;
+    d.name = S(L, 1); d.sprite = S(L, 2); d.x = N(L, 3); d.y = N(L, 4);
+    std::vector<float> outline;
+    if (!ReadShapePoly(L, 5, 0, 0, 32, outline)) return luaL_error(L, "createShapeWithHoles: the outline needs a shape ({type = \"box\", w =, h =}, {type = \"circle\", radius =} or {type = \"polygon\", points = {...}})");
+    std::vector<std::vector<float>> holes;
+    ReadShapeList(L, 6, 0, 0, 16, holes);
+    float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+    for (size_t i = 0; i + 1 < outline.size(); i += 2) { x0 = std::min(x0, outline[i]); x1 = std::max(x1, outline[i]); y0 = std::min(y0, outline[i + 1]); y1 = std::max(y1, outline[i + 1]); }
+    d.w = x1 - x0; d.h = y1 - y0;
+    d.density = N(L, 7); d.friction = N(L, 8); d.restitution = N(L, 9);
+    d.collision = lua_isnoneornil(L, 10) ? true : B(L, 10); d.controllable = B(L, 11); d.zOrder = N(L, 12);
+    WriteWorldEntry(L, d, "polygon", P(L)->CreateWithHoles(d, outline, holes));
+    EmitHook(L, "objectCreated", d.name.c_str(), "polygon");
+    return 0;
+}
+// createPolygonSprite(newName, sourceSprite, {{x=, y=}, ...} [, outlineWidth [, darken [, fill [, holes]]]]) -> pixels inside, or nil
 //   A copy of sourceSprite cut to a polygon, for the sprite of a polygon block that is not a box: the points are 0..1 over the sprite (what a block's
 //   `vertices` hold), any outline works, concave too. outlineWidth (pixels, default 0) darkens the edge by `darken` (default 0.55) so the cut has an edge. fill = true fills the holes of the source (the wood square is a frame) with its average colour.
 int l_createPolygonSprite(lua_State* L) {
@@ -1231,7 +1352,9 @@ int l_createPolygonSprite(lua_State* L) {
             lua_pop(L, 1);
         }
     }
-    int n = P(L)->CreatePolygonSprite(S(L, 1), S(L, 2), v, lua_isnoneornil(L, 4) ? 0 : (int)N(L, 4), lua_isnoneornil(L, 5) ? 0.0f : N(L, 5), lua_toboolean(L, 6) != 0);
+    std::vector<std::vector<float>> holes;
+    ReadShapeList(L, 7, 0.5f, 0.5f, 16, holes);      // 3.6: the holes (shapes in 0..1 over the sprite) are left clear
+    int n = P(L)->CreatePolygonSprite(S(L, 1), S(L, 2), v, lua_isnoneornil(L, 4) ? 0 : (int)N(L, 4), lua_isnoneornil(L, 5) ? 0.0f : N(L, 5), lua_toboolean(L, 6) != 0, holes);
     if (n < 0) lua_pushnil(L); else lua_pushinteger(L, n);
     return 1;
 }
@@ -1314,12 +1437,32 @@ int l_createBox(lua_State* L) {
     bool halfExt = lua_toboolean(L, -1) != 0; lua_pop(L, 2);
     BodyDef shape = d;
     if (halfExt) { shape.w *= 2.0f; shape.h *= 2.0f; }      // Angry Birds 1.0: createBox takes the half sizes
+    {
+        std::vector<std::vector<float>> holes; std::vector<float> nv;
+        if (RegisteredHoles(L, d.sprite, holes, nv)) {
+            const float hw = shape.w * 0.5f, hh = shape.h * 0.5f;
+            std::vector<float> outline = {-hw, -hh, hw, -hh, hw, hh, -hw, hh};
+            WriteWorldEntry(L, d, "box", CreateRegisteredHoled(L, shape, outline, holes, std::vector<float>()));
+            EmitHook(L, "objectCreated", d.name.c_str(), "box");
+            return 0;
+        }
+    }
     WriteWorldEntry(L, d, "box", P(L)->CreateBox(shape));
     EmitHook(L, "objectCreated", d.name.c_str(), "box");
     return 0;
 }
 int l_createCircle(lua_State* L) {
     BodyDef d = ReadBody(L, true);
+    {
+        std::vector<std::vector<float>> holes; std::vector<float> nv;
+        if (RegisteredHoles(L, d.sprite, holes, nv)) {
+            std::vector<float> outline;
+            for (int i = 0; i < 32; i++) { float a = 6.28318530718f * i / 32; outline.push_back(d.w * std::cos(a)); outline.push_back(d.w * std::sin(a)); }
+            WriteWorldEntry(L, d, "circle", CreateRegisteredHoled(L, d, outline, holes, std::vector<float>()));
+            EmitHook(L, "objectCreated", d.name.c_str(), "circle");
+            return 0;
+        }
+    }
     WriteWorldEntry(L, d, "circle", P(L)->CreateCircle(d));
     EmitHook(L, "objectCreated", d.name.c_str(), "circle");
     return 0;
@@ -1342,6 +1485,14 @@ int l_createPolygon(lua_State* L) {
         d.density = N(L, 6); d.friction = N(L, 7); d.restitution = N(L, 8);
         d.collision = B(L, 9); d.controllable = B(L, 10); d.zOrder = N(L, 11);
     } else d = ReadBody(L, false);
+    {
+        std::vector<std::vector<float>> holes; std::vector<float> nv;
+        if (RegisteredHoles(L, d.sprite, holes, nv)) {
+            WriteWorldEntry(L, d, "polygon", CreateRegisteredHoled(L, d, P(L)->Vertices(), holes, nv));
+            EmitHook(L, "objectCreated", d.name.c_str(), "polygon");
+            return 0;
+        }
+    }
     WriteWorldEntry(L, d, "polygon", P(L)->CreatePolygon(d, P(L)->Vertices()));
     EmitHook(L, "objectCreated", d.name.c_str(), "polygon");
     return 0;
@@ -3161,7 +3312,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"requireFile", l_requireFile}, {"loadLuaFileToObject", l_loadLuaFileToObject}, {"loadLuaFile", l_loadLuaFileToObject},   // 2.0.0: the same without an object
         {"loadLevel", l_loadLevel}, {"loadLevelEditor", l_loadLevelEditor}, {"saveLevel", l_saveLevel}, {"saveLevelForReload", l_saveLevelForReload}, {"saveLuaFile", l_saveLuaFile}, {"checkForPersistentFile", l_checkForPersistentFile}, {"loadPersistentFileWrapper", l_loadPersistentFileWrapper},
         {"initializePainter", l_initializePainter}, {"clearCanvas", l_clearCanvas}, {"paintToCanvas", l_paintToCanvas}, {"drawCanvasWithMask", l_drawCanvasWithMask},
-        {"getDominantCanvasColors", l_getDominantCanvasColors}, {"createSpriteFromCanvas", l_createSpriteFromCanvas}, {"loadCanvasSprite", l_loadCanvasSprite}, {"createSilhouette", l_createSilhouette}, {"createPolygonSprite", l_createPolygonSprite}, {"predictCollision", l_predictCollision}, {"setObjectGravity", l_setObjectGravity}, {"setObjectGravityScale", l_setObjectGravityScale}, {"resetObjectGravity", l_resetObjectGravity}, {"getObjectGravity", l_getObjectGravity}, {"setupCompoObject", l_setupCompoObject},
+        {"getDominantCanvasColors", l_getDominantCanvasColors}, {"createSpriteFromCanvas", l_createSpriteFromCanvas}, {"loadCanvasSprite", l_loadCanvasSprite}, {"createSilhouette", l_createSilhouette}, {"createPolygonSprite", l_createPolygonSprite}, {"createShapeWithHoles", l_createShapeWithHoles}, {"registerHoles", l_registerHoles}, {"predictCollision", l_predictCollision}, {"setObjectGravity", l_setObjectGravity}, {"setObjectGravityScale", l_setObjectGravityScale}, {"resetObjectGravity", l_resetObjectGravity}, {"getObjectGravity", l_getObjectGravity}, {"setupCompoObject", l_setupCompoObject},
         {"createDirectory", l_createDirectory}, {"checkDirectory", l_checkDirectory}, {"checkForLuaFile", l_checkForLuaFile},
         {"createBox", l_createBox}, {"createCircle", l_createCircle}, {"createPolygon", l_createPolygon}, {"createLineShape", l_createLineShape},
         {"clearVertices", l_clearVertices}, {"addVertex", l_addVertex},

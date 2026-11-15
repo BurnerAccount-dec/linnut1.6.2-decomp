@@ -126,5 +126,112 @@ inline bool Decompose(std::vector<Pt> pts, size_t maxVerts, std::vector<std::vec
     return true;
 }
 
+// ---- holes: subtract shapes from a shape, keeping convex pieces
+// Keeps the part of a convex polygon on one side of the line a-b (side > 0: the left, side < 0: the right).
+inline std::vector<Pt> ClipSide(const std::vector<Pt>& poly, const Pt& a, const Pt& b, int side) {
+    std::vector<Pt> out;
+    const size_t n = poly.size();
+    for (size_t i = 0; i < n; i++) {
+        const Pt& p = poly[i]; const Pt& q = poly[(i + 1) % n];
+        float dp = side * Cross(a, b, p), dq = side * Cross(a, b, q);
+        if (dp >= 0) out.push_back(p);
+        if ((dp > 0 && dq < 0) || (dp < 0 && dq > 0)) {
+            float t = dp / (dp - dq);
+            out.push_back({p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t});
+        }
+    }
+    return out;
+}
+
+// Drops repeated and straight-through points; a piece that is left with no real area comes back empty.
+inline std::vector<Pt> CleanPiece(const std::vector<Pt>& in, float minEdge = 1e-3f, float minArea2 = 2e-4f) {
+    std::vector<Pt> p;
+    for (const Pt& q : in) if (p.empty() || std::hypot(q.x - p.back().x, q.y - p.back().y) > minEdge) p.push_back(q);
+    while (p.size() > 1 && std::hypot(p.front().x - p.back().x, p.front().y - p.back().y) <= minEdge) p.pop_back();
+    bool again = true;
+    while (again && p.size() >= 3) {
+        again = false;
+        for (size_t i = 0; i < p.size(); i++) {
+            const Pt& a = p[(i + p.size() - 1) % p.size()]; const Pt& b = p[i]; const Pt& c = p[(i + 1) % p.size()];
+            float len = std::hypot(c.x - a.x, c.y - a.y);
+            if (len > 0 && std::fabs(Cross(a, b, c)) / len < minEdge * 0.5f) { p.erase(p.begin() + i); again = true; break; }
+        }
+    }
+    if (p.size() < 3 || std::fabs(Area2(p)) < minArea2) p.clear();
+    return p;
+}
+
+// A minus B for two convex counter-clockwise polygons: the part of A outside every edge of B, as convex pieces.
+inline void SubtractConvex(const std::vector<Pt>& A, const std::vector<Pt>& B, std::vector<std::vector<Pt>>& out) {
+    std::vector<Pt> rest = A;
+    for (size_t i = 0; i < B.size() && rest.size() >= 3; i++) {
+        const Pt& a = B[i]; const Pt& b = B[(i + 1) % B.size()];
+        std::vector<Pt> outside = ClipSide(rest, a, b, -1);
+        if (outside.size() >= 3) out.push_back(outside);
+        rest = ClipSide(rest, a, b, +1);
+    }
+    // what is left of `rest` lies inside B and is gone
+}
+
+// Convex hull (counter-clockwise) of a point set
+inline std::vector<Pt> Hull(std::vector<Pt> p) {
+    std::sort(p.begin(), p.end(), [](const Pt& a, const Pt& b) { return a.x < b.x || (a.x == b.x && a.y < b.y); });
+    const size_t n = p.size();
+    if (n < 3) return p;
+    std::vector<Pt> h(2 * n);
+    size_t k = 0;
+    for (size_t i = 0; i < n; i++) { while (k >= 2 && Cross(h[k - 2], h[k - 1], p[i]) <= 1e-9f) k--; h[k++] = p[i]; }
+    for (size_t i = n - 1, t = k + 1; i > 0; i--) { while (k >= t && Cross(h[k - 2], h[k - 1], p[i - 1]) <= 1e-9f) k--; h[k++] = p[i - 1]; }
+    h.resize(k - 1);
+    return h;
+}
+
+// Joins neighbouring convex pieces whose union is still convex (and has at most maxVerts points): cutting holes leaves many slivers, this puts them back together.
+inline void MergePieces(std::vector<std::vector<Pt>>& pieces, size_t maxVerts) {
+    bool again = true;
+    while (again) {
+        again = false;
+        for (size_t i = 0; i < pieces.size() && !again; i++) {
+            const float ai = Area2(pieces[i]);
+            for (size_t j = i + 1; j < pieces.size() && !again; j++) {
+                std::vector<Pt> all = pieces[i];
+                all.insert(all.end(), pieces[j].begin(), pieces[j].end());
+                std::vector<Pt> hull = CleanPiece(Hull(all), 1e-3f, 0.0f);
+                if (hull.size() < 3 || hull.size() > maxVerts) continue;
+                if (Area2(hull) > ai + Area2(pieces[j]) + 1e-3f * (1.0f + ai)) continue;      // the hull is bigger than the two together: they do not fit
+                pieces[i] = hull;
+                pieces.erase(pieces.begin() + j);
+                again = true;
+            }
+        }
+    }
+}
+
+// The convex pieces (at most maxVerts points each, counter-clockwise) of `outline` with every polygon in `holes` cut out.
+// The outline and the holes may be concave, a hole may lie anywhere (fully inside, across an edge or a corner, or outside, which does nothing),
+// and holes may overlap each other.
+inline void CutHoles(const std::vector<Pt>& outline, const std::vector<std::vector<Pt>>& holes, size_t maxVerts, std::vector<std::vector<Pt>>& out) {
+    out.clear();
+    std::vector<std::vector<Pt>> pieces;
+    Decompose(outline, maxVerts, pieces);
+    for (const auto& hole : holes) {
+        std::vector<std::vector<Pt>> hp;
+        if (!Decompose(hole, maxVerts, hp)) continue;
+        for (const auto& h : hp) {
+            std::vector<std::vector<Pt>> next;
+            for (const auto& pc : pieces) SubtractConvex(pc, h, next);
+            pieces.swap(next);
+        }
+    }
+    for (const auto& pc : pieces) {
+        std::vector<Pt> c = CleanPiece(pc);
+        if (c.size() < 3) continue;
+        std::vector<std::vector<Pt>> parts;
+        Decompose(c, maxVerts, parts);
+        for (auto& q : parts) { std::vector<Pt> r = CleanPiece(q); if (r.size() >= 3) out.push_back(r); }
+    }
+    MergePieces(out, maxVerts);
+}
+
 }  // namespace polydecomp
 }  // namespace ab

@@ -4790,7 +4790,7 @@ int GamePlatform::CreateSilhouette(const std::string& name, const std::string& s
 // A copy of a sprite cut to a polygon: pixels outside it become clear (with 4 x 4 samples per pixel for a soft edge), pixels inside keep the source colour.
 // The vertices are 0..1 over the sprite (the same numbers a block's `vertices` hold), so the result fits the physics shape of a polygon block. With an outline
 // width the pixels that close to the edge are darkened by `darken` (0..1, 0.55 when left out), which gives the cut shape an edge instead of a flat cut.
-int GamePlatform::CreatePolygonSprite(const std::string& name, const std::string& source, const std::vector<float>& verts, int outline, float darken, bool fill) {
+int GamePlatform::CreatePolygonSprite(const std::string& name, const std::string& source, const std::vector<float>& verts, int outline, float darken, bool fill, const std::vector<std::vector<float>>& holes) {
     if (!backend_ || verts.size() < 6) return -1;
     const SpriteSheet* sheet = nullptr;
     const Sprite* sp = sprites_.Find(source, &sheet);
@@ -4802,20 +4802,43 @@ int GamePlatform::CreatePolygonSprite(const std::string& name, const std::string
     if (w <= 0 || h <= 0) return -1;
     std::vector<float> px, py;
     for (size_t i = 0; i + 1 < verts.size(); i += 2) { px.push_back(verts[i] * w); py.push_back(verts[i + 1] * h); }
-    const size_t n = px.size();
-    auto inside = [&](float x, float y) {           // even-odd rule
+    // the outline and the holes (each is a loop of points, in pixels); a pixel is in when it is in the outline and in none of the holes
+    std::vector<std::vector<float>> loops;
+    {
+        std::vector<float> l;
+        for (size_t i = 0; i < px.size(); i++) { l.push_back(px[i]); l.push_back(py[i]); }
+        loops.push_back(l);
+        for (const auto& hv : holes) {
+            if (hv.size() < 6) continue;
+            std::vector<float> hl;
+            for (size_t i = 0; i + 1 < hv.size(); i += 2) { hl.push_back(hv[i] * w); hl.push_back(hv[i + 1] * h); }
+            loops.push_back(hl);
+        }
+    }
+    auto inLoop = [&](const std::vector<float>& l, float x, float y) {           // even-odd rule
+        const size_t n = l.size() / 2;
         bool in = false;
-        for (size_t i = 0, j = n - 1; i < n; j = i++)
-            if (((py[i] > y) != (py[j] > y)) && (x < (px[j] - px[i]) * (y - py[i]) / (py[j] - py[i]) + px[i])) in = !in;
+        for (size_t i = 0, j = n - 1; i < n; j = i++) {
+            const float xi = l[2 * i], yi = l[2 * i + 1], xj = l[2 * j], yj = l[2 * j + 1];
+            if (((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) in = !in;
+        }
         return in;
+    };
+    auto inside = [&](float x, float y) {
+        if (!inLoop(loops[0], x, y)) return false;
+        for (size_t k = 1; k < loops.size(); k++) if (inLoop(loops[k], x, y)) return false;
+        return true;
     };
     auto edgeDistance = [&](float x, float y) {
         float best = 1e9f;
-        for (size_t i = 0, j = n - 1; i < n; j = i++) {
-            float ex = px[i] - px[j], ey = py[i] - py[j], l2 = ex * ex + ey * ey;
-            float t = l2 > 0 ? std::max(0.0f, std::min(1.0f, ((x - px[j]) * ex + (y - py[j]) * ey) / l2)) : 0.0f;
-            float dx = x - (px[j] + t * ex), dy = y - (py[j] + t * ey);
-            best = std::min(best, std::sqrt(dx * dx + dy * dy));
+        for (const auto& l : loops) {
+            const size_t n = l.size() / 2;
+            for (size_t i = 0, j = n - 1; i < n; j = i++) {
+                float ex = l[2 * i] - l[2 * j], ey = l[2 * i + 1] - l[2 * j + 1], l2 = ex * ex + ey * ey;
+                float t = l2 > 0 ? std::max(0.0f, std::min(1.0f, ((x - l[2 * j]) * ex + (y - l[2 * j + 1]) * ey) / l2)) : 0.0f;
+                float dx = x - (l[2 * j] + t * ex), dy = y - (l[2 * j + 1] + t * ey);
+                best = std::min(best, std::sqrt(dx * dx + dy * dy));
+            }
         }
         return best;
     };
