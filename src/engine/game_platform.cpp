@@ -2059,7 +2059,8 @@ void GamePlatform::DrawSpriteAtRaw(const SpriteSheet& sheet, const Sprite& spr, 
 void GamePlatform::DrawRect(float r, float g, float b, float a, float x1, float y1, float x2, float y2, bool inWorld) {
     if (!inWorld) state_ = RenderState();
     if (!backend_) return;
-    x1 = std::trunc(x1); y1 = std::trunc(y1); x2 = std::trunc(x2); y2 = std::trunc(y2);
+    // 3.6: a rectangle in world units (Angry Birds 1.0.0's drag-selection box in the editor) keeps its fractions: whole numbers would make a box of under one unit vanish and the rest jump
+    if (!inWorld) { x1 = std::trunc(x1); y1 = std::trunc(y1); x2 = std::trunc(x2); y2 = std::trunc(y2); }
     float xy[8], uv[8] = {0, 0, 0, 0, 0, 0, 0, 0};
     const float px[4] = {x1, x2, x2, x1}, py[4] = {y1, y1, y2, y2};
     for (int i = 0; i < 4; i++) Transform(px[i], py[i], x1 + state_.pivotX, y1 + state_.pivotY, xy[i * 2], xy[i * 2 + 1]);
@@ -4394,8 +4395,7 @@ void GamePlatform::ConsoleCommand(const std::string& raw) {
         }
     } else if (cmd == "polyradius") {
         if (!arg.empty()) Physics().SetPolygonRadius((float)std::atof(arg.c_str()));
-        if (Physics().Version() == Box2DVersion::V22) std::printf("console: polygon radius %g (applies to shapes made afterwards)\n", Physics().PolygonRadius());
-        else std::printf("console: Box2D 2.1 has a fixed polygon radius of 0.1\n");
+        std::printf("console: polygon radius (collision skin) %g (every game; shapes in the world and made afterwards)\n", Physics().PolygonRadius());
     } else if (scripts_) {
         scripts_->RunString((cmd == "lua" ? arg : line).c_str());
     }
@@ -4795,9 +4795,17 @@ int GamePlatform::CreatePolygonSprite(const std::string& name, const std::string
     const SpriteSheet* sheet = nullptr;
     const Sprite* sp = sprites_.Find(source, &sheet);
     if (!sp || !sheet) return -1;
-    Image whole;
-    std::string error;
-    if (!LoadPngFile(sheet->directory + "/" + sheet->image, whole, &error)) { Print("createPolygonSprite: " + error); return -1; }
+    // the sheet is decoded once: a block is cut five times (one for each damage stage)
+    static std::map<std::string, Image> sheetCache;
+    const std::string sheetPath = sheet->directory + "/" + sheet->image;
+    if (sheetCache.find(sheetPath) == sheetCache.end()) {
+        if (sheetCache.size() >= 3) sheetCache.clear();
+        Image decoded;
+        std::string error;
+        if (!LoadPngFile(sheetPath, decoded, &error)) { Print("createPolygonSprite: " + error); return -1; }
+        sheetCache[sheetPath] = std::move(decoded);
+    }
+    const Image& whole = sheetCache[sheetPath];
     const int w = sp->w, h = sp->h;
     if (w <= 0 || h <= 0) return -1;
     std::vector<float> px, py;

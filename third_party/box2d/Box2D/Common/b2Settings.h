@@ -71,7 +71,9 @@ typedef float float32;
 /// The radius of the polygon/edge shape skin. This should not be modified. Making
 /// this smaller means polygons will have an insufficient buffer for continuous collision.
 /// Making it larger may create artifacts for vertex collision.
-#define b2_polygonRadius		(2.0f * b2_linearSlop)
+// 3.6: the skin can be changed at run time (setPolygonRadius, the console's `skin`); the default is two linear slops as before.
+extern float b2_polygonRadiusValue21;
+#define b2_polygonRadius		b2_polygonRadiusValue21
 
 
 // Dynamics

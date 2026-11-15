@@ -187,21 +187,27 @@ inline std::vector<Pt> Hull(std::vector<Pt> p) {
 }
 
 // Joins neighbouring convex pieces whose union is still convex (and has at most maxVerts points): cutting holes leaves many slivers, this puts them back together.
+// Only pieces whose boxes touch are tried, and the scan goes on after a join instead of starting again.
 inline void MergePieces(std::vector<std::vector<Pt>>& pieces, size_t maxVerts) {
-    bool again = true;
-    while (again) {
-        again = false;
-        for (size_t i = 0; i < pieces.size() && !again; i++) {
-            const float ai = Area2(pieces[i]);
-            for (size_t j = i + 1; j < pieces.size() && !again; j++) {
+    struct Box { float x0, y0, x1, y1; };
+    auto boxOf = [](const std::vector<Pt>& p) { Box b{1e30f, 1e30f, -1e30f, -1e30f}; for (const Pt& q : p) { b.x0 = std::min(b.x0, q.x); b.y0 = std::min(b.y0, q.y); b.x1 = std::max(b.x1, q.x); b.y1 = std::max(b.y1, q.y); } return b; };
+    bool any = true;
+    int guard = 0;
+    while (any && guard++ < 50) {
+        any = false;
+        for (size_t i = 0; i < pieces.size(); i++) {
+            for (size_t j = i + 1; j < pieces.size();) {
+                Box a = boxOf(pieces[i]), b = boxOf(pieces[j]);
+                const float e = 1e-3f;
+                if (a.x1 + e < b.x0 || b.x1 + e < a.x0 || a.y1 + e < b.y0 || b.y1 + e < a.y0) { j++; continue; }
                 std::vector<Pt> all = pieces[i];
                 all.insert(all.end(), pieces[j].begin(), pieces[j].end());
                 std::vector<Pt> hull = CleanPiece(Hull(all), 1e-3f, 0.0f);
-                if (hull.size() < 3 || hull.size() > maxVerts) continue;
-                if (Area2(hull) > ai + Area2(pieces[j]) + 1e-3f * (1.0f + ai)) continue;      // the hull is bigger than the two together: they do not fit
+                const float ai = Area2(pieces[i]);
+                if (hull.size() < 3 || hull.size() > maxVerts || Area2(hull) > ai + Area2(pieces[j]) + 1e-3f * (1.0f + ai)) { j++; continue; }
                 pieces[i] = hull;
                 pieces.erase(pieces.begin() + j);
-                again = true;
+                any = true;
             }
         }
     }

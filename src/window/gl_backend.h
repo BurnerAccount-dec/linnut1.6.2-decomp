@@ -49,6 +49,7 @@ private:
     std::vector<std::pair<int, int>> textureSizes_;
     bool programsOk_ = false;
     int program_ = -1;                 // the program in use (-1: none)
+    int cachedProgram_ = -1; float cachedTime_ = 0, cachedResW_ = 0, cachedResH_ = 0, cachedParams_[16] = {};   // what SetProgram last sent
     float time_ = 0, resW_ = 1, resH_ = 1;
 };
 

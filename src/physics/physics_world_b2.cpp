@@ -238,13 +238,24 @@ public:
         world_.SetContactFilter(nullptr);
     }
 
+    // 3.6: the skin of the shapes that are already in the world changes as well (polygons only; circles have their radius)
+    void ApplySkin(float r) {
+        for (b2Body* b = world_.GetBodyList(); b; b = b->GetNext())
+            for (b2Fixture* f = b->GetFixtureList(); f; f = f->GetNext())
+                if (f->GetType() == b2Shape::e_polygon) const_cast<b2Shape*>(f->GetShape())->m_radius = r;
+    }
     Box2DVersion Version() const override { return AB_B2_VERSION; }
 #ifdef AB_BOX2D_V22
     void SetBox2DFlavour(bool space) override { b2_coincidentCircleNormal = !space; b2_spaceBuild = space; }
 #endif
 #ifdef AB_BOX2D_V22
-    void SetPolygonRadius(float r) override { if (r >= 0) b2_polygonRadiusValue = r; }
+    void SetPolygonRadius(float r) override { if (r >= 0) { b2_polygonRadiusValue = r; ApplySkin(r); } }
     float PolygonRadius() const override { return b2_polygonRadiusValue; }
+#else
+    void SetPolygonRadius(float r) override { if (r >= 0) { b2_polygonRadiusValue21 = r; ApplySkin(r); } }      // 3.6: the skin of every game (in 2.1.1 it is what the distance and time-of-impact code adds around a shape)
+    float PolygonRadius() const override { return b2_polygonRadiusValue21; }
+#endif
+#ifdef AB_BOX2D_V22
     void SetSolverSettings(float linearSlop, float timeToSleep, float linearSleepTolerance) override { b2_linearSlopValue = linearSlop; b2_timeToSleepValue = timeToSleep; b2_linearSleepToleranceValue = linearSleepTolerance; }
 #endif
 
@@ -513,8 +524,13 @@ public:
             for (size_t i = 0; i + 1 < h.size(); i += 2) hp.push_back({h[i], h[i + 1]});
             if (hp.size() >= 3) hs.push_back(hp);
         }
-        std::vector<std::vector<polydecomp::Pt>> pieces;
-        polydecomp::CutHoles(out, hs, (size_t)b2_maxPolygonVertices, pieces);
+        // the same block made again (a level with ten of them) reuses the pieces: the cut is the slow part
+        std::string key;
+        { char buf[40]; for (const auto& pt : out) { std::snprintf(buf, sizeof buf, "%.4f,%.4f;", pt.x, pt.y); key += buf; }
+          for (const auto& hp : hs) { key += '|'; for (const auto& pt : hp) { std::snprintf(buf, sizeof buf, "%.4f,%.4f;", pt.x, pt.y); key += buf; } } }
+        std::vector<std::vector<polydecomp::Pt>>& pieces = holeCache_[key];
+        if (pieces.empty()) polydecomp::CutHoles(out, hs, (size_t)b2_maxPolygonVertices, pieces);
+        if (std::getenv("AB_HOLEDBG")) std::fprintf(stderr, "holes: %d pieces\n", (int)pieces.size());
         int made = 0;
         for (const auto& pc : pieces) {
             std::vector<b2Vec2> v;
@@ -1012,6 +1028,7 @@ private:
     b2Body* mouseGround_ = nullptr;                                          // the fixed body mouse joints pull against (made on first use)
     std::map<b2Joint*, std::pair<b2Joint*, b2Joint*>> gearDeps_;            // gear joint -> the two joints it couples
     std::vector<b2Joint*> gearsToKill_;
+    std::map<std::string, std::vector<std::vector<polydecomp::Pt>>> holeCache_;      // CutHoles results by outline and holes
     std::set<std::pair<PhysObject*, PhysObject*>> hitsThisStep_;      // the pairs a block with holes has already hit in this step
 };
 

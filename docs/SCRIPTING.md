@@ -285,9 +285,19 @@ createShapeWithHoles("frame1", "BLOCK_WOOD_4X4_1", 10, -6,
 
 A block with holes is many fixtures; the contacts of its pieces with another body in one step count as one hit.
 
+**Holes in every creation call (3.6).** After the usual arguments, `createBox`, `createCircle` and `createPolygon` take a table of shapes (the same shape specs, in world units about the object): `createBox("b", "SPRITE", x, y, 4, 4, 1, 0.5, 0.2, true, false, 5, { {type = "circle", x = 0.5, y = 0.5, radius = 0.6} })` (the table goes after the z order; with a circle's collision flag it is the twelfth argument). A block definition with `holes` (shapes from 0 to 1 over the block; a polygon block also has its `vertices`) gets them from `createObject`, from level files and from the editors; `extras/extra_scripts.lua` registers them (`registerHoles`) whenever the block table is loaded.
+
+### Pop-ups: `modalOpen` and `modalInput` (3.6)
+
+A script that sets the global `modalOpen = true` stops the game from getting keys and the mouse (the pause page, the birds and the menus see nothing pressed). While it is open `modalInput` holds `pressed = {KEY = true}` (keys that went down this frame), `down` and `clicked` (the left button) and `x`, `y` (the cursor), so the script can draw its own pop-up and read the answer. `extras/extra_scripts.lua` (section 7, table `exitPrompt`) uses it to ask whether to keep the state of a level when it is left. Set `modalOpen = false` to give the game its input back.
+
+### Older joint call with the newer types (3.6)
+
+`createJoint(name, end1, end2, type, coordType, x1, y1, x2, y2 [, extra])`: the table `extra` holds the fields of the types that came later (`groundX1`, `ratio`, `joint1`, `targetX`, `maxLength`, ...), so the nine positional values and the table of fields work in every game, together, and a level can hold both kinds of joints.
+
 ### Save states (3.5)
 
-The engine remembers a level that was left half played, in every game. While a level runs (the game mode is `updateGame`) its state is written to `savestates.lua` in the save folder every `saveStates.autosave` seconds, when the level is left (to a menu, the level select or another level) and when the game is closed. When the same level is loaded again the state is put back in the first frame the level runs, also in a new run of the game: a dead bird stays dead, a cracked block stays cracked, a block that was moved stays where it was. A level is known by the path it was loaded from (`loadLevel(path)`). The code is `src/lua/save_states.cpp`; it needs nothing from the game's scripts except the names below, which the games share.
+The engine remembers a level that was left half played, in every game. While a level runs (the game mode is `updateGame`) its state is written to `savestates.lua` in the save folder when a script (or the leave pop-up of `extras/extra_scripts.lua`) calls `saveStates.save()`; `saveStates.autosave` (seconds) writes it on its own while a level runs, and `saveStates.saveOnLeave = true` writes it when the level is left and when the game is closed. Both are off by default. When the same level is loaded again the state is put back in the first frame the level runs, also in a new run of the game: a dead bird stays dead, a cracked block stays cracked, a block that was moved stays where it was. A level is known by the path it was loaded from (`loadLevel(path)`). The code is `src/lua/save_states.cpp`; it needs nothing from the game's scripts except the names below, which the games share.
 
 What is kept: every object in `objects.world` (place, angle, speed, at rest or not, and each number, string and flag in its table: strength, damage sprite, `startNumber`, ...); the script variables named in `saveStates.globals` and the tables in `saveStates.tables` (the score table, the camera); the objects that `saveStates.objectGlobals` point to (the flying bird); the camera function. Objects that are gone are removed again (and taken out of the tables in `saveStates.objectTables`). Objects the scripts made after the level began (the halves of a Blue Bird, debris) are not part of it. A restart, finishing a level and failing it clear the state.
 
@@ -296,15 +306,17 @@ The settings are the global table `saveStates`; the engine makes it with these v
 | Field | Default | What it does |
 |---|---|---|
 | `enabled` | `true` | `false`: nothing is saved or put back. |
+| `skipLevels` | `{}` | Parts of level paths : these levels are never saved or put back (3.6). |
 | `file` | `"savestates.lua"` | The file in the save folder. Delete it to forget every level. |
-| `autosave` | `5` | Seconds (real time) between writes while a level runs; `0`: only when the level is left or the game is closed. |
+| `autosave` | `0` | Seconds (real time) between writes while a level runs; `0`: none. |
+| `saveOnLeave` | `false` | `true`: the state is also written when the level is left and when the game is closed. |
 | `restartWindow` | `2` | A level that is loaded again within this many seconds after it was left is a restart, not a visit: its state is cleared and it starts from the beginning. |
 | `readyVariable` | `"levelStartPosition"` | The level counts as set up when this script variable exists and (for a table) has `x` not 0; `""`: at the first frame the level runs. |
-| `globals` | the bird queue (`currentBirdIndex`, `currentBirdName`, `birdFired`, `birdReady`, `birdsShot`, ...), `score`, the timers and `worldScale` | Script variables (numbers, strings, flags) that are saved. Add the names of your own. |
-| `tables` | `{"scoreTable", "screen"}` | Global tables whose plain values (down to three levels) are saved and merged back. |
+| `globals` | the bird queue (`currentBirdIndex`, `currentBirdName`, `birdFired`, `birdReady`, `birdsShot`, ...), `score` and the timers (not the camera, since 3.6: add `worldScale`, `zoomLevel` and the `screen` table to `tables` to keep it) | Script variables (numbers, strings, flags) that are saved. Add the names of your own. |
+| `tables` | `{"scoreTable"}` | Global tables whose plain values (down to three levels) are saved and merged back. |
 | `objectGlobals` | `{"flyingBird", "selectedBird", "cameraTargetObject"}` | Variables that hold one of the level's objects (saved by name). |
 | `objectTables` | `{"birds", "otherBirds", "levelGoals"}` | Tables keyed by object name that an object is taken out of when it is gone. |
-| `cameras` | the game's camera functions | Names of the functions `cameraFunction` can be, so it can be put back. |
+| `cameras` | none (since 3.6) | Names of the functions `cameraFunction` can be, so it can be put back. |
 | `skipWhen`, `skipWhenPositive` | `{"levelCompleted"}`, `{"levelFailedTimer"}` | Variables that, when true (or above 0), mean the level is over and nothing is kept. |
 
 | Function | What it does |
@@ -323,9 +335,27 @@ table.insert(saveStates.globals, "myComboCounter")
 saveStates.enabled = false
 ```
 
+### Achievements: adding and removing them (3.6)
+
+The achievements the games list are a table, `achievements`, that the game's scripts (or the engine, from `achievements.lua` of the data) fill: the key is the achievement's name, the value its id (Game Center, Classic) or a table with the icon (`{icon = "SPRITE"}`, Angry Birds 2.0.0 and Seasons 4.x). `src/lua/achievements_page.lua` reads that table when the F7 page opens and each time a pop-up is made, so a script changes the list by changing the table. It loads only when the table has at least one entry, so a game with no list at all has no page to add to.
+
+**Add one**, from `extras/extra_scripts.lua` or any script that runs after the game's scripts:
+
+```lua
+achievements["Block Party"] = "com.example.blockparty"      -- the id (or {icon = "ACHIEVEMENT_SPRITE"} where the game keeps tables)
+abAchievementTexts = abAchievementTexts or {}
+abAchievementTexts["Block Party"] = "Smash 20 blocks in one shot."    -- the how-to text the page shows (without it the page falls back to the text it works out from the game's data, or none)
+```
+
+An unlock is `unlockAchievement(id, "Block Party")` (the name is what is kept and shown); the Classic and Seasons scripts have `addToAchievementUnlockQueue("Block Party")`, which does the same through the game's queue (one pop-up every 3 seconds). The unlock is written to `settings.abAchievements["Block Party"]` (the time) and is shown once: the game's own pop-up where it has one (`BannerPopup`, `AchievementPopup`), otherwise a banner of the same make. The pop-up's icon is the table's `icon` (or `achievementPopUpPage.icons[name]` in Angry Birds HD 1.4.2); give a sprite that is loaded in the game, or the pop-up shows no icon. When the achievement counts something, count it in a variable and unlock it in an `engine.on("update", ...)` or `engine.on("contact", ...)` handler.
+
+**Remove one:** `achievements["Block Party"] = nil` takes it off the page and stops its pop-up (`unlockAchievement` still keeps an entry for it in the settings). To take away an unlock the player already has, set `settings.abAchievements["Block Party"] = nil` (the games' own records, `settings.achievements[name]`, are cleared the same way) and save with `saveSettings()`. To hide every achievement, make the table empty before the game's menus are made; the page and the Game Center button then do nothing.
+
+To see a new entry, press F7; the Test pop-up button (or T) shows the pop-up of a made-up achievement without saving anything.
+
 ### Polygon skin
 
-`setPolygonRadius(r)` / `getPolygonRadius()`: the collision skin of boxes and polygons created afterwards (Rio, Box2D 2.2 only; default 0.1, the skin only decides when blocks count as touching, it does not push stacked blocks apart).
+`setPolygonRadius(r)` / `getPolygonRadius()`: the collision skin of boxes and polygons (every game since 3.6, shapes already in the world change too; default 0.1, the skin only decides when blocks count as touching, it does not push stacked blocks apart).
 
 ### Draw order and z
 
@@ -1349,6 +1379,11 @@ Every function and event of this chapter was run with a smoke script (it calls e
 Tell us about a game or call that misbehaves and it will be fixed.
 
 ---
+
+### Level spawner (3.7)
+
+`levelSpawner` (in `extra_scripts.lua`) puts the data of another level into the level that is being played. F1 opens a picker (Left / Right: level, Up / Down: folder, Return: spawn, Escape: close). The level file is read with `readDataFile`, run in an empty table to get its `world` and `joints`, and every entry is made like Red's Mighty Feathers (3.3.0) makes a vehicle: `createObject(blockTable, definition, newName, x, y, fields)` with the level's other fields, and `createJoint` with `end1` / `end2` changed to the new names. Fields: `enabled`, `key`, `closeKeys`, `spawnKeys`, `prefix` (names are `prefix .. number .. "_" .. oldName`), `skip` (definitions that are not made; birds never are), `drop` (a level file dropped on the window during a level is spawned at the cursor; `false` loads it as the level, as before) and `title`.
+
 
 ## Changing how damage is worked out and how things are drawn (2.9)
 

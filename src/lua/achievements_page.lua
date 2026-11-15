@@ -247,6 +247,7 @@ end
 
 local function describe(name)
     local n = trim(name)
+    if type(env.abAchievementTexts) == "table" and type(env.abAchievementTexts[n]) == "string" then return env.abAchievementTexts[n] end      -- 3.6: a script's own text
     local t = texts[n]
     if t then return (string.gsub(t, "{([^}]+)}", limit)) end
     local d = scan()

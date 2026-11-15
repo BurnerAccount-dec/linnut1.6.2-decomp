@@ -54,7 +54,7 @@ Set the environment variable `AB_SLOWFRAMES=1` to print a line for every frame t
 
 The developers' tools in the scripts are switched on in every game (set `AB_NODEBUGKEYS=1` to run without them). `releaseBuild` itself stays on, because turning it off unlocks every level and the whole game; only the code that reads the debug keys is told it is off.
 
-- 8: draw the hit boxes (sleeping objects in another colour), 9: hide / show the background, 0 or F: frames per second.
+- 8: draw the hit boxes (sleeping objects in another colour; since 3.6 the engine draws them itself in the games whose scripts have no such drawing, 1.0.0 among them), 9: hide / show the background, 0 or F: frames per second.
 - C (or K in the older versions): clear the level. G (Rio): fail the level. Space (Rio): single step. Shift+Left / Shift+Right: previous / next level (where the scripts have it, for example 2.0.0).
 - Main menu, "Editor" button: pick a level and edit it. Ctrl+S saves it over the level file (an encrypted original becomes a plain Lua file, which the game reads just the same; a copy for playtesting goes to `temp/` next to it). Shift+P plays the level you are editing, and returns to the editor when you leave it. Tab switches the physics on and off, Shift+C / Shift+B store the castle / bird camera, Delete removes the selection. Right button drag selects, left button drag moves the selection; the Rio block palette is on the keys of `groups.lua` (Q/W wood, A/S glass, 1/2 stone and so on). The level files are written into the game's own `data/levels` folder.
 
@@ -80,6 +80,7 @@ Two editors exist. The **classic editor** is Rovio's own (the 1.6.2 editor, whic
 | R | Rotate the selected objects |
 | Ctrl + C, then click | Copy the selection and place the copy |
 | Delete | Remove the selection (and its joints) |
+| F1 (in a level, nothing selected in the editor) | Level spawner: pick another level with the arrows, Return puts its blocks, pigs and joints at the cursor |
 | J, or F1 .. F5 (two objects selected; Shift + J in 1.6.x, where J is a block key) | Open the joint window (F1 distance, F2 weld, F3 revolute, F4 prismatic, F5 "destroy attached"); 1.6.x games without one get the window of Seasons 2.3.0 |
 | Tab | Physics on / off (the level is restored when it is switched off) |
 | Shift + P | Play the level, Escape (also on the clear / failed page) comes back to the editor |

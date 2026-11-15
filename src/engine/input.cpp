@@ -54,9 +54,29 @@ void FillKeyTable(lua_State* L, const char* table, const bool* values) {
 
 void InputBridge::Apply(lua_State* L) {
     lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
-    FillKeyTable(L, "keyPressed", pressed_);
-    FillKeyTable(L, "keyReleased", released_);
-    FillKeyTable(L, "keyHold", held_);
+    // 3.6: while a script has a pop-up open (the global `modalOpen` is true) the game gets no input; the pop-up reads it from the table `modalInput`
+    // ({pressed = {KEY = true}, down = left button held, clicked = left button went down this frame, x =, y =})
+    lua_getfield(L, -1, "modalOpen");
+    const bool modal = lua_toboolean(L, -1) != 0;
+    lua_pop(L, 1);
+    static bool wasDown = false;
+    const bool down0 = held_[KeyIndex("LBUTTON")];
+    if (modal) {
+        lua_newtable(L);
+        lua_newtable(L);
+        for (int i = 0; i < kKeyCount; i++) if (pressed_[i]) { lua_pushboolean(L, 1); lua_setfield(L, -2, kKeyNames[i]); }
+        lua_setfield(L, -2, "pressed");
+        lua_pushboolean(L, down0); lua_setfield(L, -2, "down");
+        lua_pushboolean(L, down0 && !wasDown); lua_setfield(L, -2, "clicked");
+        lua_pushnumber(L, cursorX_); lua_setfield(L, -2, "x");
+        lua_pushnumber(L, cursorY_); lua_setfield(L, -2, "y");
+        lua_setfield(L, -2, "modalInput");
+    }
+    wasDown = down0;
+    static const bool none[kKeyCount] = {};
+    FillKeyTable(L, "keyPressed", modal ? none : pressed_);
+    FillKeyTable(L, "keyReleased", modal ? none : released_);
+    FillKeyTable(L, "keyHold", modal ? none : held_);
 
     lua_getfield(L, -1, "cursor");
     if (lua_istable(L, -1)) {
@@ -70,7 +90,7 @@ void InputBridge::Apply(lua_State* L) {
     lua_pop(L, 1);
 
     // one fake touch while the left button is down
-    bool down = held_[KeyIndex("LBUTTON")];
+    bool down = !modal && held_[KeyIndex("LBUTTON")];
     lua_pushnumber(L, down ? 1 : 0);
     lua_setfield(L, -2, "touchcount");
     lua_getfield(L, -1, "touches");

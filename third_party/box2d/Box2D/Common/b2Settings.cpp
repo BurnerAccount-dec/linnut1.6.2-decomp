@@ -17,6 +17,8 @@
 */
 
 #include <Box2D/Common/b2Settings.h>
+
+float b2_polygonRadiusValue21 = 2.0f * b2_linearSlop;
 #include <cstdlib>
 
 b2Version b2_version = {2, 1, 1};

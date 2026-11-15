@@ -1317,6 +1317,11 @@ float CreateRegisteredHoled(lua_State* L, const BodyDef& d, const std::vector<fl
     (void)L;
     return P(L)->CreateWithHoles(d, outline, holes);
 }
+// 3.6: a table after the usual arguments of createBox / createCircle / createPolygon is a list of holes (shape specs in world units about the body's origin)
+bool TrailingHoles(lua_State* L, std::vector<std::vector<float>>& holes) {
+    for (int k = lua_gettop(L); k >= 12; k--) if (lua_istable(L, k)) { ReadShapeList(L, k, 0, 0, 16, holes); return !holes.empty(); }
+    return false;
+}
 // createShapeWithHoles(name, sprite, x, y, outline, holes, density, friction, restitution, collision, controllable, zOrder)
 //   outline: a shape spec in world units about the body's origin; holes: a list of shape specs (any shape, any position, each about the body's origin).
 int l_createShapeWithHoles(lua_State* L) {
@@ -1439,10 +1444,12 @@ int l_createBox(lua_State* L) {
     if (halfExt) { shape.w *= 2.0f; shape.h *= 2.0f; }      // Angry Birds 1.0: createBox takes the half sizes
     {
         std::vector<std::vector<float>> holes; std::vector<float> nv;
-        if (RegisteredHoles(L, d.sprite, holes, nv)) {
+        const bool given = TrailingHoles(L, holes);
+        if (given || RegisteredHoles(L, d.sprite, holes, nv)) {
             const float hw = shape.w * 0.5f, hh = shape.h * 0.5f;
             std::vector<float> outline = {-hw, -hh, hw, -hh, hw, hh, -hw, hh};
-            WriteWorldEntry(L, d, "box", CreateRegisteredHoled(L, shape, outline, holes, std::vector<float>()));
+            if (given) WriteWorldEntry(L, d, "box", P(L)->CreateWithHoles(shape, outline, holes));
+            else WriteWorldEntry(L, d, "box", CreateRegisteredHoled(L, shape, outline, holes, std::vector<float>()));
             EmitHook(L, "objectCreated", d.name.c_str(), "box");
             return 0;
         }
@@ -1455,10 +1462,12 @@ int l_createCircle(lua_State* L) {
     BodyDef d = ReadBody(L, true);
     {
         std::vector<std::vector<float>> holes; std::vector<float> nv;
-        if (RegisteredHoles(L, d.sprite, holes, nv)) {
+        const bool given = TrailingHoles(L, holes);
+        if (given || RegisteredHoles(L, d.sprite, holes, nv)) {
             std::vector<float> outline;
             for (int i = 0; i < 32; i++) { float a = 6.28318530718f * i / 32; outline.push_back(d.w * std::cos(a)); outline.push_back(d.w * std::sin(a)); }
-            WriteWorldEntry(L, d, "circle", CreateRegisteredHoled(L, d, outline, holes, std::vector<float>()));
+            if (given) WriteWorldEntry(L, d, "circle", P(L)->CreateWithHoles(d, outline, holes));
+            else WriteWorldEntry(L, d, "circle", CreateRegisteredHoled(L, d, outline, holes, std::vector<float>()));
             EmitHook(L, "objectCreated", d.name.c_str(), "circle");
             return 0;
         }
@@ -1487,8 +1496,10 @@ int l_createPolygon(lua_State* L) {
     } else d = ReadBody(L, false);
     {
         std::vector<std::vector<float>> holes; std::vector<float> nv;
-        if (RegisteredHoles(L, d.sprite, holes, nv)) {
-            WriteWorldEntry(L, d, "polygon", CreateRegisteredHoled(L, d, P(L)->Vertices(), holes, nv));
+        const bool given = TrailingHoles(L, holes);
+        if (given || RegisteredHoles(L, d.sprite, holes, nv)) {
+            if (given) WriteWorldEntry(L, d, "polygon", P(L)->CreateWithHoles(d, P(L)->Vertices(), holes));
+            else WriteWorldEntry(L, d, "polygon", CreateRegisteredHoled(L, d, P(L)->Vertices(), holes, nv));
             EmitHook(L, "objectCreated", d.name.c_str(), "polygon");
             return 0;
         }
@@ -1679,6 +1690,12 @@ int l_createJoint(lua_State* L) {
         static const char* const fields[] = {"name", "end1", "end2", "type", "coordType", "x1", "y1", "x2", "y2"};
         lua_newtable(L);
         for (int i = 0; i < 9; i++) { lua_pushvalue(L, i + 1); lua_setfield(L, -2, fields[i]); }
+        // 3.6: a table after the nine values has the fields of the joint types that came later (pulley, gear, mouse, line / wheel, friction, rope: groundX1, ratio, joint1,
+        // targetX, maxLength, ...), so the two ways of calling it work side by side in every game and a level can have both kinds of joints
+        if (lua_istable(L, 10)) {
+            lua_pushnil(L);
+            while (lua_next(L, 10) != 0) { lua_pushvalue(L, -2); lua_pushvalue(L, -2); lua_settable(L, -5); lua_pop(L, 1); }
+        }
         lua_replace(L, 1);
         lua_settop(L, 1);
     }

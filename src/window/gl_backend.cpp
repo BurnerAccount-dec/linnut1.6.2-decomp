@@ -4,6 +4,7 @@
 #include <SDL_opengl.h>
 
 #include <cmath>
+#include <cstring>
 #include <cstdlib>
 #include <string>
 
@@ -265,11 +266,17 @@ void GlBackend::SetProgram(int program, const float* params) {
     if (!programsOk_) return;
     if (program < 0 || program >= (int)programs_.size() || programs_[program].id == 0) {
         if (program_ >= 0) { gl_->UseProgram(0); program_ = -1; boundTexture_ = -2; }
+        cachedProgram_ = -1;
         return;
     }
     const Program& p = programs_[program];
+    // 3.6: a background or a layer with a shader is many quads in a row, all with the same program and values: nothing is sent again until one of them changes
+    float now[16] = {};
+    if (params) for (int i = 0; i < 16; i++) now[i] = params[i];
+    if (program_ == program && cachedProgram_ == program && cachedTime_ == time_ && cachedResW_ == resW_ && cachedResH_ == resH_ && std::memcmp(cachedParams_, now, sizeof now) == 0) return;
     gl_->UseProgram(p.id);
     program_ = program;
+    cachedProgram_ = program; cachedTime_ = time_; cachedResW_ = resW_; cachedResH_ = resH_; std::memcpy(cachedParams_, now, sizeof now);
     if (p.tex >= 0) gl_->Uniform1i(p.tex, 0);
     if (p.time >= 0) gl_->Uniform1f(p.time, time_);
     if (p.res >= 0) gl_->Uniform2f(p.res, resW_, resH_);

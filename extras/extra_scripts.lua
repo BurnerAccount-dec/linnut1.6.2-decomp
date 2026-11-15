@@ -3,6 +3,7 @@
 --   1. the Star Wars screen wipe between a menu and a level
 --   2. the Star Wars aiming aid: while the bird is pulled back, the whole flight path is drawn as dots
 --   4. (3.3) restart: the restart button first moves every object back to where the level began, then restarts without the screen wipe
+--   7. (3.6) leaving a level: a pop-up to leave with or without keeping the state of the level; the level's music stops in the menus
 --   3. (3.3) the laser mod: a piercing laser and slow motion for the Red Bird, a heat-wave GLSL shader on the background, an anti-gravity sensor zone
 -- Loading it a second time does nothing.
 
@@ -10,7 +11,7 @@ if extraScripts ~= nil or _G.type(loadLevel) ~= "function" or _G.type(update) ~=
 	return
 end
 extraScripts = true
-print("extra_scripts.lua loaded (screen wipe, aiming aid, laser mod, restart, shape blocks, version 17" .. (_G.type(simulateAimingAid) == "function" and ")" or ": this engine build is too old for the aiming aid, rebuild it)"))
+print("extra_scripts.lua loaded (screen wipe, aiming aid, laser mod, restart, shape blocks, leave pop-up, version 18" .. (_G.type(simulateAimingAid) == "function" and ")" or ": this engine build is too old for the aiming aid, rebuild it)"))
 
 ------------------------------------------------------------------ 1. screen wipe
 screenwipe = {
@@ -20,6 +21,7 @@ screenwipe = {
 	timer = nil,         -- nil: no wipe running
 	waiting = false,     -- the level is loading: the wipe starts when the loading screen is gone
 	active = false,      -- the wrappers below are installed
+	editor = true,       -- (3.6) false: the editor is wiped like everything else
 	skip = false,        -- the next level load is a restart: no wipe (section 4 sets it, and clears it after a few seconds if no level came)
 	skipTime = 0,
 }
@@ -94,7 +96,10 @@ end
 -- reading the screen back costs frame rate: the frame before a level loads is the only one that is kept
 if _G.type(originalSetGameMode) == "function" then
 	setGameMode = function(mode, ...)
-		if screenwipe.skip then return originalSetGameMode(mode, ...) end
+		-- (3.6) no wipe in the level editor, nor on the way to it: a load that starts while the game mode is the editor's is not wiped
+		if mode == updateLoading or mode == updateLoadingEx then screenwipe.editorLoad = screenwipe.editor ~= false and currentGameMode == updateEditor
+		elseif mode == updateGame or mode == updateMenu then screenwipe.editorLoad = false end
+		if screenwipe.skip or screenwipe.editorLoad then return originalSetGameMode(mode, ...) end
 		if mode == updateLoading or mode == updateLoadingEx then
 			_G.res.keepLastFrame(true)
 			screenwipe.keepTimer = 0
@@ -112,6 +117,7 @@ loadLevel = function(...)
 		screenwipe.skip = false
 		return originalLoadLevel(...)
 	end
+	if screenwipe.editorLoad then return originalLoadLevel(...) end
 	if screenwipe.timer ~= nil or screenwipe.waiting then
 		_G.res.releaseSpriteSheet(screenwipe.sprite)
 	end
@@ -222,7 +228,8 @@ laserMod = {
 	slowTime = 0.6,       -- real seconds the slow motion and the beam last
 	maxRange = 1000,      -- the longest the beam can be, in physics units (the slingshot of the first level is at x = -12, its pigs at x = 42)
 	blockMaterials = { rock = true },   -- the beam stops at these materials and at everything that has no mass (the ground, "immovable" blocks)
-	rotateBirds = true,   -- every bird points in its direction of flight (a bird whose definition has rotateWhileFlying = true is turned by the game itself, as Blu is in Rio, and is left alone)
+	rotateExclude = { "[Bb][Oo][Oo][Mm][Ee][Rr][Aa][Nn][Gg]" },   -- (3.6) birds whose name or definition matches one of these are not turned (the Boomerang Bird)
+	rotateBirds = true,   -- every bird points in its direction of flight (only the picture is turned, with setVisualRotation; a bird whose definition has rotateWhileFlying = true is turned by the game itself, as Blu is in Rio, and is left alone, and so is the Boomerang Bird)
 	damage = 25,          -- strength taken from every object the beam crosses
 	breakMaterials = { light = true },   -- objects of these materials (ice and glass are "light") break at once
 	push = 30,            -- the speed the beam gives what it crosses along its direction (physics units per second; the impulse is this times the object's mass)
@@ -280,6 +287,17 @@ do
 			if find(name, p) or find(obj.definition or "", p) then return true end
 		end
 		return false
+	end
+
+	local turnedBirds = {}
+	-- birds that turn by themselves or must not turn: the Boomerang Bird flies a path of its own, and a bird whose definition has rotateWhileFlying is turned by the game
+	local function rotateExcluded(name, obj)
+		for _, p in ipairs(laserMod.rotateExclude) do
+			if find(name, p) or find(obj.definition or "", p) then return true end
+		end
+		local blocks = blockTable ~= nil and blockTable.blocks or nil
+		local def = blocks ~= nil and blocks[obj.definition or ""] or nil
+		return def ~= nil and def.rotateWhileFlying == true
 	end
 
 	-- any bird, in any game: its definition says group "birds", or its name or definition has "bird" in it
@@ -529,10 +547,19 @@ vec4 shade(vec4 texel, vec2 uv, vec4 tint) {
 		end
 
 		if laserMod.rotateBirds and currentGameMode == updateGame and objects.world ~= nil and birdSelected ~= true then
+			-- (3.6) only the picture is turned (setVisualRotation adds to the body's angle), the physics body is left alone; a bird that has landed is turned back
 			for name, obj in pairs(objects.world) do
-				if landed[name] == nil and isBird(name, obj) then
-					local speed, vx, vy = getVelocity(name)
-					if speed > laserMod.minSpeed then setRotation(name, _G.math.atan2(vy, vx)) end
+				if isBird(name, obj) then
+					if landed[name] == nil then
+						local speed, vx, vy = getVelocity(name)
+						if speed > laserMod.minSpeed and not rotateExcluded(name, obj) then
+							setVisualRotation(_G.math.atan2(vy, vx) - (obj.angle or 0), name)
+							turnedBirds[name] = true
+						end
+					elseif turnedBirds[name] then
+						setVisualRotation(0, name)
+						turnedBirds[name] = nil
+					end
 				end
 			end
 		end
@@ -635,7 +662,9 @@ do
 			local item = page ~= nil and page.items ~= nil and selectedMenuItem ~= nil and page.items[selectedMenuItem] or nil
 			-- only the same level again is a restart: the menu item that was used last can be a restart button that is still selected when another level is picked,
 			-- so the level that is about to load must be the one the snapshot is of
-			local isRestart = levelId() == snapLevel and ((item ~= nil and item.restartLevel) or (item == nil and currentGameMode == updateGame))
+			-- (a level button of the level selection, or the menu, is never a restart: coming back to a level from the menu is a visit)
+			if mode == updateMenu then snapLevel = nil end
+			local isRestart = snapLevel ~= nil and levelId() == snapLevel and ((item ~= nil and item.restartLevel) or (item == nil and currentGameMode == updateGame))
 			if isRestart and (mode == updateLoading or mode == updateLoadingEx) and _G.type(saveStates) == "table" and saveStates.forget then saveStates.forget() end   -- a restart starts the level again, from the beginning
 			if (mode ~= updateLoading and mode ~= updateLoadingEx) or not levelRestart.enabled or not isRestart or snapshot == nil or objects.world == nil then
 				return originalSetGameMode2(mode, ...)
@@ -649,6 +678,22 @@ do
 				return originalSetGameMode2(mode, _G.unpack(args))
 			end
 			restarting = true
+			-- a bird that split (the Blue Bird) is no longer in the world under its name: its pieces, which carry the name as parentName or as the start of theirs
+			-- (the one that is flyingBird first), go back to its place instead
+			local pieces = {}
+			for name, place in pairs(snapshot) do
+				if objects.world[name] == nil then
+					for oname, o in pairs(objects.world) do
+						if snapshot[oname] == nil and o.x ~= nil and (o.parentName == name or find(oname, name, 1, true) == 1) then
+							pieces[#pieces + 1] = { name = oname, place = place, main = o == flyingBird }
+						end
+					end
+				end
+			end
+			_G.table.sort(pieces, function(a, b) if a.main ~= b.main then return a.main end return a.name < b.name end)
+			local pieceOf = {}
+			for _, pc in _G.ipairs(pieces) do if pieceOf[pc.name] == nil then pieceOf[pc.name] = pc.place end end
+			for name, place in pairs(pieceOf) do snapshot[name] = place end
 			for name, place in pairs(snapshot) do
 				local obj = objects.world[name]
 				if obj ~= nil and obj.x ~= nil then
@@ -708,7 +753,10 @@ do
 	local done = {}
 	local function register()
 		if not shapeBlocks.enabled or blockTable == nil or blockTable.blocks == nil then return end
+		-- a level can load only the blocks it names, so the template is kept from the time the whole table was there
 		local template = blockTable.blocks[shapeBlocks.template]
+		if template ~= nil then shapeBlocks.templateCopy = template end
+		template = template or shapeBlocks.templateCopy
 		if template == nil then return end
 		for name, def in _G.pairs(shapeBlocks.blocks) do
 			if done[name] == nil and blockTable.blocks[name] == nil then
@@ -753,8 +801,349 @@ do
 			end
 		end
 	end
-	register()
-	engine.on("levelLoaded", function() register() cut() end)
-	engine.on("update", function() if shapeBlocks.enabled then register() cut() end end)
+	-- any block of any game whose definition has `holes` gets them (blocks.lua tables of mods: { type = "box", sprite = "...", holes = { {type = "circle", x = 0.5, y = 0.5, radius = 0.2} } })
+	local registeredHoles = {}
+	local function registerDefinitionHoles()
+		if _G.type(registerHoles) ~= "function" or blockTable == nil or blockTable.blocks == nil then return end
+		for name, def in _G.pairs(blockTable.blocks) do
+			if _G.type(def) == "table" and def.holes ~= nil and def.sprite ~= nil and registeredHoles[def.sprite] ~= def.holes then
+				registeredHoles[def.sprite] = def.holes
+				registerHoles(def.sprite, def.holes, def.vertices)
+			end
+		end
+	end
+	local function prepare() register() registerDefinitionHoles() cut() end
+	prepare()
+	engine.on("levelLoaded", prepare)
+	engine.on("update", function() if shapeBlocks.enabled then prepare() end end)
+	-- the game can load blocks.lua again between two frames (a new table) and make the objects of the level before this script's own update runs: the blocks are put back first
+	if _G.type(createObject) == "function" then
+		local createObjectBefore = createObject
+		createObject = function(definitions, ...)
+			if definitions == blockTable and shapeBlocks.enabled then register() registerDefinitionHoles() end
+			return createObjectBefore(definitions, ...)
+		end
+	end
+	-- a level file makes its objects before `levelLoaded`: the sprites are cut (and the holes known) before that
+	local loadLevelBefore = loadLevel
+	loadLevel = function(...)
+		prepare()
+		return loadLevelBefore(...)
+	end
 end
 
+
+------------------------------------------------------------------ 7. leaving a level (3.6)
+-- Pressing Level select or Menu on the pause page asks first: S or Return (or the left button) leaves and keeps the state of the level, so it is
+-- there the next time; N or D leaves and forgets it; Escape or C goes back to the game. The game is frozen while the pop-up is open (the global modalOpen: the engine gives the game
+-- no keys and no mouse and the pop-up reads them from modalInput). The music of a level keeps playing on the pause page and stops once the level is left.
+exitPrompt = {
+	enabled = true,
+	saveKeys = { "S", "RETURN" },
+	discardKeys = { "N", "D" },
+	cancelKeys = { "ESCAPE", "C", "KEY_BACK" },
+	title = "Leave this level?",
+	saveText = "Leave and keep (S)",
+	discardText = "Leave, start over (N)",
+	cancelText = "Back (Esc)",
+}
+do
+	local type, ipairs, pairs = _G.type, _G.ipairs, _G.pairs
+	local pending = nil       -- { page =, index = } the button press that opened the pop-up
+	local inLevel = false
+	local buttons = {}
+
+	engine.on("levelLoaded", function() inLevel = true end)
+
+	local function ready()
+		return exitPrompt.enabled and inLevel and type(saveStates) == "table" and saveStates.enabled ~= false and objects.world ~= nil
+	end
+
+	-- The pause page's Level select and Menu buttons (every game has them under these names, on the global pausePage or g_ingamePausePage) are re-wired: pressing one only
+	-- opens the pop-up; the press the game would have made (mode, page, callFunction) is made when the pop-up is answered.
+	local function stopLevelMusic()
+		if type(musics) ~= "table" then return end
+		for _, m in pairs(musics) do
+			if type(m) == "string" and _G.res.isAudioPlaying(m) then _G.res.stopAudio(m) end
+		end
+	end
+
+	local function replay(page, index, held)
+		if held.updateFunction ~= nil then
+			setGameMode(held.updateFunction)
+			if currentGameMode == updateMenu then
+				if held.page ~= nil and held.page.popup == true then setActivePopupPage(held.page)
+				else setActiveMenuPage(held.page) popupPage = nil end
+			end
+			if currentGameMode == addPopupMenu then setGameMode(updateMenu) setActivePopupPage(held.page) end
+			if currentGameMode == removePopupMenu then setGameMode(updateMenu) popupPage = nil end
+			if type(handleGameModeChange) == "function" then handleGameModeChange(page, index) end
+		end
+		if held.callFunction ~= nil then held.callFunction(held.callParam1) end
+	end
+
+	local function wire(page)
+		if type(page) ~= "table" or type(page.items) ~= "table" then return end
+		for index, item in ipairs(page.items) do
+			if type(item) == "table" and item.abLeave == nil and (item.name == "buttonMenu" or item.name == "buttonMainMenu") then
+				local held = { updateFunction = item.updateFunction, page = item.page, callFunction = item.callFunction, callParam1 = item.callParam1 }
+				item.abLeave = held
+				item.updateFunction = nil
+				item.callFunction = function()
+					if pending ~= nil or not ready() then replay(page, index, held) return end
+					modalInput = nil          -- the keys of the last pop-up are still in it
+					pending = { page = page, index = index, held = held }
+					modalOpen = true
+				end
+			end
+		end
+	end
+
+	local function finish(keep)
+		local p = pending
+		pending, modalOpen, modalInput = nil, false, nil
+		if p == nil then return end
+		if keep then saveStates.save() else saveStates.forget() end
+		local held = p.held
+		-- the game's button may set its page after the pop-up was made (the level select does): read it again
+		held.page = p.page.items[p.index].page
+		replay(p.page, p.index, held)
+		inLevel = false
+		stopLevelMusic()
+	end
+
+	local function anyKey(list, pressed)
+		for _, k in ipairs(list) do if pressed[k] then return true end end
+		return false
+	end
+
+	local function inside(b, x, y) return x >= b.x1 and x <= b.x2 and y >= b.y1 and y <= b.y2 end
+
+	local function handle()
+		if pending == nil then return end
+		local input = modalInput
+		if input == nil then return end
+		if anyKey(exitPrompt.saveKeys, input.pressed) then finish(true) return end
+		if anyKey(exitPrompt.discardKeys, input.pressed) then finish(false) return end
+		if anyKey(exitPrompt.cancelKeys, input.pressed) then pending, modalOpen, modalInput = nil, false, nil return end
+		if input.clicked then
+			if buttons.save and inside(buttons.save, input.x, input.y) then finish(true)
+			elseif buttons.discard and inside(buttons.discard, input.x, input.y) then finish(false)
+			elseif buttons.cancel and inside(buttons.cancel, input.x, input.y) then pending, modalOpen, modalInput = nil, false, nil end
+		end
+	end
+
+	local function drawPrompt()
+		if pending == nil then return end
+		local w, h = screenWidth, screenHeight
+		setRenderState(0, 0, 1, 1, 0, 0, 0, 1)
+		drawRect(0, 0, 0, 0.55, 0, 0, w, h, false)
+		local bw, bh = w * 0.24, h * 0.11
+		local cx, cy = w * 0.5, h * 0.5
+		local pw, ph = bw * 3 + w * 0.06, h * 0.36
+		drawRect(0.16, 0.12, 0.08, 0.95, cx - pw / 2, cy - ph / 2, cx + pw / 2, cy + ph / 2, false)
+		drawRectLines(cx - pw / 2, cy - ph / 2, cx + pw / 2, cy + ph / 2, 3, 240, 200, 120, 255)
+		local function button(key, text, i, r, g, b)
+			local x1 = cx - pw / 2 + w * 0.015 + (i - 1) * (bw + w * 0.015)
+			local y1 = cy + ph / 2 - bh - h * 0.04
+			buttons[key] = { x1 = x1, y1 = y1, x2 = x1 + bw, y2 = y1 + bh }
+			drawRect(r, g, b, 1, x1, y1, x1 + bw, y1 + bh, false)
+			drawRectLines(x1, y1, x1 + bw, y1 + bh, 2, 255, 255, 255, 255)
+			if type(fontBasic) ~= "nil" then _G.res.useFont(fontBasic) end
+			_G.res.drawString("", text, x1 + bw / 2, y1 + bh / 2, "VCENTER", "HCENTER")
+		end
+		if type(fontBasic) ~= "nil" then _G.res.useFont(fontBasic) end
+		_G.res.drawString("", exitPrompt.title, cx, cy - ph / 2 + h * 0.07, "VCENTER", "HCENTER")
+		button("save", exitPrompt.saveText, 1, 0.2, 0.5, 0.2)
+		button("discard", exitPrompt.discardText, 2, 0.55, 0.2, 0.15)
+		button("cancel", exitPrompt.cancelText, 3, 0.25, 0.3, 0.45)
+	end
+
+	-- the pop-up is drawn over the game and over the pause page; the wrappers are made here, once, before the screen wipe installs its own
+	local originalUpdate, originalDrawGame, originalDrawMenu = update, drawGame, drawMenu
+	update = function(dt, realDt)
+		originalUpdate(dt, realDt)
+		wire(pausePage)
+		wire(g_ingamePausePage)
+		handle()
+		if not inLevel and currentGameMode == updateMenu then stopLevelMusic() end      -- the pause page keeps the music; the menus after a level do not
+	end
+	if type(originalDrawGame) == "function" then drawGame = function(...) originalDrawGame(...) drawPrompt() end end
+	if type(originalDrawMenu) == "function" then drawMenu = function(...) originalDrawMenu(...) drawPrompt() end end
+end
+
+------------------------------------------------------------------ 8. level spawner (3.7)
+-- F1 in a level opens the spawner: the game stops, Left / Right pick another level of the same folder, Up / Down another level folder (pack1, pack2, ...), and Return (or a click on
+-- the panel) puts that level's blocks, pigs and joints into the level that is being played, around the cursor; Escape (or F1 again) closes it. It works like the vehicles of
+-- Red's Mighty Feathers (3.3.0), which are level files (`world` and `joints`) that are made with createObject / createJoint at a place of the running level, every
+-- object with a new name (spawnPrefix + number + the old name) and every joint tied to the new names. The ground, the slingshot's zone and the birds of the spawned level
+-- are left out, so the flock of the level that is played stays as it is. Spawned objects are ordinary objects of the level: they take damage, they are in the save states.
+levelSpawner = {
+	enabled = true,
+	key = "F1",
+	closeKeys = { "ESCAPE", "F1", "KEY_BACK" },
+	spawnKeys = { "RETURN", "SPACE" },
+	prefix = "sp",             -- the names of spawned objects start with this and a number
+	skip = { "Ground", "Slingshot" },   -- definitions that are not spawned (birds are never spawned)
+	drop = true,               -- a level file dropped on the window is spawned too (false: it replaces the level, as in 3.1)
+	title = "Spawn a level here",
+}
+do
+	local type, pairs, ipairs, find, match, gsub = _G.type, _G.pairs, _G.ipairs, _G.string.find, _G.string.match, _G.string.gsub
+	local open, folder, number, prefixName, count = false, nil, 1, "Level", 0
+	local current = nil       -- the level that is shown: { folder =, name =, path = }
+	local panel = nil
+
+	local function readLevel(file)
+		local path = file
+		local text = type(readDataFile) == "function" and readDataFile(file) or nil
+		if text == nil then return nil end
+		local chunk = _G.loadstring(text, path)
+		if chunk == nil then return nil end
+		local env = {}
+		_G.setfenv(chunk, env)
+		if not _G.pcall(chunk) then return nil end
+		if type(env.world) ~= "table" then return nil end
+		return env
+	end
+
+	local function exists(path) return type(readDataFile) == "function" and readDataFile(path .. ".lua") ~= nil end
+
+	local function start()
+		local f, n = _G.tostring(levelFolder or ""), _G.tostring(levelName or "")
+		folder = f
+		local pre, num = match(n, "^(.-)(%d+)$")
+		prefixName, number = pre or n, _G.tonumber(num) or 1
+	end
+
+	local function pathOf() return folder .. prefixName .. number end
+
+	local function step(dir)
+		-- the next level number that has a file (up to 400 away), or the same one when there is none
+		for i = 1, 400 do
+			local n = number + dir * i
+			if n < 0 then break end
+			if exists(folder .. prefixName .. n) then number = n return end
+		end
+	end
+
+	local function stepFolder(dir)
+		local base, pack = match(folder, "^(.*[/\\])([^/\\]+)[/\\]?$")
+		local number2 = match(pack or "", "^pack(%d+)$")
+		if base == nil or number2 == nil then return end
+		for i = 1, 12 do
+			local p = base .. "pack" .. (_G.tonumber(number2) + dir * i) .. "/"
+			if exists(p .. prefixName .. number) then folder = p return end
+		end
+	end
+
+	local function isSkipped(def)
+		for _, s in ipairs(levelSpawner.skip) do if def == s then return true end end
+		return blockTable ~= nil and blockTable.birds ~= nil and blockTable.birds[def] ~= nil
+	end
+
+	local function spawn(file)
+		local data = readLevel(file or pathOf() .. ".lua")
+		if data == nil then return false end
+		local cx, cy, n = 0, 0, 0
+		local list = {}
+		for name, o in pairs(data.world) do
+			if type(o) == "table" and o.definition ~= nil and o.x ~= nil and not isSkipped(o.definition) and not find(name, "^zone_") then
+				list[#list + 1] = o
+				cx, cy, n = cx + o.x, cy + o.y, n + 1
+			end
+		end
+		if n == 0 then return false end
+		cx, cy = cx / n, cy / n
+		local tx, ty = cx, cy
+		if cursor ~= nil and type(screenToPhysicsTransform) == "function" then tx, ty = screenToPhysicsTransform(cursor.x, cursor.y)
+		elseif cursor ~= nil and type(getCamera) == "function" then
+			local camX, camY, ws = getCamera()
+			tx, ty = (cursor.x / ws + camX) / 20, (cursor.y / ws + camY) / 20
+		end
+		count = count + 1
+		local names = {}
+		for _, o in ipairs(list) do
+			local newName = levelSpawner.prefix .. count .. "_" .. o.name
+			local extra = {}
+			for k, v in pairs(o) do if k ~= "name" and k ~= "x" and k ~= "y" and k ~= "definition" then extra[k] = v end end
+			local ok, made = _G.pcall(createObject, blockTable, o.definition, newName, o.x - cx + tx, o.y - cy + ty, extra)
+			if ok and objects.world[made or newName] ~= nil then names[o.name] = made or newName end
+		end
+		if type(data.joints) == "table" then
+			for _, j in pairs(data.joints) do
+				if type(j) == "table" and names[j.end1] ~= nil and names[j.end2] ~= nil then
+					local copy = {}
+					for k, v in pairs(j) do copy[k] = v end
+					copy.end1, copy.end2 = names[j.end1], names[j.end2]
+					copy.name = copy.end1 .. copy.end2
+					_G.pcall(createJoint, copy)
+				end
+			end
+		end
+		return true
+	end
+
+	local function close() open, modalOpen, modalInput = false, false, nil end
+
+	local function anyKey(list, pressed)
+		for _, k in ipairs(list) do if pressed[k] then return true end end
+		return false
+	end
+
+	engine.on("levelLoaded", function() open = false end)
+
+	-- a level file dropped on the window while a level is played is spawned at the cursor instead of replacing the level (outside a level, or with the spawner off, as before)
+	local originalDropped = onFileDropped
+	onFileDropped = function(path)
+		if levelSpawner.enabled and levelSpawner.drop and currentGameMode == updateGame and objects.world ~= nil and not open then
+			if spawn(path) then return true end
+		end
+		if type(originalDropped) == "function" then return originalDropped(path) end
+	end
+
+	local function handle()
+		if not levelSpawner.enabled then return end
+		if not open then
+			if keyPressed ~= nil and keyPressed[levelSpawner.key] and currentGameMode == updateGame and objects.world ~= nil and not modalOpen then
+				start()
+				modalInput = nil
+				open, modalOpen = true, true
+			end
+			return
+		end
+		local input = modalInput
+		if input == nil then return end
+		local p = input.pressed
+		if anyKey(levelSpawner.closeKeys, p) then close() return end
+		if p["LEFT"] then step(-1) elseif p["RIGHT"] then step(1) elseif p["UP"] then stepFolder(1) elseif p["DOWN"] then stepFolder(-1) end
+		if anyKey(levelSpawner.spawnKeys, p) or (input.clicked and panel ~= nil and input.x >= panel.x1 and input.x <= panel.x2 and input.y >= panel.y1 and input.y <= panel.y2) then
+			spawn()
+			close()
+		elseif input.clicked then close() end
+	end
+
+	local function drawPanel()
+		if not open then return end
+		local w, h = screenWidth, screenHeight
+		setRenderState(0, 0, 1, 1, 0, 0, 0, 1)
+		drawRect(0, 0, 0, 0.45, 0, 0, w, h, false)
+		local pw, ph = w * 0.5, h * 0.3
+		local x1, y1 = (w - pw) / 2, (h - ph) / 2
+		panel = { x1 = x1, y1 = y1, x2 = x1 + pw, y2 = y1 + ph }
+		drawRect(0.16, 0.12, 0.08, 0.95, x1, y1, x1 + pw, y1 + ph, false)
+		drawRectLines(x1, y1, x1 + pw, y1 + ph, 3, 240, 200, 120, 255)
+		if type(fontBasic) ~= "nil" then _G.res.useFont(fontBasic) end
+		_G.res.drawString("", levelSpawner.title, w / 2, y1 + ph * 0.2, "VCENTER", "HCENTER")
+		_G.res.drawString("", pathOf(), w / 2, y1 + ph * 0.5, "VCENTER", "HCENTER")
+		_G.res.drawString("", "Left / Right: level    Up / Down: folder", w / 2, y1 + ph * 0.72, "VCENTER", "HCENTER")
+		_G.res.drawString("", "Return: spawn    Esc: close", w / 2, y1 + ph * 0.88, "VCENTER", "HCENTER")
+	end
+
+	local originalUpdate, originalDrawGame = update, drawGame
+	update = function(dt, realDt)
+		originalUpdate(dt, realDt)
+		handle()
+	end
+	if type(originalDrawGame) == "function" then drawGame = function(...) originalDrawGame(...) drawPanel() end end
+end

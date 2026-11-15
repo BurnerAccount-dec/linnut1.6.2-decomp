@@ -30,7 +30,7 @@ namespace {
 
 struct State {
     bool pending = false, ready = false, suspended = false, prevRunning = false;
-    double clock = 0, lastWrite = 0, leftAt = -1e9;
+    double clock = 0, lastWrite = 0, leftAt = -1e9, lastSnap = 0;
     std::string curId, lastId;
     Platform* platform = nullptr;
 } g;
@@ -376,7 +376,39 @@ bool Apply(lua_State* L) {
     // the objects that are left
     for (const std::string& name : Keys(L, saved)) {
         lua_getfield(L, world, name.c_str());
-        if (!lua_istable(L, -1)) { lua_pop(L, 1); continue; }
+        if (!lua_istable(L, -1)) {
+            lua_pop(L, 1);
+            // an object the level did not start with (the pieces of a Blue Bird that split): made again from its definition, at the place it was saved
+            lua_getfield(L, saved, name.c_str()); lua_getfield(L, -1, "f");
+            if (lua_istable(L, -1)) {
+                lua_getfield(L, -1, "definition");
+                const std::string def = lua_isstring(L, -1) ? lua_tostring(L, -1) : "";
+                lua_pop(L, 1);
+                lua_getfield(L, -1, "x"); lua_getfield(L, -2, "y"); lua_getfield(L, -3, "angle");
+                const double x = Num(L, -3), y = Num(L, -2), a = Num(L, -1);
+                lua_pop(L, 3);
+                if (!def.empty()) {
+                    PushEnv(L); lua_getfield(L, -1, "createObject"); lua_getfield(L, -2, "blockTable");
+                    if (lua_isfunction(L, -2) && lua_istable(L, -1)) {
+                        lua_pushstring(L, def.c_str()); lua_pushstring(L, name.c_str()); lua_pushnumber(L, x); lua_pushnumber(L, y);
+                        lua_newtable(L); lua_pushnumber(L, a); lua_setfield(L, -2, "angle");
+                        if (lua_pcall(L, 6, 0, 0) != 0) lua_pop(L, 1);
+                        lua_pop(L, 1);
+                    } else lua_pop(L, 3);
+                    lua_getfield(L, world, name.c_str());
+                    if (lua_istable(L, -1)) {
+                        lua_getfield(L, saved, name.c_str()); lua_getfield(L, -1, "f"); lua_getfield(L, -1, "controllable");
+                        const bool bird = lua_toboolean(L, -1) != 0;
+                        lua_pop(L, 3);
+                        if (bird) { GetG(L, "birds"); if (lua_istable(L, -1)) { lua_pushvalue(L, -2); lua_setfield(L, -2, name.c_str()); } lua_pop(L, 1); }
+                    }
+                    lua_pop(L, 1);
+                }
+            }
+            lua_pop(L, 2);
+            lua_getfield(L, world, name.c_str());
+            if (!lua_istable(L, -1)) { lua_pop(L, 1); continue; }
+        }
         const int obj = lua_gettop(L);
         lua_getfield(L, saved, name.c_str());
         const int o = lua_gettop(L);
@@ -407,7 +439,10 @@ bool Apply(lua_State* L) {
                 CallEnv(L, "setRotation", name, {a}, 0);
                 CallEnv(L, "setVelocity", name, {vx, vy}, 0);
                 CallEnv(L, "setAngularVelocity", name, {w}, 0);
-                if (rest) CallEnvSleep(L, name);
+                lua_getfield(L, f, "controllable");
+                const bool bird = lua_toboolean(L, -1) != 0;      // a bird is never put to sleep: it is launched later, and a body that sleeps stays where it is
+                lua_pop(L, 1);
+                if (rest && !bird) CallEnvSleep(L, name);
             }
         }
         lua_settop(L, obj - 1);
@@ -452,14 +487,52 @@ bool Apply(lua_State* L) {
     return true;
 }
 
+// 3.6: a copy of the running level's state is kept in memory (twice a second, never written): the pause page changes the camera and other variables, and a save made while it is
+// open would keep those. A save asked for while the level is not running writes the last copy.
+void Snapshot(lua_State* L) {
+    if (g.curId.empty()) return;
+    const int top = lua_gettop(L);
+    GetData(L); lua_getfield(L, -1, "levels");
+    lua_getfield(L, -1, g.curId.c_str());          // what was there
+    const int old = lua_gettop(L);
+    if (Capture(L, false)) {
+        lua_getfield(L, old - 1, g.curId.c_str());
+        lua_newtable(L);
+        lua_pushstring(L, g.curId.c_str()); lua_setfield(L, -2, "id");
+        lua_pushvalue(L, -2); lua_setfield(L, -2, "state");
+        lua_setfield(L, LUA_REGISTRYINDEX, "ab.snapshot");
+        lua_pop(L, 1);
+        lua_pushvalue(L, old); lua_setfield(L, old - 1, g.curId.c_str());      // put back what was there
+    }
+    lua_settop(L, top);
+}
+
 bool SaveNow(lua_State* L, bool leaving = false) {
+    if (leaving && !IsRunning(L)) {
+        lua_getfield(L, LUA_REGISTRYINDEX, "ab.snapshot");
+        bool done = false;
+        if (lua_istable(L, -1)) {
+            lua_getfield(L, -1, "id");
+            const bool same = lua_isstring(L, -1) && g.curId == lua_tostring(L, -1);
+            lua_pop(L, 1);
+            if (same && !g.suspended && CfgBool(L, "enabled", true)) {
+                lua_getfield(L, -1, "state");
+                GetData(L); lua_getfield(L, -1, "levels");
+                lua_pushvalue(L, -3); lua_setfield(L, -2, g.curId.c_str());
+                lua_pop(L, 3);
+                done = true;
+            }
+        }
+        lua_pop(L, 1);
+        if (done) { Write(L); return true; }
+    }
     if (!Capture(L, leaving)) return false;
     Write(L);
     return true;
 }
 
 // ---- Lua: saveStates.save(), apply(), forget([id]), clearAll(), has([id])
-int s_save(lua_State* L) { lua_pushboolean(L, SaveNow(L)); return 1; }
+int s_save(lua_State* L) { lua_pushboolean(L, SaveNow(L, true)); return 1; }      // asked for by a script: saved whenever the level's objects are there (the pause page too)
 int s_apply(lua_State* L) { lua_pushboolean(L, Apply(L)); return 1; }
 int s_forget(lua_State* L) { Forget(L, lua_isstring(L, 1) ? lua_tostring(L, 1) : g.curId); return 0; }
 int s_has(lua_State* L) { LoadFile(L); lua_pushboolean(L, HasState(L, lua_isstring(L, 1) ? lua_tostring(L, 1) : g.curId)); return 1; }
@@ -481,17 +554,20 @@ void RegisterSaveStates(lua_State* L, Platform* platform) {
     const char* defaults =
         "saveStates = {\n"
         "  enabled = true,            -- false: nothing is saved or put back\n"
+        "  skipLevels = {},           -- parts of level paths: these levels are never saved or put back\n"
         "  file = 'savestates.lua',   -- in the save folder\n"
-        "  autosave = 5,              -- seconds (real time) between writes while a level runs; 0: only when the level is left or the game is closed\n"
+        "  autosave = 0,              -- seconds (real time) between writes while a level runs; 0: no automatic writes\n"
+        "  saveOnLeave = false,       -- true: the state is also written when the level is left or the game is closed; false: only when saveStates.save() is called (the leave pop-up does)\n"
         "  restartWindow = 2,         -- a level that is loaded again within this many seconds after it was left is a restart: its state is cleared\n"
         "  readyVariable = 'levelStartPosition',  -- the level is set up when this variable is there (a table: with x not 0)\n"
         "  globals = { 'currentBirdIndex', 'currentBirdName', 'birdToSlingshotBirdName', 'birdSpecialtyAvailable', 'birdFired', 'birdReady', 'fillInNextBird',\n"
-        "    'birdSelected', 'showTapIcon', 'birdsShot', 'birdsCounter', 'score', 'nextBirdTimer', 'zoomLevel', 'oldZoomLevel', 'castleCameraTimer',\n"
-        "    'levelCompleteTimer', 'worldScale' },\n"
-        "  tables = { 'scoreTable', 'screen' },\n"
+        "    'birdSelected', 'showTapIcon', 'birdsShot', 'birdsCounter', 'score', 'nextBirdTimer',\n"
+        "    'levelCompleteTimer' },\n"
+        "                             -- (3.6) the camera (the screen table, the zoom, the camera function) is not kept: the game's own camera starts again, and a camera put back alone left the view beside the slingshot\n"
+        "  tables = { 'scoreTable' },\n"
         "  objectGlobals = { 'flyingBird', 'selectedBird', 'cameraTargetObject' },\n"
         "  objectTables = { 'birds', 'otherBirds', 'levelGoals' },\n"
-        "  cameras = { 'defaultCamera', 'doItAllCamera', 'gotoCastleCamera', 'launchCamera', 'levelStartCamera' },\n"
+        "  cameras = {},                -- camera functions to keep: none by default (names of global functions)\n"
         "  skipWhen = { 'levelCompleted' },           -- a level that is finished (variable true) or failed (variable above 0) is not kept\n"
         "  skipWhenPositive = { 'levelFailedTimer' },\n"
         "}\n";
@@ -518,6 +594,22 @@ void SaveStatesLevelLoaded(lua_State* L, const std::string& file) {
     g.ready = false;
     g.pending = CfgBool(L, "enabled", true);
     if (quick && HasState(L, file)) { Forget(L, file); g.suspended = false; }     // a restart: the level begins again from the start
+    // 3.6: levels named in saveStates.skipLevels (parts of the level path, as written in the list) are neither saved nor put back
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    lua_getfield(L, -1, "saveStates");
+    if (lua_istable(L, -1)) {
+        lua_getfield(L, -1, "skipLevels");
+        if (lua_istable(L, -1)) {
+            const int n = (int)lua_objlen(L, -1);
+            for (int i = 1; i <= n; i++) {
+                lua_rawgeti(L, -1, i);
+                if (lua_isstring(L, -1) && file.find(lua_tostring(L, -1)) != std::string::npos) { g.suspended = true; g.pending = false; Forget(L, file); }
+                lua_pop(L, 1);
+            }
+        }
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 2);
 }
 
 // every frame, after the scripts' update
@@ -532,11 +624,12 @@ void SaveStatesFrame(lua_State* L, double realDt) {
         g.ready = true;
         if (done) std::fprintf(stderr, "save state of %s put back\n", g.curId.c_str());
     } else if (g.ready && running) {
+        if (g.clock - g.lastSnap >= 0.5) { g.lastSnap = g.clock; Snapshot(L); }
         const double every = CfgNum(L, "autosave", 5);
         if (every > 0 && g.clock - g.lastWrite >= every) { if (!SaveNow(L)) g.lastWrite = g.clock; }
     }
     if (g.prevRunning && !running && g.ready) {      // the level was left (the menu, the level select, another level)
-        SaveNow(L, true);
+        if (CfgBool(L, "saveOnLeave", false)) SaveNow(L, true);
         g.leftAt = g.clock;
         g.lastId = g.curId;
     }
@@ -546,7 +639,7 @@ void SaveStatesFrame(lua_State* L, double realDt) {
 // the window is closed or the game ends
 void SaveStatesShutdown(lua_State* L) {
     if (!g.platform || !g.ready) return;
-    if (IsRunning(L)) SaveNow(L);
+    if (IsRunning(L) && CfgBool(L, "saveOnLeave", false)) SaveNow(L);
 }
 
 }  // namespace ab
