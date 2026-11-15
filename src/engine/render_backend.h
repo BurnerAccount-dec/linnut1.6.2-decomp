@@ -4,6 +4,7 @@
 // GlBackend (OpenGL 1.x through SDL, in src/window/).
 #pragma once
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "engine/png_decoder.h"
@@ -31,6 +32,15 @@ public:
     virtual void SetBlend(int mode) { (void)mode; }
     // v2.4: the colour a masked (tiled) quad is multiplied by, 0..n per channel; DrawQuad has its own colour arguments
     virtual void SetTileTint(float r, float g, float b) { (void)r; (void)g; (void)b; }
+    // v3.3: your own GLSL. SupportsPrograms() is true for the OpenGL backend when the driver has shaders (OpenGL 2.0); the CPU rasteriser cannot run them.
+    // CreateProgram compiles a fragment shader (source: the complete GLSL text) with the engine's vertex shader; it returns a handle (>= 0) or -1 with the
+    // compiler's messages in error. SetProgram(handle, params) makes the following DrawQuad calls use it (-1: the fixed pipeline again); params are the 16
+    // numbers of the shader's four vec4 uniforms (u_param0 .. u_param3). SetProgramGlobals gives u_time (seconds) and u_resolution (screen units).
+    virtual bool SupportsPrograms() const { return false; }
+    virtual int CreateProgram(const std::string& fragmentSource, std::string& error) { (void)fragmentSource; error = "this renderer cannot run shaders"; return -1; }
+    virtual void DeleteProgram(int program) { (void)program; }
+    virtual void SetProgram(int program, const float* params) { (void)program; (void)params; }
+    virtual void SetProgramGlobals(float time, float width, float height) { (void)time; (void)width; (void)height; }
     virtual void EndFrame() = 0;
     // v2.5: the last frame as RGBA, top row first (captureSprite); false: the backend cannot
     virtual bool ReadPixels(std::vector<unsigned char>& out, int& width, int& height) { (void)out; (void)width; (void)height; return false; }

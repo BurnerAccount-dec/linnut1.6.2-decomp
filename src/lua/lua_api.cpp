@@ -2379,6 +2379,7 @@ int l_setBlendMode(lua_State* L) {
 int ShaderFrom(lua_State* L, int i) {
     if (lua_isnumber(L, i)) return (int)lua_tonumber(L, i);
     std::string s = lua_type(L, i) == LUA_TSTRING ? lua_tostring(L, i) : "";
+    if (s != "none" && !s.empty()) { const int custom = P(L)->ShaderByName(s); if (custom >= 6) return custom; }     // v3.3: a shader of that name (a file shaders/<name>.frag, or createShader)
     static const char* names[] = {"none", "grayscale", "sepia", "invert", "chromatic", "glow"};
     for (int k = 0; k < 6; k++) if (s == names[k]) return k;
     if (s == "greyscale" || s == "gray" || s == "grey") return 1;
@@ -2389,6 +2390,27 @@ int l_setShader(lua_State* L) {
     std::string t = TargetArg(L, 2);
     if (t.empty()) P(L)->SetShaderEffect(m); else P(L)->SetRenderOverride(t, 8, (float)m, 0, 0);
     return 0;
+}
+// v3.3: shaders written in GLSL (docs/SCRIPTING.md, "Shaders"):
+//   createShader(name, source) -> true | false, errors     compiles a fragment shader from text; setShader(name [, target]) then uses it
+//   setShaderParam(name, slot, x [, y, z, w])               the shader's vec4 uniform u_param<slot> (slot 0..3)
+//   getShaderError(name) -> "" when it compiled, else the compiler's messages
+//   listShaders() -> table of names (the files of the shaders folder and the created ones)
+int l_createShader(lua_State* L) {
+    std::string error;
+    const bool ok = P(L)->CreateShaderFromSource(S(L, 1), S(L, 2), error);
+    lua_pushboolean(L, ok);
+    lua_pushstring(L, error.c_str());
+    return 2;
+}
+int l_setShaderParam(lua_State* L) { P(L)->SetShaderParam(S(L, 1), (int)N(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6)); return 0; }
+int l_getShaderError(lua_State* L) { lua_pushstring(L, P(L)->ShaderError(S(L, 1)).c_str()); return 1; }
+int l_listShaders(lua_State* L) {
+    std::vector<std::string> names;
+    P(L)->ShaderNames(names);
+    lua_newtable(L);
+    for (size_t i = 0; i < names.size(); i++) { lua_pushstring(L, names[i].c_str()); lua_rawseti(L, -2, (int)i + 1); }
+    return 1;
 }
 // v2.4: setTintChannel("r" | "g" | "b" | "a", value [, target]): one channel of the tint (or the alpha) and nothing else. Values above 1 brighten.
 int l_setTintChannel(lua_State* L) {
@@ -2412,6 +2434,24 @@ int l_setVisualRotation(lua_State* L) {
     else P(L)->SetRenderOverride(t, 9, N(L, 1), 0, 0);
     return 0;
 }
+// v3.3: the layout of a target (a game object, a sprite or sprite group, or "background" / "foreground" / "trajectory" / "particles"), in the pixels the target is drawn in:
+//   setOffset(dx, dy, target)                 moves everything of the target by (dx, dy)
+//   setLayoutScale(sx [, sy] [, px, py], target)   scales it: about each sprite's own centre, or (with px, py) about that point shared by everything of the target
+//   setMirror(on, target)                     mirrors the sprites left to right
+//   getOffset(target) -> dx, dy
+// resetRenderOverrides(target) puts the layout back as well. A target is required: without one nothing is changed.
+int l_setOffset(lua_State* L) { std::string t = TargetArg(L, 3); if (!t.empty()) P(L)->SetRenderOverride(t, 12, N(L, 1), N(L, 2), 0); return 0; }
+int l_getOffset(lua_State* L) { float a, b, c; if (!P(L)->GetRenderOverride(S(L, 1), 12, a, b, c)) a = b = 0; lua_pushnumber(L, a); lua_pushnumber(L, b); return 2; }
+int l_setLayoutScale(lua_State* L) {
+    const int n = GfxNumbers(L);
+    std::string t = TargetArg(L, n + 1);
+    if (t.empty()) return 0;
+    const float sx = N(L, 1), sy = n >= 2 ? N(L, 2) : sx;
+    P(L)->SetRenderOverride(t, 13, sx, sy, 0);
+    if (n >= 4) P(L)->SetRenderOverride(t, 14, N(L, 3), N(L, 4), 0); else P(L)->SetRenderOverride(t, 15, 0, 0, 0);
+    return 0;
+}
+int l_setMirror(lua_State* L) { std::string t = TargetArg(L, 2); bool on = lua_isboolean(L, 1) ? lua_toboolean(L, 1) != 0 : N(L, 1) != 0; if (!t.empty()) P(L)->SetRenderOverride(t, 16, on ? 1.0f : 0.0f, 0, 0); return 0; }
 // v2.4: resetRenderOverrides(target): forgets every graphics setting made for that target
 int l_resetRenderOverrides(lua_State* L) { P(L)->SetRenderOverride(S(L, 1), 11, 0, 0, 0); return 0; }
 // res.getSpritePixel(sprite, x, y) -> r, g, b, a (0..255) of the pixel x pixels right and y pixels down from the sprite's top left corner, or nil
@@ -3008,7 +3048,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"updateThemeSprite", l_updateThemeSprite},
         {"drawLayer", l_nothing},
         {"drawRectLines", l_drawRectLines}, {"drawBoxNative", l_drawBoxNative}, {"getCurrentTime", l_getCurrentTime}, {"rewind", l_rewind},
-        {"getTimeDifference", l_getTimeDifference}, {"setAlpha", l_setAlpha}, {"setBlendMode", l_setBlendMode}, {"setShader", l_setShader}, {"setTintChannel", l_setTintChannel}, {"setVisualRotation", l_setVisualRotation}, {"resetRenderOverrides", l_resetRenderOverrides}, {"setTint", l_setTint}, {"getTint", l_getTint}, {"resetTint", l_resetTint}, {"setSkew", l_setSkew}, {"setBend", l_setBend}, {"setRenderZ", l_setRenderZ}, {"setBlur", l_setBlur}, {"setPixelate", l_setPixelate}, {"resetBlur", l_resetBlur}, {"resetPixelate", l_resetPixelate}, {"drawUITextNative", l_drawUITextNative},
+        {"getTimeDifference", l_getTimeDifference}, {"setAlpha", l_setAlpha}, {"setBlendMode", l_setBlendMode}, {"setShader", l_setShader}, {"setTintChannel", l_setTintChannel}, {"setVisualRotation", l_setVisualRotation}, {"setOffset", l_setOffset}, {"getOffset", l_getOffset}, {"setLayoutScale", l_setLayoutScale}, {"setMirror", l_setMirror}, {"createShader", l_createShader}, {"setShaderParam", l_setShaderParam}, {"getShaderError", l_getShaderError}, {"listShaders", l_listShaders}, {"resetRenderOverrides", l_resetRenderOverrides}, {"setTint", l_setTint}, {"getTint", l_getTint}, {"resetTint", l_resetTint}, {"setSkew", l_setSkew}, {"setBend", l_setBend}, {"setRenderZ", l_setRenderZ}, {"setBlur", l_setBlur}, {"setPixelate", l_setPixelate}, {"resetBlur", l_resetBlur}, {"resetPixelate", l_resetPixelate}, {"drawUITextNative", l_drawUITextNative},
         {"getTImeDifferenceInSeconds", l_getTimeDifferenceInSeconds}, {"getTimeDifferenceInSeconds", l_getTimeDifferenceInSeconds}, {"checkRegistrationResult", l_false}, {"getClipboardText", l_emptyString},
         {"canOpenProgram", l_false}, {"openProgram", l_nothing}, {"hasLocationCapability", l_false}, {"drawLevelParticlesNative", l_drawLevelParticlesNative},
         {"loadDATFileToTable", l_loadDATFileToTable}, {"getGameTimerMillis", l_getGameTimerMillis}, {"loadParticleFile", l_loadParticleFile}, {"setDeltaTimeMultiplier", l_setDeltaTimeMultiplier}, {"getDeltaTimeMultiplier", l_getDeltaTimeMultiplier}, {"setWorldGravity", l_setWorldGravity}, {"getWorldGravity", l_getWorldGravity},

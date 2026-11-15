@@ -38,11 +38,11 @@ copy CHANGELOG.md dist\CHANGELOG.md || goto fail
 xcopy /e /i /y docs dist\docs || goto fail
 xcopy /e /i /y tools dist\tools || goto fail
 xcopy /e /i /y extras dist\extras || goto fail
-powershell -NoProfile -Command "Compress-Archive -Force -Path dist\* -DestinationPath AngryBirdsEngine-v3.1.zip" || goto fail
+powershell -NoProfile -Command "Compress-Archive -Force -Path dist\* -DestinationPath AngryBirdsEngine-v3.2.zip" || goto fail
 
 echo.
 echo DONE. The exe is clean. Upload this file to the GitHub release:
-echo   C:\abbuild\AngryBirdsEngine-v3.1.zip
+echo   C:\abbuild\AngryBirdsEngine-v3.2.zip
 exit /b 0
 
 :personal

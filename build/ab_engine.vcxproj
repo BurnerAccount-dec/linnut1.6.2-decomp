@@ -315,6 +315,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\src\engine\apk_extract.cpp" />
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\src\engine\font.cpp" />
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\src\engine\render_soft.cpp" />
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\src\engine\shaders.cpp" />
   </ItemGroup>
   <ItemGroup />
   <ItemGroup>

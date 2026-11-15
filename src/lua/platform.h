@@ -211,6 +211,13 @@ public:
     // v2.4: SetBlendMode / SetShader on the render state itself (setRenderState's arguments 20 and 21)
     virtual void SetBlendMode(int mode) { (void)mode; }
     virtual void SetShaderEffect(int effect) { (void)effect; }
+    // v3.3: shaders written in GLSL. ShaderByName: the effect number to use with setShader for a shader of that name (a file shaders/<name>.frag or one made by
+    // createShader), -1 if there is none; CreateShaderFromSource compiles one from text (error: the compiler's messages)
+    virtual int ShaderByName(const std::string& name) { (void)name; return -1; }
+    virtual bool CreateShaderFromSource(const std::string& name, const std::string& source, std::string& error) { (void)name; (void)source; error = "no shaders here"; return false; }
+    virtual void SetShaderParam(const std::string& name, int slot, float x, float y, float z, float w) { (void)name; (void)slot; (void)x; (void)y; (void)z; (void)w; }
+    virtual std::string ShaderError(const std::string& name) { (void)name; return "no shaders here"; }
+    virtual void ShaderNames(std::vector<std::string>& out) { (void)out; }
     // v2.4: res.getSpritePixel(sprite, x, y): the colour of one pixel of a sprite's picture, false if there is no such sprite or pixel
     struct CompoPartInfo { std::string sprite; float x = 0, y = 0, scale = 1, angle = 0; };
     virtual bool ResGetCompoParts(const std::string& name, std::vector<CompoPartInfo>& out) { (void)name; (void)out; return false; }

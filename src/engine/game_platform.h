@@ -425,7 +425,7 @@ private:
     // v2.2.1: everything drawn in a frame waits in one list and is sent to the backend by FlushZ (clip changes and the end of the frame).
     // kind 0 = drawn in call order; 1 = a game object (drawGameNative), key = its z_order; 2 = a sprite drawn with a render state z, key = z.
     // Kind 1 and 2 are put in z order against each other (equal z: the order they were drawn); kind 1 keeps its own order, kind 0 never moves.
-    struct QueuedQuad { int kind; float key; int tex, mask; float xy[8], uv[8], tuv[8], alpha, r, g, b; int blend; };
+    struct QueuedQuad { int kind; float key; int tex, mask; float xy[8], uv[8], tuv[8], alpha, r, g, b; int blend; int prog; };   // prog: 0, or 1 + the index of the custom shader the quad is drawn with
     std::vector<QueuedQuad> zQueue_;
     int keyedCount_ = 0, spriteCount_ = 0;   // kind 1 + 2, and kind 2, in zQueue_
     bool drawingNative_ = false;             // DrawGame is drawing an object
@@ -440,14 +440,32 @@ private:
     void DrawSpriteAtRaw(const SpriteSheet& sheet, const Sprite& sp, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height);
     // v2.4: graphics settings of one target (see Platform::SetRenderOverride). Applied on top of the render state when a sprite is drawn for that target.
     struct RenderOverride {
-        bool alpha = false, tint[3] = {false, false, false}, skew = false, bend = false, z = false, blur = false, pixelate = false, blend = false, effect = false, rot = false;
-        float a = 1, t[3] = {1, 1, 1}, skewX = 0, skewY = 0, bendX = 0, bendY = 0, zv = 0, blurV = 0, pixV = 0, rotV = 0;
+        bool alpha = false, tint[3] = {false, false, false}, skew = false, bend = false, z = false, blur = false, pixelate = false, blend = false, effect = false, rot = false, offset = false, lscale = false, lpivot = false, mirror = false, mirrorV = false;
+        float a = 1, t[3] = {1, 1, 1}, skewX = 0, skewY = 0, bendX = 0, bendY = 0, zv = 0, blurV = 0, pixV = 0, rotV = 0, offX = 0, offY = 0, lsx = 1, lsy = 1, lpx = 0, lpy = 0;
         int blendV = 0, effectV = 0;
     };
     std::map<std::string, RenderOverride> overrides_;
     std::string drawTag_, compoTag_;     // what is being drawn: "background", an object's name ...; the composite sprite whose parts are drawn
     struct TagScope { GamePlatform* g; std::string old; TagScope(GamePlatform* p, const std::string& t) : g(p), old(p->drawTag_) { g->drawTag_ = t; } ~TagScope() { g->drawTag_ = old; } };
     void ApplyOverride(const RenderOverride& o);
+    // v3.3: shaders written by the user (shaders.cpp). The effect of the render state is 0..5 for the presets and 6 + the index for these.
+    struct CustomShader { std::string name, path, source, error; int program = -1; float params[16] = {0}; long long stamp = 0; };
+    std::vector<CustomShader> shaders_;
+    double shaderCheck_ = 0;
+    std::string ShaderDir();
+    bool ShadersSupported() const;
+    bool CompileShader(CustomShader& s);
+    int ShaderIndex(const std::string& name, bool load);
+    void ShadersEveryFrame();
+    bool ShaderConsole(const std::string& arg);
+    const float* ShaderParams(int index) const;
+    int ShaderProgram(int index) const;
+    int ShaderByName(const std::string& name) override;
+    bool CreateShaderFromSource(const std::string& name, const std::string& source, std::string& error) override;
+    void SetShaderParam(const std::string& name, int slot, float x, float y, float z, float w) override;
+    std::string ShaderError(const std::string& name) override;
+    void ShaderNames(std::vector<std::string>& out) override;
+    void ApplyLayouts(const Sprite& spr, float& x, float& y, int& vAnchor, int& hAnchor, bool& sized, float& width, float& height);   // v3.3: offset / scale of the targets
     std::map<int, std::pair<std::string, bool>> handleSource_;     // texture handle -> the png it came from (for the shader variants)
     std::map<long long, int> textureVariants_;                     // handle * 8 + effect -> handle of the converted copy
     int VariantTexture(int handle, int effect);

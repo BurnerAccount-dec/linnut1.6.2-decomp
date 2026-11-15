@@ -2,6 +2,7 @@
 // uses immediate mode, which gives the same picture). Functions are loaded through SDL so no GL
 // library has to be linked.
 #pragma once
+#include <utility>
 #include <vector>
 
 #include "engine/render_backend.h"
@@ -25,6 +26,11 @@ public:
     void SetBlend(int mode) override;
     void SetTileTint(float r, float g, float b) override { tileR_ = r; tileG_ = g; tileB_ = b; }
     void EndFrame() override;
+    bool SupportsPrograms() const override { return programsOk_; }
+    int CreateProgram(const std::string& fragmentSource, std::string& error) override;
+    void DeleteProgram(int program) override;
+    void SetProgram(int program, const float* params) override;
+    void SetProgramGlobals(float time, float width, float height) override { time_ = time; resW_ = width; resH_ = height; }
 
     // The last frame as RGBA, top row first (for screenshots).
     bool ReadPixels(std::vector<unsigned char>& out, int& width, int& height) override;
@@ -38,6 +44,12 @@ private:
     int screenW_ = 1, screenH_ = 1;
     int viewX_ = 0, viewY_ = 0, viewW_ = 1, viewH_ = 1;
     int boundTexture_ = -2;
+    struct Program { unsigned id = 0; int tex = -1, time = -1, texel = -1, res = -1, hasTex = -1, uvRect = -1, param[4] = {-1, -1, -1, -1}; };
+    std::vector<Program> programs_;
+    std::vector<std::pair<int, int>> textureSizes_;
+    bool programsOk_ = false;
+    int program_ = -1;                 // the program in use (-1: none)
+    float time_ = 0, resW_ = 1, resH_ = 1;
 };
 
 }  // namespace ab

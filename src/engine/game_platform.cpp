@@ -1414,6 +1414,7 @@ bool GamePlatform::CheckForLuaFile(const std::string& path) {
 
 void GamePlatform::BeginFrame() {
     cursorDrawn_ = false;
+    ShadersEveryFrame();
     if (backend_) backend_->BeginFrame(screenWidth_, screenHeight_, bgR_, bgG_, bgB_);
 }
 
@@ -1493,6 +1494,7 @@ GamePlatform::QueuedQuad GamePlatform::MakeQuad(int tex, float alpha, float r, f
     QueuedQuad q = {};
     q.tex = tex; q.mask = -1; q.alpha = alpha; q.r = r; q.g = g; q.b = b; q.blend = state_.blend;
     if (state_.effect >= 1 && state_.effect <= 3 && tex >= 0) q.tex = VariantTexture(tex, state_.effect);
+    if (state_.effect >= 6) q.prog = state_.effect - 6 + 1;      // v3.3: a shader of the user's
     if (drawingCursor_) q.kind = 0;
     else if (drawingNative_) { q.kind = 1; q.key = nativeKey_; }
     else if (state_.z != 0) { q.kind = 2; q.key = state_.z; }
@@ -1547,12 +1549,16 @@ void GamePlatform::FlushZ() {
     q.swap(zQueue_);
     keyedCount_ = spriteCount_ = 0;
     if (!backend_) return;
+    int program = -1;
     for (const QueuedQuad& c : q) {
         backend_->SetBlend(c.blend);
+        const int want = (c.mask < 0 && c.prog > 0) ? ShaderProgram(c.prog - 1) : -1;     // v3.3
+        if (want != program || want >= 0) { backend_->SetProgram(want, want >= 0 ? ShaderParams(c.prog - 1) : nullptr); program = want; }
         if (c.mask >= 0) { backend_->SetTileTint(c.r, c.g, c.b); backend_->DrawMaskedQuad(c.tex, c.mask, c.xy, c.tuv, c.uv, c.alpha); }
         else backend_->DrawQuad(c.tex, c.xy, c.uv, c.r, c.g, c.b, c.alpha);
     }
     backend_->SetBlend(0);
+    if (program >= 0) backend_->SetProgram(-1, nullptr);
 }
 
 void GamePlatform::ResSetClipRect(float x, float y, float w, float h) {
@@ -1803,6 +1809,12 @@ void GamePlatform::SetRenderOverride(const std::string& target, int what, float 
     case 7: o.blend = true; o.blendV = (int)a; break;
     case 8: o.effect = true; o.effectV = (int)a; break;
     case 9: o.rot = true; o.rotV = a; break;
+    case 12: o.offset = true; o.offX = a; o.offY = b; break;
+    case 13: o.lscale = true; o.lsx = a; o.lsy = b; o.lpivot = false; break;
+    case 14: o.lpivot = true; o.lpx = a; o.lpy = b; break;       // the point the scale of 13 grows from (without it: each sprite's own centre)
+    case 15: o.lpivot = false; break;
+    case 16: o.mirror = a != 0; break;
+    case 17: o.mirrorV = a != 0; break;
     case 10: { int ch = (int)a; if (ch >= 0 && ch < 3) { o.tint[ch] = true; o.t[ch] = b; } else if (ch == 3) { o.alpha = true; o.a = b < 0 ? 0 : (b > 1 ? 1 : b); } break; }
     default: break;
     }
@@ -1818,6 +1830,8 @@ bool GamePlatform::GetRenderOverride(const std::string& target, int what, float&
     case 7: a = (float)o.blendV; return o.blend;
     case 8: a = (float)o.effectV; return o.effect;
     case 9: a = o.rotV; return o.rot;
+    case 12: a = o.offX; b = o.offY; return o.offset;
+    case 13: a = o.lsx; b = o.lsy; return o.lscale;
     default: return false;
     }
 }
@@ -1845,6 +1859,34 @@ void GamePlatform::ApplyOverride(const RenderOverride& o) {
     if (o.blend) state_.blend = o.blendV;
     if (o.effect) state_.effect = o.effectV;
     if (o.rot) state_.angle += o.rotV;
+    if (o.mirror) state_.flipX = !state_.flipX;
+}
+// v3.3: the layout of a target: offset (dx, dy in the pixels the sprite is drawn in) and scale (about the sprite's own centre, or about a point
+// shared by everything of the target, so that a group such as the trajectory dots or a row of background layers moves and grows as one). The
+// anchors are resolved first so that the sprite is described by its top left corner and size alone.
+void GamePlatform::ApplyLayouts(const Sprite& sp, float& x, float& y, int& vAnchor, int& hAnchor, bool& sized, float& width, float& height) {
+    const std::string* keys[3] = {&drawTag_, &compoTag_, &sp.name};
+    bool resolved = false;
+    for (const std::string* k : keys) {
+        if (k->empty()) continue;
+        auto it = overrides_.find(*k);
+        if (it == overrides_.end() || (!it->second.offset && !it->second.lscale)) continue;
+        const RenderOverride& o = it->second;
+        if (!resolved) {
+            resolved = true;
+            float w = sized ? width : (float)sp.w, h = sized ? height : (float)sp.h;
+            switch (vAnchor) { case 1: y -= (float)(sp.h >> 1); break; case 2: y -= (float)sp.h; break; case 3: case 4: y -= (float)sp.pivotY; break; default: break; }
+            switch (hAnchor) { case 1: x -= (float)(sp.w >> 1); break; case 2: x -= (float)sp.w; break; case 3: x -= (float)sp.pivotX; break; default: break; }
+            vAnchor = hAnchor = 0; sized = true; width = w; height = h;
+        }
+        if (o.lscale) {
+            const float cx = o.lpivot ? o.lpx + (x + width * 0.5f - o.lpx) * o.lsx : x + width * 0.5f;
+            const float cy = o.lpivot ? o.lpy + (y + height * 0.5f - o.lpy) * o.lsy : y + height * 0.5f;
+            width *= o.lsx; height *= o.lsy;
+            x = cx - width * 0.5f; y = cy - height * 0.5f;
+        }
+        if (o.offset) { x += o.offX; y += o.offY; }
+    }
 }
 void GamePlatform::DrawSpriteAt(const SpriteSheet& sheet, const Sprite& spr, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height) {
     // engine.drawSprite(sprite, object, x, y) -> false | table | nil: called for every sprite the game draws. false leaves it undrawn;
@@ -1888,6 +1930,7 @@ void GamePlatform::DrawSpriteAt(const SpriteSheet& sheet, const Sprite& spr, flo
                         else {
                             const std::string* keys[3] = {&drawTag_, &compoTag_, &spr.name};
                             for (const std::string* k : keys) { if (k->empty()) continue; auto ov = overrides_.find(*k); if (ov != overrides_.end()) ApplyOverride(ov->second); }
+                            ApplyLayouts(spr, x, y, vAnchor, hAnchor, sized, width, height);
                             DrawSpriteAtRaw(sheet, spr, x, y, vAnchor, hAnchor, sized, width, height);
                         }
                         inHook = false;
@@ -1903,6 +1946,7 @@ void GamePlatform::DrawSpriteAt(const SpriteSheet& sheet, const Sprite& spr, flo
     RenderState keep = state_;
     const std::string* keys[3] = {&drawTag_, &compoTag_, &spr.name};
     for (const std::string* k : keys) { if (k->empty()) continue; auto it = overrides_.find(*k); if (it != overrides_.end()) ApplyOverride(it->second); }
+    ApplyLayouts(spr, x, y, vAnchor, hAnchor, sized, width, height);
     DrawSpriteAtRaw(sheet, spr, x, y, vAnchor, hAnchor, sized, width, height);
     state_ = keep;
 }
@@ -4270,6 +4314,8 @@ void GamePlatform::ConsoleCommand(const std::string& raw) {
         if (cmd == "gravity") { if (n >= 2) Physics().SetGravity(a, b); float gx, gy; Physics().GetGravity(gx, gy); std::printf("console: gravity %g %g\n", gx, gy); }
         else if (n >= 1) { Physics().SetMaxTranslation(a); std::printf("console: max translation %g\n", a); }
         else std::printf("console: usage: maxtranslation <t>\n");
+    } else if (cmd == "shader" && ShaderConsole(arg)) {
+        // v3.3: shader list / new / export / reload / apply / param (shaders.cpp)
     } else if (cmd == "scale" || cmd == "speedcap" || cmd == "blend" || cmd == "shader") {
         std::istringstream ss(arg);
         std::string name, w1, w2;

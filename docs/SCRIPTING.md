@@ -168,8 +168,19 @@ Already there, nothing new needed:
 
 `resetRenderOverrides(target)` forgets everything set for a target. Examples: `setTint(1, 0.3, 0.3, "background")`, `setBlendMode("add", "pig_3")`, `setShader("grayscale", "foreground")`, `setBlur(4, "TRAIL_WHITE_1")`.
 
+#### Layout of a target (3.3)
+
+The same targets also have a layout, set with their own functions (a target is required):
+
+* `setOffset(dx, dy, target)` moves everything of the target by `dx`, `dy` pixels (world pixels for the trajectory, the aiming aid and objects). `getOffset(target)` returns `dx, dy`.
+* `setLayoutScale(sx [, sy], target)` scales the sprites of the target, each about its own centre. `setLayoutScale(sx, sy, px, py, target)` scales their positions too, about the point `px`, `py`, so a whole group grows or shrinks as one.
+* `setMirror(true | false, target)` mirrors the sprites left to right.
+* `resetRenderOverrides(target)` forgets the layout together with the other settings.
+
+Examples: `setOffset(0, 120, "background")`, `setLayoutScale(1.6, 1.6, 640, 360, "foreground")`, `setOffset(-60, -40, "trajectory")`. Anchors are resolved first, so offset and scale act on the sprite's top left corner and size; `engine.drawSprite`'s `dx`, `dy`, `sx`, `sy` and a target's layout add up.
+
 * `setBlendMode(mode [, target])`: `"normal"`, `"add"`, `"multiply"`, `"screen"` (or 0 to 3). `setRenderState` takes it as its 20th value.
-* `setShader(name [, target])`: `"none"`, `"grayscale"`, `"sepia"`, `"invert"`, `"chromatic"` (colour fringes), `"glow"`. `setRenderState` takes it as its 21st value. These are built in: the renderer is fixed-function OpenGL 1.x, so shader programs you write yourself are not possible.
+* `setShader(name [, target])`: `"none"`, `"grayscale"`, `"sepia"`, `"invert"`, `"chromatic"` (colour fringes), `"glow"`, or the name of a shader of your own (3.3, see "Shaders" below). `setRenderState` takes it as its 21st value.
 * `setTintChannel("r" | "g" | "b" | "a", value [, target])`: one channel of the tint (or the alpha) and nothing else; above 1 brightens.
 * All of them also work on the tiled "texture" blocks (the ground and static blocks): tint, blur, bend, pixelation, blend mode and the presets apply to the tile texture seen through the block's shape.
 * `res.getSpritePixel(sprite, x, y)` returns `r, g, b, a` (0 to 255) of the pixel x right and y down from the sprite's top left corner (nil if outside); for collision masks, colour lookups and the like.
@@ -555,7 +566,7 @@ All drawing functions use the **render state** that `setRenderState` set last. `
 | `enableAimingAid(on)`, `setAimingAidSprite(sprite, scale)`, `populateAimingAid()`, `clearAimingAid()`, `updateBirdTrajectoryTable([name])`, `simulateAimingAid(bird, impulseX, impulseY [, points, startX, startY, forceX, forceY])` (Space, SW, Classic with `extras`; `forceX, forceY`: a force applied before every simulated step, like a script's `applyForce` each frame) | The aiming aid: `updateBirdTrajectoryTable` fills the path from the simulation, `populateAimingAid` lays out the dots, `clearAimingAid` removes them. The speed and spacing of the dots are the globals `simulationAimSpeed` and `simulationAimSpawnTime`. |
 | `drawSlingScopeNative(vx, vy, flyVerticalForce)` | The Sling Scope power-up's path: the aiming aid's simulation of the current bird launched from the band with that velocity and lift; shown while the game keeps calling it every frame. |
 | `res.getClipRect()` | The clip rectangle set by `res.setClipRect` (x, y, w, h), or the whole screen. |
-| `setAlpha(a [, target])`, `setBlendMode(mode [, target])`, `setShader(effect [, target])`, `setTint(r [, g, b] [, target])`, `getTint([target])`, `resetTint([target])`, `setTintChannel(channel, value [, target])`, `setSkew(x, y [, target])`, `setBend(x, y [, target])`, `setRenderZ(z [, target])`, `setBlur(amount [, target])`, `setPixelate(size [, target])`, `resetBlur`, `resetPixelate`, `setVisualRotation(angle [, target])`, `resetRenderOverrides(target)` (2.2 / 2.4) | Single values of the render state with their own functions; with a `target` (an object, sprite or sprite group name) the setting is kept for that target and every later draw of it uses it. See "Graphics settings for one target" above. |
+| `setAlpha(a [, target])`, `setBlendMode(mode [, target])`, `setShader(effect [, target])`, `setTint(r [, g, b] [, target])`, `getTint([target])`, `resetTint([target])`, `setTintChannel(channel, value [, target])`, `setSkew(x, y [, target])`, `setBend(x, y [, target])`, `setRenderZ(z [, target])`, `setBlur(amount [, target])`, `setPixelate(size [, target])`, `resetBlur`, `resetPixelate`, `setVisualRotation(angle [, target]), `createShader(name, source)`, `setShaderParam(name, slot, x, y, z, w)`, `getShaderError(name)`, `listShaders()`, `setOffset(dx, dy, target)`, `getOffset(target)`, `setLayoutScale(sx [, sy] [, px, py], target)`, `setMirror(on, target)`, `resetRenderOverrides(target)` (2.2 / 2.4 / 3.3) | Single values of the render state with their own functions; with a `target` (an object, sprite or sprite group name) the setting is kept for that target and every later draw of it uses it. See "Graphics settings for one target" above. |
 
 **Pivot arguments (3.1).** `drawRect`, `drawLine2D`, `res.drawSprite`, `res.drawTexturedLine2D` (after its colour) and `res.drawString` accept two optional last arguments, `pivotX, pivotY`, a point in the same coordinates as the drawing. When both are numbers the scale (`sx, sy`) of the render state grows from that point: the point stays where it is and the rest of the picture spreads from it. If either one is `nil` or missing the call works as before (the scale grows from the origin of the render state). Without a scale other than 1 it changes nothing. Example: `setRenderState(0, 0, 2, 2, 0); drawRect(0, 200, 0, 150, 300, 300, 400, 400, true, 300, 300)` fills 300..500 on both axes, where without the pivot it would fill 600..800.
 
@@ -1242,3 +1253,44 @@ Together with `engine.drawObject` (skip a whole object), the layer functions (`s
 ### Checked
 
 Star Wars (Hoth level, blocks kicked with `setVelocity` so they hit each other): `engine.force` 388 calls, `engine.damage` 73, `engine.strengthChange` 73, `engine.drawSprite` about a million calls, the scene visibly tinted and waving. Rio 1.4.2 main menu: `engine.drawSprite` tinted and moved every sprite. Seasons main menu: hook ran with no errors. Classic and Rio hits are covered by the same code as the Star Wars damage test, which was not repeated there.
+
+### Shaders (3.3)
+
+`setShader` takes the built-in names (`"none"`, `"grayscale"`, `"sepia"`, `"invert"`, `"chromatic"`, `"glow"`) and, since 3.3, the name of any shader of your own. It needs a graphics driver with OpenGL 2.0 shaders (every PC of the last fifteen years); without one the presets work as before and your shaders are ignored. `AB_NO_SHADERS=1` turns them off.
+
+**The file.** A shader is `<user data folder>/shaders/<name>.frag`:
+
+```glsl
+// the colours turn around the screen
+vec4 shade(vec4 texel, vec2 uv, vec4 tint) {
+    float h = v_pos.x / u_resolution.x * 6.2831 + u_time;
+    vec3 k = 0.5 + 0.5 * vec3(sin(h), sin(h + 2.094), sin(h + 4.188));
+    return vec4(texel.rgb * mix(vec3(1.0), k, 0.7), texel.a) * tint;
+}
+```
+
+`texel` is the sprite's pixel and `tint` the colour it is drawn with; **both are premultiplied by alpha**, like every sheet, so scale `rgb` (not `a`) when you darken, and return a premultiplied colour. What is in front of your code:
+
+| name | what |
+|---|---|
+| `sampler2D u_tex` | the sheet (use `sampleTex`) |
+| `float u_time` | seconds since the start |
+| `vec2 u_texel` | the size of one sheet pixel in uv units (`1.0 / sheet size`) |
+| `vec2 u_resolution` | the game's screen, in screen units |
+| `float u_hasTex` | 0 for the plain coloured rectangles |
+| `vec4 u_uvRect` | the sprite's part of the sheet: minU, minV, maxU, maxV |
+| `vec4 u_param0` .. `u_param3` | set with `setShaderParam(name, slot, x, y, z, w)`; 0 until set |
+| `varying vec2 v_uv` | the position in the sheet |
+| `varying vec4 v_color` | the tint (the `tint` argument) |
+| `varying vec2 v_pos` | where this is on the screen, in screen units (before the layout of the camera) |
+| `vec4 sampleTex(vec2 uv)` | the sheet at `uv`, held inside `u_uvRect`, so the neighbouring sprite is never read |
+
+A file that has its own `void main()` gets this prelude only (write `gl_FragColor` yourself). The language is GLSL 1.10. Compile errors name the line of your file.
+
+**Use it:** `setShader("rainbow")` (the render state), `setShader("rainbow", "background")` or any other target of "Graphics settings for one target", `setRenderState(..., 21st value)`. A shader file is loaded the first time its name is used. `createShader(name, source)` makes one from text (`true` or `false, errors`), `getShaderError(name)`, `listShaders()`, `setShaderParam(name, slot, x [, y, z, w])`.
+
+**The presets are editable.** `shader export` in the console writes the presets and templates as files; after that `setShader("grayscale")` uses `grayscale.frag`, so edit it to change the preset, delete it to get the built-in one back. **Live reload:** a saved file is compiled within half a second; an error prints the messages and the last working version stays.
+
+**Shader creator (console):** `shader templates`, `shader new <name> [template]`, `shader apply <target> <name>`, `shader param <name> <slot> x [y z w]`, `shader check <name>`, `shader reload [name]`, `shader list`, `shader export`. Typical session: `shader new wobble wave`, `shader apply background wobble`, edit `wobble.frag` and watch the picture change, `shader param wobble 0 8` for a stronger wave.
+
+Limits: one shader per sprite; a shader cannot draw outside the sprite it is drawn for; the tiled ground blocks (masked quads) are not shaded; there is no vertex shader of your own and no access to the picture behind the sprite.

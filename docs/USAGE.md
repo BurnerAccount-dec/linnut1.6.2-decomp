@@ -128,7 +128,8 @@ The window that opens behind the game accepts typed lines. Click into it, type a
 | `zorder`, `zorder <name>`, `zorder <name> <z>`, `zfront <name>`, `zback <name>` | list the objects back to front with their `z_order`, show or set one object's z, bring it to the front / send it to the back |
 | `text <group> <key> <text>`, `texts [group]` | sets or adds one text (what `res.getString` and `drawString` read), or lists the text groups / the texts of one group |
 | `gravity [x y]`, `maxtranslation [t]` | shows or sets the world's gravity, and the longest distance a body moves in one physics step |
-| `scale <object> <sx> [sy]`, `speedcap <object> <speed>`, `blend <object> <mode>`, `shader <object> <name>` | the same as `setScale`, `setSpeedCap`, `setBlendMode` and `setShader` for one object (`blend`: normal, add, multiply, screen; `shader`: none, grayscale, sepia, invert, chromatic, glow) |
+| `scale <object> <sx> [sy]`, `speedcap <object> <speed>`, `blend <object> <mode>`, `shader <object> <name>` | the same as `setScale`, `setSpeedCap`, `setBlendMode` and `setShader` for one object (`blend`: normal, add, multiply, screen; `shader`: none, grayscale, sepia, invert, chromatic, glow, or the name of your own shader) |
+| `shader list`, `shader templates`, `shader new <name> [template]`, `shader apply <target> <name>`, `shader param <name> <slot> x [y z w]`, `shader check <name>`, `shader reload [name]`, `shader export` | the shader creator (3.3): writes a shader file from a template, applies it to a target, sets its parameters, shows its compile errors; see `docs/SCRIPTING.md`, "Shaders" |
 | `lua <code>` or just the code | runs Lua among the game's scripts, for example `lua print(score)` or `lua setAlpha(0.5)` |
 
 Environment variables, set in the command prompt before starting the engine (`set NAME=value`, `set NAME=` to clear):
