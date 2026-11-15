@@ -1,10 +1,10 @@
-collision_damage 72 0.000146076
-frame_update 72 0.000143542
-physics_world 72 0.000516689
-audio_controls 72 0.000155622
-lua_frame_host 72 0.000646657
-sprite_sheet 72 0.000708385
-level_writer 72 0.00113279
-alpha 72 0.000616951
-video 72 0.000210371
+collision_damage 74 0.000142216
+frame_update 74 0.000144159
+physics_world 74 0.000495908
+audio_controls 74 0.000143865
+lua_frame_host 74 0.000919819
+sprite_sheet 74 0.000714615
+level_writer 74 0.000762262
+alpha 74 0.000667949
+video 74 0.000233743
 ---

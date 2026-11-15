@@ -991,6 +991,7 @@ levelSpawner = {
 	skip = { "Ground", "Slingshot" },   -- definitions that are not spawned
 	birds = true,              -- (3.8) the birds of the spawned level join the line-up (false: they are left out, as in 3.7)
 	preview = true,            -- (3.8) a small picture of the level in the panel
+	placement = true,          -- (3.8) a click on the picture lets the level be moved about as a half-transparent copy; Return (or a click) puts it down, Escape goes back
 	drop = true,               -- a level file dropped on the window is spawned too (false: it replaces the level, as in 3.1)
 	title = "Spawn a level here",
 }
@@ -1027,16 +1028,41 @@ do
 		return a < b
 	end
 
-	local function listFiles(folder)
-		local out = {}
-		local list = type(listDataFolder) == "function" and listDataFolder(folder) or nil
+	-- the folders and the levels of a folder in the order the game loads them: `levelOrder.packs` and `levelOrder[pack]` (Level7 is the 9th level of pack1, so 1-9), then whatever else is there
+	local function fileList(name)
+		local present, out, seen = {}, {}, {}
+		local list = type(listDataFolder) == "function" and listDataFolder(root .. name .. "/") or nil
 		if list ~= nil then
 			for _, e in ipairs(list) do
-				if not e.dir and find(e.name, "%.lua$") and not find(e.name, "%.temp") then out[#out + 1] = (gsub(e.name, "%.lua$", "")) end
+				if not e.dir and find(e.name, "%.lua$") and not find(e.name, "%.temp") then present[(gsub(e.name, "%.lua$", ""))] = true end
 			end
 		end
-		sort(out, natural)
+		local order = type(levelOrder) == "table" and levelOrder[name] or nil
+		if type(order) == "table" then
+			for i = 1, #order do
+				local n = order[i]
+				if present[n] and not seen[n] then out[#out + 1] = n seen[n] = true end
+			end
+		end
+		local rest = {}
+		for n in pairs(present) do if not seen[n] then rest[#rest + 1] = n end end
+		sort(rest, natural)
+		for _, n in ipairs(rest) do out[#out + 1] = n end
 		return out
+	end
+
+	local function packNumber(name)
+		if type(levelOrder) == "table" and type(levelOrder.packs) == "table" then
+			for i, n in ipairs(levelOrder.packs) do if n == name then return i end end
+		end
+		return nil
+	end
+
+	-- the place of a level in the game's order of its folder (Level7 is 9th in pack1: 1-9)
+	local function gameIndex(folder, name)
+		local order = type(levelOrder) == "table" and levelOrder[folder] or nil
+		if type(order) == "table" then for i = 1, #order do if order[i] == name then return i end end end
+		return nil
 	end
 
 	local function start()
@@ -1046,19 +1072,28 @@ do
 		root, pack = base or f, pack or ""
 		folders = {}
 		local list = type(listDataFolder) == "function" and listDataFolder(root) or nil
+		local present = {}
 		if list ~= nil then
 			for _, e in ipairs(list) do
-				if e.dir and e.name ~= "temp" and #listFiles(root .. e.name .. "/") > 0 then folders[#folders + 1] = e.name end
+				if e.dir and e.name ~= "temp" and #fileList(e.name) > 0 then present[e.name] = true end
 			end
 		end
-		sort(folders, natural)
+		if type(levelOrder) == "table" and type(levelOrder.packs) == "table" then
+			for _, n in ipairs(levelOrder.packs) do
+				if present[n] then folders[#folders + 1] = n present[n] = nil end
+			end
+		end
+		local rest = {}
+		for n in pairs(present) do rest[#rest + 1] = n end
+		sort(rest, natural)
+		for _, n in ipairs(rest) do folders[#folders + 1] = n end
 		folderIndex = 0
 		for i, n in ipairs(folders) do if n == pack then folderIndex = i end end
 		if folderIndex == 0 then folders[#folders + 1] = pack folderIndex = #folders end
-		files = listFiles(root .. folders[folderIndex] .. "/")
+		files = fileList(folders[folderIndex])
 		fileIndex = 0
 		for i, n in ipairs(files) do if n == _G.tostring(levelName) then fileIndex = i end end
-		if fileIndex == 0 then files[#files + 1] = _G.tostring(levelName) sort(files, natural) for i, n in ipairs(files) do if n == _G.tostring(levelName) then fileIndex = i end end end
+		if fileIndex == 0 then files[#files + 1] = _G.tostring(levelName) fileIndex = #files end
 		cache = {}
 	end
 
@@ -1069,7 +1104,7 @@ do
 	local function stepFolder(dir)
 		for _ = 1, #folders do
 			folderIndex = (folderIndex - 1 + dir) % #folders + 1
-			local list = listFiles(root .. folders[folderIndex] .. "/")
+			local list = fileList(folders[folderIndex])
 			if #list > 0 then files, fileIndex = list, 1 return end
 		end
 	end
@@ -1186,7 +1221,9 @@ do
 		return true
 	end
 
-	local function close() open, modalOpen, modalInput, cache = false, false, nil, {} end
+	local placing = nil
+	local previewOf, previewRect      -- defined further down, used by handle
+	local function close() open, modalOpen, modalInput, cache, placing = false, false, nil, {}, nil end
 
 	local function anyKey(list, pressed)
 		for _, k in ipairs(list) do if pressed[k] then return true end end
@@ -1221,6 +1258,16 @@ do
 		local input = modalInput
 		if input == nil then return end
 		local p = input.pressed
+		if placing ~= nil then
+			if anyKey(levelSpawner.closeKeys, p) then placing = nil
+			elseif anyKey(levelSpawner.spawnKeys, p) or input.clicked then
+				local file = placing
+				placing = nil
+				spawn(file)
+				close()
+			end
+			return
+		end
 		if anyKey(levelSpawner.closeKeys, p) then close() return end
 		if p["LEFT"] then stepFile(-1) elseif p["RIGHT"] then stepFile(1) elseif p["UP"] then stepFolder(1) elseif p["DOWN"] then stepFolder(-1) end
 		if input.clicked then
@@ -1228,15 +1275,20 @@ do
 				if inside(b, input.x, input.y) then b.action() return end
 			end
 		end
-		if anyKey(levelSpawner.spawnKeys, p) or (input.clicked and inside(panel, input.x, input.y)) then
+		if levelSpawner.placement and input.clicked and inside(previewRect, input.x, input.y) and previewOf(pathOf()) ~= nil then
+			placing = pathOf()
+		elseif anyKey(levelSpawner.spawnKeys, p) or (input.clicked and inside(panel, input.x, input.y)) then
 			spawn()
 			close()
 		elseif input.clicked then close() end
 	end
 
-	-- the level's blocks as coloured bars (a box is a line as thick as the block, turned like it), ice light blue, wood brown, stone grey, pigs green, birds red, static blocks dark
-	local function colourOf(b)
-		if b.controllable then return 230, 60, 60 end
+	-- the level's blocks drawn with their own pictures (static blocks, which the game fills with the theme's texture, and blocks without a picture here are bars: a line as thick as the block, turned like it)
+	local function colourOf(b, def)
+		if b.controllable then
+			if find(def, "BigBrother") or find(_G.tostring(b.sprite), "BIG_BROTHER") then return 120, 20, 45 end   -- the giant Red Bird: maroon
+			return 230, 60, 60
+		end
 		if b.levelGoal then return 90, 200, 90 end
 		local s = b.sprite or ""
 		if find(s, "LIGHT") or find(s, "GLASS") or find(s, "ICE") then return 150, 215, 250 end
@@ -1246,24 +1298,33 @@ do
 		return 205, 205, 205
 	end
 
-	local function previewOf(file)
+	local function spriteOf(b)
+		if b.damageSprites ~= nil and b.damageSprites.damage1 ~= nil then return b.damageSprites.damage1.sprite end
+		return b.sprite
+	end
+
+	function previewOf(file)
 		local c = cache["preview " .. file]
 		if c ~= nil then return c or nil end
 		local data = readLevel(file)
 		local items, x1, y1, x2, y2 = {}, 1e9, 1e9, -1e9, -1e9
+		local ps = physicsScale or 0.05
 		if data ~= nil then
 			for name, o in pairs(data.world) do
 				local b = type(o) == "table" and o.definition ~= nil and o.x ~= nil and blockTable.blocks[o.definition] or nil
-				if b ~= nil and not find(name, "^zone_") and o.definition ~= "Ground" then
+				if b ~= nil and not find(name, "^zone_") and not isSkipped(o.definition) then
+					local sprite = spriteOf(b)
+					local sw, sh = 0, 0
+					if sprite ~= nil then sw, sh = _G.res.getSpriteBounds("", sprite) end
+					sw, sh = sw or 0, sh or 0
+					local static = b.material == "immovable"
 					local w, h
-					if b.radius ~= nil then w, h = b.radius * 2, b.radius * 2
-					else
-						local sw, sh = _G.res.getSpriteBounds("", b.sprite or "")
-						w, h = (sw or 0) * (physicsScale or 0.05), (sh or 0) * (physicsScale or 0.05)
-					end
-					if w == nil or w <= 0 then w, h = 1, 1 end
-					local r, g, bl = colourOf(b)
-					items[#items + 1] = { x = o.x, y = o.y, w = w, h = h, a = o.angle or 0, r = r, g = g, b = bl, static = b.material == "immovable" }
+					if sw > 0 and sh > 0 then w, h = sw * ps, sh * ps
+					elseif b.radius ~= nil then w, h = b.radius * 2, b.radius * 2
+					else w, h = 1, 1 end
+					local r, g, bl = colourOf(b, o.definition)
+					items[#items + 1] = { x = o.x, y = o.y, w = w, h = h, a = o.angle or 0, r = r, g = g, b = bl, static = static, bird = b.controllable == true,
+						sprite = (sw > 0 and not static) and sprite or nil, sw = sw, sh = sh }
 					local e = max(w, h) / 2
 					x1, y1, x2, y2 = min(x1, o.x - e), min(y1, o.y - e), max(x2, o.x + e), max(y2, o.y + e)
 				end
@@ -1274,7 +1335,25 @@ do
 		return result or nil
 	end
 
+	-- one item at the screen point px, py: its sprite (scale per sprite pixel) or a bar, drawn with `alpha` (0 to 1)
+	local function drawItem(it, px, py, scale, alpha)
+		if it.sprite ~= nil then
+			local qx, qy = px / scale, py / scale       -- the render state scales the coordinates it is given; the sprite turns about the point of itself given as the pivot (its middle)
+			setRenderState(0, 0, scale, scale, it.a, it.sw / 2, it.sh / 2, alpha)
+			_G.res.drawSprite(it.sprite, qx, qy, "VCENTER", "HCENTER")
+			setRenderState(0, 0, 1, 1, 0, 0, 0, 1)
+		else
+			local ps = physicsScale or 0.05
+			local k = scale / ps
+			local len, thick, ang = it.w, it.h, it.a
+			if it.h > it.w then len, thick, ang = it.h, it.w, it.a + pi / 2 end
+			local dx, dy = cos(ang) * len * k / 2, sin(ang) * len * k / 2
+			drawLine2D(px - dx, py - dy, px + dx, py + dy, max(1, thick * k), it.r, it.g, it.b, 255 * alpha)
+		end
+	end
+
 	local function drawPreview(ax1, ay1, ax2, ay2)
+		previewRect = { x1 = ax1, y1 = ay1, x2 = ax2, y2 = ay2 }
 		drawRect(0.1, 0.1, 0.13, 1, ax1, ay1, ax2, ay2, false)
 		local pv = previewOf(pathOf())
 		if pv == nil then return end
@@ -1282,17 +1361,52 @@ do
 		local sc = min(pw / max(pv.x2 - pv.x1, 0.01), ph / max(pv.y2 - pv.y1, 0.01))
 		local ox = ax1 + 6 + (pw - (pv.x2 - pv.x1) * sc) / 2
 		local oy = ay1 + 6 + (ph - (pv.y2 - pv.y1) * sc) / 2
+		-- the ground (world y 0) cuts off what is below it, as in the game (the static blocks reach down into it)
+		local gy = oy + (0 - pv.y1) * sc
+		local clipped = gy < ay2 and gy > ay1
+		if clipped then _G.res.setClipRect(ax1, ay1, ax2 - ax1, gy - ay1) end
 		for pass = 1, 2 do
 			for _, it in ipairs(pv.items) do
 				if (pass == 1) == it.static then
-					local cxs, cys = ox + (it.x - pv.x1) * sc, oy + (it.y - pv.y1) * sc
-					local len, thick, ang = it.w, it.h, it.a
-					if it.h > it.w then len, thick, ang = it.h, it.w, it.a + pi / 2 end
-					local dx, dy = cos(ang) * len * sc / 2, sin(ang) * len * sc / 2
-					drawLine2D(cxs - dx, cys - dy, cxs + dx, cys + dy, max(1, thick * sc), it.r, it.g, it.b, 255)
+					drawItem(it, ox + (it.x - pv.x1) * sc, oy + (it.y - pv.y1) * sc, sc * (physicsScale or 0.05), 1)
 				end
 			end
 		end
+		if clipped then
+			_G.res.setClipRect(0, 0, screenWidth, screenHeight)
+			drawRect(0.2, 0.26, 0.12, 1, ax1, gy, ax2, ay2, false)
+		end
+	end
+
+	-- placing: the level as a half-transparent copy that follows the cursor (it has no body, nothing collides with it); Return or a click puts it down
+	local function cursorPhysics()
+		if cursor ~= nil and type(screenToPhysicsTransform) == "function" then return screenToPhysicsTransform(cursor.x, cursor.y) end
+		return 0, 0
+	end
+
+	local function drawGhost()
+		if placing == nil then return end
+		local pv = previewOf(placing)
+		if pv == nil then return end
+		local cx, cy, n = 0, 0, 0
+		for _, it in ipairs(pv.items) do
+			if not it.bird then cx, cy, n = cx + it.x, cy + it.y, n + 1 end
+		end
+		if n == 0 then return end
+		cx, cy = cx / n, cy / n
+		local tx, ty = cursorPhysics()
+		local camX, camY, ws = getCamera()
+		setRenderState(0, 0, 1, 1, 0, 0, 0, 1)
+		_G.res.setClipRect(0, 0, screenWidth, (0 * 20 - camY) * ws)       -- not below the ground
+		for pass = 1, 2 do
+			for _, it in ipairs(pv.items) do
+				if not it.bird and (pass == 1) == it.static then
+					drawItem(it, ((it.x - cx + tx) * 20 - camX) * ws, ((it.y - cy + ty) * 20 - camY) * ws, ws, 0.5)
+				end
+			end
+		end
+		_G.res.setClipRect(0, 0, screenWidth, screenHeight)
+		setRenderState(0, 0, 1, 1, 0, 0, 0, 1)
 	end
 
 	local function button(x1, y1, x2, y2, label, action)
@@ -1304,6 +1418,7 @@ do
 
 	local function drawPanel()
 		if not open then return end
+		if placing ~= nil then drawGhost() return end
 		local w, h = screenWidth, screenHeight
 		setRenderState(0, 0, 1, 1, 0, 0, 0, 1)
 		drawRect(0, 0, 0, 0.45, 0, 0, w, h, false)
@@ -1321,14 +1436,16 @@ do
 			drawPreview(x1 + bw + 24, y1 + ph * 0.11, x1 + pw - bw - 24, y1 + ph * 0.66)
 			rowY = y1 + ph * 0.73
 		else rowY = y1 + ph * 0.45 end
-		_G.res.drawString("", pathOf() .. "   (" .. fileIndex .. " / " .. #files .. ")", w / 2, rowY, "VCENTER", "HCENTER")
+		local pn = packNumber(folders[folderIndex])
+		_G.res.drawString("", (pn ~= nil and (pn .. "-" .. (gameIndex(folders[folderIndex], files[fileIndex]) or fileIndex) .. "   ") or "") .. pathOf() .. "   (" .. fileIndex .. " / " .. #files .. ")", w / 2, rowY, "VCENTER", "HCENTER")
 		local midY = y1 + ph * (levelSpawner.preview and 0.385 or 0.45)
 		button(x1 + 10, midY - bh / 2, x1 + 10 + bw, midY + bh / 2, "<", function() stepFile(-1) end)
 		button(x1 + pw - 10 - bw, midY - bh / 2, x1 + pw - 10, midY + bh / 2, ">", function() stepFile(1) end)
 		local fy = rowY + 52
 		button(w / 2 - 150, fy - 16, w / 2 - 20, fy + 16, "folder -", function() stepFolder(-1) end)
 		button(w / 2 + 20, fy - 16, w / 2 + 150, fy + 16, "folder +", function() stepFolder(1) end)
-		_G.res.drawString("", "Left / Right: level    Up / Down: folder    Return: spawn    Esc: close", w / 2, y1 + ph * 0.955, "VCENTER", "HCENTER")
+		_G.res.drawString("", "Left / Right: level    Up / Down: folder", w / 2, y1 + ph * 0.905, "VCENTER", "HCENTER")
+		_G.res.drawString("", levelSpawner.placement and "Return: spawn here    Click the picture: place it    Esc: close" or "Return: spawn here    Esc: close", w / 2, y1 + ph * 0.96, "VCENTER", "HCENTER")
 	end
 
 	local originalUpdate, originalDrawGame = update, drawGame
