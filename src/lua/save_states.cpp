@@ -456,6 +456,23 @@ bool Apply(lua_State* L) {
         }
         lua_settop(L, obj - 1);
     }
+    // 3.7.1: a bird that was made again (or one the level did not start with) has none of the timers the games' animation code counts down for every entry of `birds`
+    // (jumpTimer, animTimer: the games give a piece of a split bird 9999); the missing ones are given that value so the update does not stop on an empty field
+    GetG(L, "birds");
+    if (lua_istable(L, -1)) {
+        lua_pushnil(L);
+        while (lua_next(L, -2)) {
+            if (lua_istable(L, -1)) {
+                for (const char* f : {"jumpTimer", "animTimer"}) {
+                    lua_getfield(L, -1, f);
+                    if (lua_isnil(L, -1)) { lua_pushnumber(L, 9999); lua_setfield(L, -3, f); }
+                    lua_pop(L, 1);
+                }
+            }
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
     // the script variables, tables, objects and the camera
     lua_getfield(L, st, "globals");
     if (lua_istable(L, -1)) {
