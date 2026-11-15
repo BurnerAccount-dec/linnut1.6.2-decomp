@@ -85,7 +85,7 @@ void MakePath(const std::string& dir) {          // every folder of the path
 bool FileExists(const std::string& p) { std::ifstream f(p.c_str(), std::ios::binary); return (bool)f; }
 
 // Runs a shell command and waits at most `seconds` for it (0: as long as it takes). Returns the exit code, or -1 when the time ran out and the command (and
-// everything it started) was killed. v3.4: unluac 1.2.2 never finishes on some scripts (Seasons 4.1.0's scripts/menu_flow.lua is one: it loops for ever on a
+// everything it started) was killed. v3.3: unluac 1.2.2 never finishes on some scripts (Seasons 4.1.0's scripts/menu_flow.lua is one: it loops for ever on a
 // loop it cannot rebuild), and the run waited for it for ever, so the second decompiler (unluac-alt, which does finish) never got its turn.
 int RunWithTimeout(const std::string& cmd, int seconds) {
 #ifdef _WIN32
@@ -197,7 +197,7 @@ std::vector<std::string> FindUnluac(const std::string& exeFolder) {
     std::vector<std::string> candidates, found;
     if (const char* e = std::getenv("AB_UNLUAC")) {
         candidates.push_back(e);
-        std::string dir = e;                                             // v3.4: the alternative decompiler beside it is the next one to try
+        std::string dir = e;                                             // v3.3: the alternative decompiler beside it is the next one to try
         const size_t cut = dir.find_last_of("/\\");
         candidates.push_back((cut == std::string::npos ? std::string() : dir.substr(0, cut + 1)) + "unluac-alt.jar");
     }

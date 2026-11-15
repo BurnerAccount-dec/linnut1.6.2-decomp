@@ -455,7 +455,7 @@ private:
     std::string drawTag_, compoTag_;     // what is being drawn: "background", an object's name ...; the composite sprite whose parts are drawn
     struct TagScope { GamePlatform* g; std::string old; TagScope(GamePlatform* p, const std::string& t) : g(p), old(p->drawTag_) { g->drawTag_ = t; } ~TagScope() { g->drawTag_ = old; } };
     void ApplyOverride(const RenderOverride& o);
-    // v3.4: shaders written by the user (shaders.cpp). The effect of the render state is 0..5 for the presets and 6 + the index for these.
+    // v3.3: shaders written by the user (shaders.cpp). The effect of the render state is 0..5 for the presets and 6 + the index for these.
     struct CustomShader { std::string name, path, source, error; int program = -1; float params[16] = {0}; long long stamp = 0; };
     std::vector<CustomShader> shaders_;
     double shaderCheck_ = 0;
@@ -472,7 +472,7 @@ private:
     void SetShaderParam(const std::string& name, int slot, float x, float y, float z, float w) override;
     std::string ShaderError(const std::string& name) override;
     void ShaderNames(std::vector<std::string>& out) override;
-    void ApplyLayouts(const Sprite& spr, float& x, float& y, int& vAnchor, int& hAnchor, bool& sized, float& width, float& height);   // v3.4: offset / scale of the targets
+    void ApplyLayouts(const Sprite& spr, float& x, float& y, int& vAnchor, int& hAnchor, bool& sized, float& width, float& height);   // v3.3: offset / scale of the targets
     std::map<int, std::pair<std::string, bool>> handleSource_;     // texture handle -> the png it came from (for the shader variants)
     std::map<long long, int> textureVariants_;                     // handle * 8 + effect -> handle of the converted copy
     int VariantTexture(int handle, int effect);

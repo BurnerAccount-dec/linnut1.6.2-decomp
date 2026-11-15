@@ -49,5 +49,5 @@ exit /b 0
 
 :fail
 echo.
-echo FAILED. Copy the last lines above and send them to Claude.
+echo FAILED. The lines above say which step failed.
 exit /b 1

@@ -24,7 +24,7 @@ Drop `.lua` files onto the exe together with it (select the `.apk`/`.ipa` and th
 
 "Play Tournament" logs in as a guest on a stand-in server inside the engine. The `.apk` has no tournament levels (the server sent them). If you have opened Friends 1.0.0's `.ipa` with this engine, or that `.ipa` is in the same folder as the `.apk`, its 30 tournament levels are copied to `data\levels\friends_1.0.0` and used. To play other levels instead, put level files in `%LOCALAPPDATA%\AngryBirdsEngine\apk\Angry Birds Friends 2.0.0\data\levels\tournament` (make the `tournament` folder); while that folder has levels, they replace Friends 1.0.0's. Each file is a level in the game's format named `Level<code>.lua`; the 30 `Level2000-*.lua` files from Friends 1.0.0's `levels\pack57` folder work as they are. With up to six files, all of them are the tournament; with more, six are played each week, in turn, the week ending on Monday at midnight. Star scores: a `starLimits.lua` in the same folder (`Level2000-1 = {silverScore = 96000, goldScore = 110000}`) if there is one, else the level file's own scores (Friends 1.0.0's levels have them), else 40000 / 60000. Coins, bought power-ups and slingshots, the week's scores, trophies and the daily wheel are kept in `settings.lua`.
 
-### Replacing the game's own exe with the engine (3.4)
+### Replacing the game's own exe with the engine (3.3)
 
 Instead of starting the engine from a shortcut or a copy next to the game, the engine can take the place of the game's exe, so the original `AngryBirds.exe` (its shortcuts, its Start menu entry, its Steam or desktop icon) starts the engine.
 
@@ -138,7 +138,7 @@ The window that opens behind the game accepts typed lines. Click into it, type a
 | `text <group> <key> <text>`, `texts [group]` | sets or adds one text (what `res.getString` and `drawString` read), or lists the text groups / the texts of one group |
 | `gravity [x y]`, `maxtranslation [t]` | shows or sets the world's gravity, and the longest distance a body moves in one physics step |
 | `scale <object> <sx> [sy]`, `speedcap <object> <speed>`, `blend <object> <mode>`, `shader <object> <name>` | the same as `setScale`, `setSpeedCap`, `setBlendMode` and `setShader` for one object (`blend`: normal, add, multiply, screen; `shader`: none, grayscale, sepia, invert, chromatic, glow, or the name of your own shader) |
-| `shader list`, `shader templates`, `shader new <name> [template]`, `shader apply <target> <name>`, `shader param <name> <slot> x [y z w]`, `shader check <name>`, `shader reload [name]`, `shader export` | the shader creator (3.4): writes a shader file from a template, applies it to a target, sets its parameters, shows its compile errors; see `docs/SCRIPTING.md`, "Shaders" |
+| `shader list`, `shader templates`, `shader new <name> [template]`, `shader apply <target> <name>`, `shader param <name> <slot> x [y z w]`, `shader check <name>`, `shader reload [name]`, `shader export` | the shader creator (3.3): writes a shader file from a template, applies it to a target, sets its parameters, shows its compile errors; see `docs/SCRIPTING.md`, "Shaders" |
 | `lua <code>` or just the code | runs Lua among the game's scripts, for example `lua print(score)` or `lua setAlpha(0.5)` |
 
 Environment variables, set in the command prompt before starting the engine (`set NAME=value`, `set NAME=` to clear):
@@ -171,7 +171,7 @@ Next to the exe the engine can keep a folder called `dec` with the game's script
 This writes `dec` next to the exe (or give a folder: `--decrypt C:\somewhere\dec`) and prints how many files are plain-text Lua source and how many are compiled. Then start the engine with `--use-dec` and it reads every script it finds in `dec` instead of the encrypted one, so you can edit them with any text editor.
 
 - **Angry Birds 1.6.2** ships encrypted Lua source: the `dec` files are readable and editable, and the engine runs your edits.
-- **1.6.3.1, 2.0.0, Seasons, Year of the Dragon and Rio** ship compiled Lua 5.1 bytecode. Since 2.2 `--decrypt` decompiles it with unluac (needs Java, see "New in 2.2" in `CHANGELOG.md`); files that cannot be decompiled are listed and not written, so `--use-dec` keeps using the game's own copy of those. Since 3.4 a script that a decompiler cannot finish (unluac 1.2.2 loops for ever on some, e.g. Seasons 4.1.0's menu_flow.lua) is given up after 90 seconds (`AB_DEC_TIMEOUT`, `0` = no limit) and the next decompiler is tried.
+- **1.6.3.1, 2.0.0, Seasons, Year of the Dragon and Rio** ship compiled Lua 5.1 bytecode. Since 2.2 `--decrypt` decompiles it with unluac (needs Java, see "New in 2.2" in `CHANGELOG.md`); files that cannot be decompiled are listed and not written, so `--use-dec` keeps using the game's own copy of those. Since 3.3 a script that a decompiler cannot finish (unluac 1.2.2 loops for ever on some, e.g. Seasons 4.1.0's menu_flow.lua) is given up after 90 seconds (`AB_DEC_TIMEOUT`, `0` = no limit) and the next decompiler is tried.
 - A file you put into `dec` that the game does not have is ignored; a file that is missing from `dec` is read from the game as usual.
 - The extra commands above (alpha, collider types, polygon skin) work in plain-text scripts of any game.
 

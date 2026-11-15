@@ -2454,7 +2454,7 @@ int l_setBlendMode(lua_State* L) {
 int ShaderFrom(lua_State* L, int i) {
     if (lua_isnumber(L, i)) return (int)lua_tonumber(L, i);
     std::string s = lua_type(L, i) == LUA_TSTRING ? lua_tostring(L, i) : "";
-    if (s != "none" && !s.empty()) { const int custom = P(L)->ShaderByName(s); if (custom >= 6) return custom; }     // v3.4: a shader of that name (a file shaders/<name>.frag, or createShader)
+    if (s != "none" && !s.empty()) { const int custom = P(L)->ShaderByName(s); if (custom >= 6) return custom; }     // v3.3: a shader of that name (a file shaders/<name>.frag, or createShader)
     static const char* names[] = {"none", "grayscale", "sepia", "invert", "chromatic", "glow"};
     for (int k = 0; k < 6; k++) if (s == names[k]) return k;
     if (s == "greyscale" || s == "gray" || s == "grey") return 1;
@@ -2466,7 +2466,7 @@ int l_setShader(lua_State* L) {
     if (t.empty()) P(L)->SetShaderEffect(m); else P(L)->SetRenderOverride(t, 8, (float)m, 0, 0);
     return 0;
 }
-// v3.4: shaders written in GLSL (docs/SCRIPTING.md, "Shaders"):
+// v3.3: shaders written in GLSL (docs/SCRIPTING.md, "Shaders"):
 //   createShader(name, source) -> true | false, errors     compiles a fragment shader from text; setShader(name [, target]) then uses it
 //   setShaderParam(name, slot, x [, y, z, w])               the shader's vec4 uniform u_param<slot> (slot 0..3)
 //   getShaderError(name) -> "" when it compiled, else the compiler's messages
@@ -2509,7 +2509,7 @@ int l_setVisualRotation(lua_State* L) {
     else P(L)->SetRenderOverride(t, 9, N(L, 1), 0, 0);
     return 0;
 }
-// v3.4: the layout of a target (a game object, a sprite or sprite group, or "background" / "foreground" / "trajectory" / "particles"), in the pixels the target is drawn in:
+// v3.3: the layout of a target (a game object, a sprite or sprite group, or "background" / "foreground" / "trajectory" / "particles"), in the pixels the target is drawn in:
 //   setOffset(dx, dy, target)                 moves everything of the target by (dx, dy)
 //   setLayoutScale(sx [, sy] [, px, py], target)   scales it: about each sprite's own centre, or (with px, py) about that point shared by everything of the target
 //   setMirror(on, target)                     mirrors the sprites left to right

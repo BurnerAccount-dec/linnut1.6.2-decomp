@@ -200,7 +200,7 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
         "    end\n"
         "end\n"
         "env.engine = engine\n");
-    {   // v3.4: the motion library (tweens, teleport, any movement, the rewind history as a movement), src/lua/motion.lua
+    {   // v3.3: the motion library (tweens, teleport, any movement, the rewind history as a movement), src/lua/motion.lua
         lua_getfield(L_, LUA_REGISTRYINDEX, "ab.env");
         if (luaL_loadbuffer(L_, (const char*)kMotionLua, kMotionLuaSize, "motion.lua") == 0) {
             lua_pushvalue(L_, -2);

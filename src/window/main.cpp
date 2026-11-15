@@ -257,7 +257,7 @@ static int GameMain(int argc, char** argv) {
     std::vector<std::pair<int, int>> wheels;     // test: --wheel <frame> <notches>
     std::vector<std::pair<int, std::string>> keys;   // test: --key <frame> <name>, a key press of 3 frames
     std::vector<std::string> extraLua;            // v3.0: .lua files named on the command line (dragged onto the exe with an .apk / .ipa / the game): loaded like extra_scripts.lua
-    std::vector<std::string> exeTargets;           // v3.4: .exe files named on the command line (dragged onto the engine): the engine takes their place (--restore-exe: gives them back)
+    std::vector<std::string> exeTargets;           // v3.3: .exe files named on the command line (dragged onto the engine): the engine takes their place (--restore-exe: gives them back)
     bool restoreExe = false, askNo = false;
     std::vector<std::string> startupCmds;          // v2.2: --cmd "<command>" (repeatable), --startup <file> (one command per line), --prompt (type them before the game starts)
     std::vector<std::pair<int, std::string>> timedCmds;
@@ -297,7 +297,7 @@ static int GameMain(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--resize-at") && i + 3 < argc) { resizes.push_back({std::atoi(argv[i + 1]), std::atoi(argv[i + 2]), std::atoi(argv[i + 3])}); i += 3; }
         else if (!std::strcmp(argv[i], "--size") && i + 2 < argc) { testW = std::atoi(argv[++i]); testH = std::atoi(argv[++i]); }
     }
-    if (!exeTargets.empty()) {       // v3.4: an .exe was dragged onto the engine (or named with --replace-exe / --restore-exe): the engine takes its place, or gives it back, and ends
+    if (!exeTargets.empty()) {       // v3.3: an .exe was dragged onto the engine (or named with --replace-exe / --restore-exe): the engine takes its place, or gives it back, and ends
         int worst = 0;
         for (const std::string& target : exeTargets) {
             int r = restoreExe ? ab::RestoreExe(target, !askNo) : ab::ReplaceOrRestoreExe(target, !askNo);

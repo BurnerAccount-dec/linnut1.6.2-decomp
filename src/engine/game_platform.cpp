@@ -503,7 +503,7 @@ void GamePlatform::RecordRewind() {
     while ((int)rewind_.size() > rewindLimit_ + 1) rewind_.pop_front();
 }
 
-// v3.4: the state of every body `back` frames ago (0 = the newest snapshot, the frame being shown), for scripts that move things along the history themselves
+// v3.3: the state of every body `back` frames ago (0 = the newest snapshot, the frame being shown), for scripts that move things along the history themselves
 bool GamePlatform::RewindFrame(int back, std::vector<RewindInfo>& out) {
     out.clear();
     if (back < 0 || back >= (int)rewind_.size()) return false;
@@ -1503,7 +1503,7 @@ GamePlatform::QueuedQuad GamePlatform::MakeQuad(int tex, float alpha, float r, f
     QueuedQuad q = {};
     q.tex = tex; q.mask = -1; q.alpha = alpha; q.r = r; q.g = g; q.b = b; q.blend = state_.blend;
     if (state_.effect >= 1 && state_.effect <= 3 && tex >= 0) q.tex = VariantTexture(tex, state_.effect);
-    if (state_.effect >= 6) q.prog = state_.effect - 6 + 1;      // v3.4: a shader of the user's
+    if (state_.effect >= 6) q.prog = state_.effect - 6 + 1;      // v3.3: a shader of the user's
     if (drawingCursor_) q.kind = 0;
     else if (drawingNative_) { q.kind = 1; q.key = nativeKey_; }
     else if (state_.z != 0) { q.kind = 2; q.key = state_.z; }
@@ -1561,7 +1561,7 @@ void GamePlatform::FlushZ() {
     int program = -1;
     for (const QueuedQuad& c : q) {
         backend_->SetBlend(c.blend);
-        const int want = (c.mask < 0 && c.prog > 0) ? ShaderProgram(c.prog - 1) : -1;     // v3.4
+        const int want = (c.mask < 0 && c.prog > 0) ? ShaderProgram(c.prog - 1) : -1;     // v3.3
         if (want != program || want >= 0) { backend_->SetProgram(want, want >= 0 ? ShaderParams(c.prog - 1) : nullptr); program = want; }
         if (c.mask >= 0) { backend_->SetTileTint(c.r, c.g, c.b); backend_->DrawMaskedQuad(c.tex, c.mask, c.xy, c.tuv, c.uv, c.alpha); }
         else backend_->DrawQuad(c.tex, c.xy, c.uv, c.r, c.g, c.b, c.alpha);
@@ -1870,7 +1870,7 @@ void GamePlatform::ApplyOverride(const RenderOverride& o) {
     if (o.rot) state_.angle += o.rotV;
     if (o.mirror) state_.flipX = !state_.flipX;
 }
-// v3.4: the layout of a target: offset (dx, dy in the pixels the sprite is drawn in) and scale (about the sprite's own centre, or about a point
+// v3.3: the layout of a target: offset (dx, dy in the pixels the sprite is drawn in) and scale (about the sprite's own centre, or about a point
 // shared by everything of the target, so that a group such as the trajectory dots or a row of background layers moves and grows as one). The
 // anchors are resolved first so that the sprite is described by its top left corner and size alone.
 void GamePlatform::ApplyLayouts(const Sprite& sp, float& x, float& y, int& vAnchor, int& hAnchor, bool& sized, float& width, float& height) {
@@ -3606,7 +3606,7 @@ bool GamePlatform::AimSimulate(const std::string& bird, float vx, float vy, int 
     std::vector<std::pair<float, float>> pts;
     float mass = o->pbody->Mass();
     if (mass <= 0) return false;
-    // v3.4: the global aimGravityZones, a list of {x =, y =, r =, gx =, gy =}: round areas that give a bird its own gravity (a script's sensor zone); the arc bends inside them like the real flight does
+    // v3.3: the global aimGravityZones, a list of {x =, y =, r =, gx =, gy =}: round areas that give a bird its own gravity (a script's sensor zone); the arc bends inside them like the real flight does
     std::vector<float> zones;
     if (scripts_) {
         lua_State* L = scripts_->State();
@@ -4344,7 +4344,7 @@ void GamePlatform::ConsoleCommand(const std::string& raw) {
         else if (n >= 1) { Physics().SetMaxTranslation(a); std::printf("console: max translation %g\n", a); }
         else std::printf("console: usage: maxtranslation <t>\n");
     } else if (cmd == "shader" && ShaderConsole(arg)) {
-        // v3.4: shader list / new / export / reload / apply / param (shaders.cpp)
+        // v3.3: shader list / new / export / reload / apply / param (shaders.cpp)
     } else if (cmd == "scale" || cmd == "speedcap" || cmd == "blend" || cmd == "shader") {
         std::istringstream ss(arg);
         std::string name, w1, w2;

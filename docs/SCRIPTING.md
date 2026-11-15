@@ -168,7 +168,7 @@ Already there, nothing new needed:
 
 `resetRenderOverrides(target)` forgets everything set for a target. Examples: `setTint(1, 0.3, 0.3, "background")`, `setBlendMode("add", "pig_3")`, `setShader("grayscale", "foreground")`, `setBlur(4, "TRAIL_WHITE_1")`.
 
-#### Layout of a target (3.4)
+#### Layout of a target (3.3)
 
 The same targets also have a layout, set with their own functions (a target is required):
 
@@ -180,7 +180,7 @@ The same targets also have a layout, set with their own functions (a target is r
 Examples: `setOffset(0, 120, "background")`, `setLayoutScale(1.6, 1.6, 640, 360, "foreground")`, `setOffset(-60, -40, "trajectory")`. Anchors are resolved first, so offset and scale act on the sprite's top left corner and size; `engine.drawSprite`'s `dx`, `dy`, `sx`, `sy` and a target's layout add up.
 
 * `setBlendMode(mode [, target])`: `"normal"`, `"add"`, `"multiply"`, `"screen"` (or 0 to 3). `setRenderState` takes it as its 20th value.
-* `setShader(name [, target])`: `"none"`, `"grayscale"`, `"sepia"`, `"invert"`, `"chromatic"` (colour fringes), `"glow"`, or the name of a shader of your own (3.4, see "Shaders" below). `setRenderState` takes it as its 21st value.
+* `setShader(name [, target])`: `"none"`, `"grayscale"`, `"sepia"`, `"invert"`, `"chromatic"` (colour fringes), `"glow"`, or the name of a shader of your own (3.3, see "Shaders" below). `setRenderState` takes it as its 21st value.
 * `setTintChannel("r" | "g" | "b" | "a", value [, target])`: one channel of the tint (or the alpha) and nothing else; above 1 brightens.
 * All of them also work on the tiled "texture" blocks (the ground and static blocks): tint, blur, bend, pixelation, blend mode and the presets apply to the tile texture seen through the block's shape.
 * `res.getSpritePixel(sprite, x, y)` returns `r, g, b, a` (0 to 255) of the pixel x right and y down from the sprite's top left corner (nil if outside); for collision masks, colour lookups and the like.
@@ -375,7 +375,7 @@ Puts every physics object back `frames` frames (1 when left out or nil): positio
 if keyPressed["R"] then rewind(30) end
 ```
 
-### The history and the `motion` library (3.4)
+### The history and the `motion` library (3.3)
 
 `rewind(frames)` jumps. Three natives give a script the history itself, and the `motion` library (`src/lua/motion.lua`, loaded into every game before its scripts, so it works everywhere) uses them to turn the rewind, and any other movement, into something you shape yourself.
 
@@ -613,10 +613,10 @@ All drawing functions use the **render state** that `setRenderState` set last. `
 | `drawString3D(group, text, x, y, z, tilt, turn, depth, alpha)` (SW) | One line of the credits crawl, drawn on a tilted plane. |
 | `renderGravityVisualsNative(sensor, x, y, zoom)` (SW) | See the note below. |
 | `startNewTrajectory()`, `addToTrajectory(index, x, y)`, `addPuffToTrajectory(index, x, y)`, `setCustomTrajectorySprites(dot, ...)`, `setNormalTrailSprite(sprite)`, `setSpecialTrailSprite(sprite)` | The dots drawn behind a flying bird. |
-| `enableAimingAid(on)`, `setAimingAidSprite(sprite, scale)`, `populateAimingAid()`, `clearAimingAid()`, `updateBirdTrajectoryTable([name])`, `simulateAimingAid(bird, impulseX, impulseY [, points, startX, startY, forceX, forceY])` (Space, SW, Classic with `extras`; `forceX, forceY`: a force applied before every simulated step, like a script's `applyForce` each frame) | The aiming aid: `updateBirdTrajectoryTable` fills the path from the simulation, `populateAimingAid` lays out the dots, `clearAimingAid` removes them. The speed and spacing of the dots are the globals `simulationAimSpeed` and `simulationAimSpawnTime`. Since 3.4 the global `aimGravityZones = { {x = , y = , r = , gx = , gy = } }` (round areas with their own gravity, for a script's sensor zone) bends the arc inside them. |
+| `enableAimingAid(on)`, `setAimingAidSprite(sprite, scale)`, `populateAimingAid()`, `clearAimingAid()`, `updateBirdTrajectoryTable([name])`, `simulateAimingAid(bird, impulseX, impulseY [, points, startX, startY, forceX, forceY])` (Space, SW, Classic with `extras`; `forceX, forceY`: a force applied before every simulated step, like a script's `applyForce` each frame) | The aiming aid: `updateBirdTrajectoryTable` fills the path from the simulation, `populateAimingAid` lays out the dots, `clearAimingAid` removes them. The speed and spacing of the dots are the globals `simulationAimSpeed` and `simulationAimSpawnTime`. Since 3.3 the global `aimGravityZones = { {x = , y = , r = , gx = , gy = } }` (round areas with their own gravity, for a script's sensor zone) bends the arc inside them. |
 | `drawSlingScopeNative(vx, vy, flyVerticalForce)` | The Sling Scope power-up's path: the aiming aid's simulation of the current bird launched from the band with that velocity and lift; shown while the game keeps calling it every frame. |
 | `res.getClipRect()` | The clip rectangle set by `res.setClipRect` (x, y, w, h), or the whole screen. |
-| `setAlpha(a [, target])`, `setBlendMode(mode [, target])`, `setShader(effect [, target])`, `setTint(r [, g, b] [, target])`, `getTint([target])`, `resetTint([target])`, `setTintChannel(channel, value [, target])`, `setSkew(x, y [, target])`, `setBend(x, y [, target])`, `setRenderZ(z [, target])`, `setBlur(amount [, target])`, `setPixelate(size [, target])`, `resetBlur`, `resetPixelate`, `setVisualRotation(angle [, target]), `createShader(name, source)`, `setShaderParam(name, slot, x, y, z, w)`, `getShaderError(name)`, `listShaders()`, `setOffset(dx, dy, target)`, `getOffset(target)`, `setLayoutScale(sx [, sy] [, px, py], target)`, `setMirror(on, target)`, `resetRenderOverrides(target)` (2.2 / 2.4 / 3.4) | Single values of the render state with their own functions; with a `target` (an object, sprite or sprite group name) the setting is kept for that target and every later draw of it uses it. See "Graphics settings for one target" above. |
+| `setAlpha(a [, target])`, `setBlendMode(mode [, target])`, `setShader(effect [, target])`, `setTint(r [, g, b] [, target])`, `getTint([target])`, `resetTint([target])`, `setTintChannel(channel, value [, target])`, `setSkew(x, y [, target])`, `setBend(x, y [, target])`, `setRenderZ(z [, target])`, `setBlur(amount [, target])`, `setPixelate(size [, target])`, `resetBlur`, `resetPixelate`, `setVisualRotation(angle [, target]), `createShader(name, source)`, `setShaderParam(name, slot, x, y, z, w)`, `getShaderError(name)`, `listShaders()`, `setOffset(dx, dy, target)`, `getOffset(target)`, `setLayoutScale(sx [, sy] [, px, py], target)`, `setMirror(on, target)`, `resetRenderOverrides(target)` (2.2 / 2.4 / 3.3) | Single values of the render state with their own functions; with a `target` (an object, sprite or sprite group name) the setting is kept for that target and every later draw of it uses it. See "Graphics settings for one target" above. |
 
 **Pivot arguments (3.1).** `drawRect`, `drawLine2D`, `res.drawSprite`, `res.drawTexturedLine2D` (after its colour) and `res.drawString` accept two optional last arguments, `pivotX, pivotY`, a point in the same coordinates as the drawing. When both are numbers the scale (`sx, sy`) of the render state grows from that point: the point stays where it is and the rest of the picture spreads from it. If either one is `nil` or missing the call works as before (the scale grows from the origin of the render state). Without a scale other than 1 it changes nothing. Example: `setRenderState(0, 0, 2, 2, 0); drawRect(0, 200, 0, 150, 300, 300, 400, 400, true, 300, 300)` fills 300..500 on both axes, where without the pivot it would fill 600..800.
 
@@ -1304,9 +1304,9 @@ Together with `engine.drawObject` (skip a whole object), the layer functions (`s
 
 Star Wars (Hoth level, blocks kicked with `setVelocity` so they hit each other): `engine.force` 388 calls, `engine.damage` 73, `engine.strengthChange` 73, `engine.drawSprite` about a million calls, the scene visibly tinted and waving. Rio 1.4.2 main menu: `engine.drawSprite` tinted and moved every sprite. Seasons main menu: hook ran with no errors. Classic and Rio hits are covered by the same code as the Star Wars damage test, which was not repeated there.
 
-### Shaders (3.4)
+### Shaders (3.3)
 
-`setShader` takes the built-in names (`"none"`, `"grayscale"`, `"sepia"`, `"invert"`, `"chromatic"`, `"glow"`) and, since 3.4, the name of any shader of your own. It needs a graphics driver with OpenGL 2.0 shaders (every PC of the last fifteen years); without one the presets work as before and your shaders are ignored. `AB_NO_SHADERS=1` turns them off.
+`setShader` takes the built-in names (`"none"`, `"grayscale"`, `"sepia"`, `"invert"`, `"chromatic"`, `"glow"`) and, since 3.3, the name of any shader of your own. It needs a graphics driver with OpenGL 2.0 shaders (every PC of the last fifteen years); without one the presets work as before and your shaders are ignored. `AB_NO_SHADERS=1` turns them off.
 
 **The file.** A shader is `<user data folder>/shaders/<name>.frag`:
 

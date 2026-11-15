@@ -186,7 +186,7 @@ void UpdateFrame(FrameState& s, FrameHost& host, float dt) {
         s.versionReceived = false;
     }
     if (s.updateNoticePending) host.UpdateAvailable(s.updateNoticeValue);
-    // v3.4: the update script may load a level (Lua loadLevel -> BeginLevelLoad), which destroys this physics world and with it `s`; whether the effects run
+    // v3.3: the update script may load a level (Lua loadLevel -> BeginLevelLoad), which destroys this physics world and with it `s`; whether the effects run
     // is read before the call, not from the freed state afterwards (valgrind: "invalid read of size 1 ... free'd by BeginLevelLoad" when 1-8 of Angry Birds 1.0.0
     // was clicked; on Windows the freed memory was reused and the read crashed)
     const bool runningBeforeUpdate = s.running;

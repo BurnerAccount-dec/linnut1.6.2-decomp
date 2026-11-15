@@ -32,7 +32,7 @@ public:
     virtual void SetBlend(int mode) { (void)mode; }
     // v2.4: the colour a masked (tiled) quad is multiplied by, 0..n per channel; DrawQuad has its own colour arguments
     virtual void SetTileTint(float r, float g, float b) { (void)r; (void)g; (void)b; }
-    // v3.4: your own GLSL. SupportsPrograms() is true for the OpenGL backend when the driver has shaders (OpenGL 2.0); the CPU rasteriser cannot run them.
+    // v3.3: your own GLSL. SupportsPrograms() is true for the OpenGL backend when the driver has shaders (OpenGL 2.0); the CPU rasteriser cannot run them.
     // CreateProgram compiles a fragment shader (source: the complete GLSL text) with the engine's vertex shader; it returns a handle (>= 0) or -1 with the
     // compiler's messages in error. SetProgram(handle, params) makes the following DrawQuad calls use it (-1: the fixed pipeline again); params are the 16
     // numbers of the shader's four vec4 uniforms (u_param0 .. u_param3). SetProgramGlobals gives u_time (seconds) and u_resolution (screen units).

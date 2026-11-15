@@ -34,7 +34,7 @@ struct GlBackend::Functions {
     void (APIENTRY* ActiveTexture)(GLenum);
     void (APIENTRY* MultiTexCoord2f)(GLenum, GLfloat, GLfloat);
     void (APIENTRY* ReadPixels)(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*);
-    // OpenGL 2.0 (v3.4: shaders written by the user); all of them or none
+    // OpenGL 2.0 (v3.3: shaders written by the user); all of them or none
     unsigned (APIENTRY* CreateShader)(unsigned);
     void (APIENTRY* ShaderSource)(unsigned, int, const char* const*, const int*);
     void (APIENTRY* CompileShader)(unsigned);
@@ -145,7 +145,7 @@ void GlBackend::DrawQuad(int texture, const float xy[8], const float uv[8], floa
         boundTexture_ = texture;
     }
     gl_->Color4f(r * a, g * a, b * a, a);
-    if (program_ >= 0 && program_ < (int)programs_.size()) {      // v3.4: a shader of the user's; it gets what the quad is made of
+    if (program_ >= 0 && program_ < (int)programs_.size()) {      // v3.3: a shader of the user's; it gets what the quad is made of
         const Program& pr = programs_[program_];
         float u0 = uv[0], v0 = uv[1], u1 = uv[0], v1 = uv[1];
         for (int i = 1; i < 4; i++) { u0 = std::fmin(u0, uv[i * 2]); u1 = std::fmax(u1, uv[i * 2]); v0 = std::fmin(v0, uv[i * 2 + 1]); v1 = std::fmax(v1, uv[i * 2 + 1]); }
@@ -208,7 +208,7 @@ void GlBackend::SetBlend(int mode) {
 
 void GlBackend::EndFrame() { if (program_ >= 0) SetProgram(-1, nullptr); }
 
-// v3.4: the vertex shader is fixed; the fragment shader is the user's (the engine puts the prelude in front, see shaders.cpp)
+// v3.3: the vertex shader is fixed; the fragment shader is the user's (the engine puts the prelude in front, see shaders.cpp)
 int GlBackend::CreateProgram(const std::string& fragmentSource, std::string& error) {
     if (!programsOk_) { error = "this graphics driver has no shaders (OpenGL 2.0 is needed)"; return -1; }
     static const char* vertex =

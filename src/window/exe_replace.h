@@ -1,4 +1,4 @@
-// v3.4: the engine's exe can take the place of another exe (usually the game's own AngryBirds.exe), and give it back.
+// v3.3: the engine's exe can take the place of another exe (usually the game's own AngryBirds.exe), and give it back.
 #pragma once
 #include <string>
 

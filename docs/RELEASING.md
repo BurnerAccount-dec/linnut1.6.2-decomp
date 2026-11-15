@@ -21,7 +21,7 @@ Replace `v3.4` with the version you are releasing. Versions are `vMAJOR.MINOR`; 
 
    Close and reopen the prompt afterwards so `git`, `cmake` and `gh` are found.
 
-2. **Sign in to GitHub** with the account that owns the repository (the burner account):
+2. **Sign in to GitHub** with the account that owns the repository:
 
        gh auth login
 
@@ -32,7 +32,7 @@ Replace `v3.4` with the version you are releasing. Versions are `vMAJOR.MINOR`; 
        git config user.name "BurnerAccount-dec"
        git config user.email "<id>+BurnerAccount-dec@users.noreply.github.com"
 
-   The noreply address is on GitHub under Settings, Emails ("Keep my email addresses private" shows it). Check with `git config --list --local`. If an old commit already carries a real name, rewriting history is a separate job, ask Claude.
+   The noreply address is on GitHub under Settings, Emails ("Keep my email addresses private" shows it). Check with `git config --list --local`. If an old commit already carries a real name, the history has to be rewritten before publishing.
 
 4. **The remote** (only if `git remote -v` prints nothing):
 
@@ -56,7 +56,7 @@ Replace `v3.4` with the version you are releasing. Versions are `vMAJOR.MINOR`; 
 
    All tests must pass. Then start the exe in a game folder and try what changed.
 
-4. **Personal names.** The Windows user name must not be in a published file, in the exe, or in the history. `publish.bat` searches every file git would commit; `make_release.bat` searches the finished exe and stops with `STOP: the exe still contains a personal path` if it finds one. By hand:
+4. **Personal names.** The Windows user name (or any personal name) must not be in a published file, in the exe, or in the history. `publish.bat` searches every file git would commit; `make_release.bat` searches the finished exe and stops with `STOP: the exe still contains a personal path` if it finds one. By hand:
 
        git grep -I -i -n --untracked --exclude-standard -e "%USERNAME%"
 
@@ -94,7 +94,7 @@ Replace `v3.4` with the version you are releasing. Versions are `vMAJOR.MINOR`; 
 | `git push` says `rejected ... fetch first` | Someone (or another computer) pushed: `git pull --rebase origin main`, then push again. |
 | `Author identity unknown` | Setup step 3. |
 | `release already exists` | The version was published: use a new version number, or `gh release delete v3.4 --yes --repo BurnerAccount-dec/linnut1.6.2-decomp` and publish again. To only replace the zip: `gh release upload v3.4 AngryBirdsEngine-v3.4.zip --clobber --repo BurnerAccount-dec/linnut1.6.2-decomp`. |
-| `STOP: the exe still contains a personal path` | Do not publish. The script prints where it is; send that to Claude. |
+| `STOP: the exe still contains a personal path` | Do not publish. The script prints where it is. |
 | `FAILED` in `make_release.bat` | Read the lines above it. The usual cause is a file that is not committed (the clean copy is made from commits, not from the folder). |
 | CMake cannot find SDL2 | Needs internet on the first configure, or the `SDL2-2.30.9.tar.gz` next to `make_release.bat`. |
 
@@ -105,4 +105,4 @@ Source (`src`, `third_party`, `tests`, `tools`, `extras`, `docs`), `CMakeLists.t
 ## Versions
 
 - The engine version is written in the first lines of `README.md`, the newest `## New in` heading of `CHANGELOG.md`, and the release tag. Features carry the version they appeared in in the docs ("since 3.4").
-- 3.2 was the last version published before 3.4; 3.3 was a development step that was never published, so the 3.4 notes cover everything after 3.2.
+- 3.3 was the last version published before 3.4, so the 3.4 notes cover what came after it.

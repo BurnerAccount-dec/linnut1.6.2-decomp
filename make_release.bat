@@ -65,7 +65,7 @@ exit /b 0
 
 :personal
 echo.
-echo STOP: the exe still contains a personal path. Do not publish it. Tell Claude.
+echo STOP: the exe still contains a personal path. Do not publish it.
 echo The exe contains the text: %HIT%
 echo Where it is (the 160 characters around it):
 powershell -NoProfile -Command "$t=[IO.File]::ReadAllText('build\Release\AngryBirdsEngine.exe',[Text.Encoding]::GetEncoding(28591)); $i=$t.IndexOf($env:HIT,[StringComparison]::OrdinalIgnoreCase); if($i -ge 0){$a=[Math]::Max(0,$i-80); $t.Substring($a,[Math]::Min(160,$t.Length-$a)) -replace '[^\x20-\x7e]','.'}"
@@ -73,5 +73,5 @@ exit /b 1
 
 :fail
 echo.
-echo FAILED. Copy the last lines above and send them to Claude.
+echo FAILED. The lines above say which step failed.
 exit /b 1

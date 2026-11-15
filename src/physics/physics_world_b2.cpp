@@ -272,7 +272,7 @@ public:
     }
     // The aiming aid's arc (extension of the retail trail, which is the bird's free flight): the bird alone in a world with the same gravity, launched with
     // the given velocity and stepped like the real world (1/30 s, 10 + 10 iterations, the speed caps after every step). No blocks, no ground.
-    bool SimulateFlight(const std::string& bird, float vx, float vy, int steps, int every, float h, std::vector<std::pair<float, float>>& out, const float* start = nullptr, const float* force = nullptr, const float* zones = nullptr, int zoneCount = 0) override {   // zones: 5 numbers each (x, y, radius, gx, gy), round areas where the bird has its own gravity (v3.4); force: a push applied before every step, like a script's applyForce each frame (the Boomerang Bird's lift)
+    bool SimulateFlight(const std::string& bird, float vx, float vy, int steps, int every, float h, std::vector<std::pair<float, float>>& out, const float* start = nullptr, const float* force = nullptr, const float* zones = nullptr, int zoneCount = 0) override {   // zones: 5 numbers each (x, y, radius, gx, gy), round areas where the bird has its own gravity (v3.3); force: a push applied before every step, like a script's applyForce each frame (the Boomerang Bird's lift)
         PhysObject* o = Find(bird);
         if (!o || !o->pbody) return false;
         b2Body* src = BodyOf(o);
@@ -291,7 +291,7 @@ public:
         const b2Vec2 worldG = world_.GetGravity();
         for (int i = 0; i < steps; i++) {
             if (force) bb->ApplyForce(b2Vec2(force[0], force[1]), bb->GetWorldCenter());
-            // v3.4: inside a gravity area the bird accelerates by the area's gravity instead of the world's (what setObjectGravity does in the real world, as a script's sensor zone uses it)
+            // v3.3: inside a gravity area the bird accelerates by the area's gravity instead of the world's (what setObjectGravity does in the real world, as a script's sensor zone uses it)
             for (int z = 0; z < zoneCount; z++) {
                 const float* a = zones + z * 5;
                 b2Vec2 p0 = bb->GetPosition();

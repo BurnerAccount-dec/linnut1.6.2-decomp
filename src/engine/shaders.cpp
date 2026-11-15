@@ -1,4 +1,4 @@
-// v3.4: shaders written by the user (GLSL), the built-in presets as shaders that can be edited, a live reload and the console's shader creator.
+// v3.3: shaders written by the user (GLSL), the built-in presets as shaders that can be edited, a live reload and the console's shader creator.
 //
 // A shader is one file, <user data folder>/shaders/<name>.frag. It is a fragment shader; the engine puts a prelude in front of it (the uniforms and
 // varyings below) and, unless the file has its own main(), the main() that calls the function the file defines:

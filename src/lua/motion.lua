@@ -1,4 +1,4 @@
--- The `motion` library (3.4): move physics objects any way you like, and play the rewind history back any way you like.
+-- The `motion` library (3.3): move physics objects any way you like, and play the rewind history back any way you like.
 -- Run once into the script environment by script_host.cpp, before any game script. Nothing happens until a script calls it.
 -- Everything is plain Lua on top of setPosition, setRotation, setVelocity and the history natives getRewindDepth / getRewindState, so it can be read, copied and changed.
 -- Coordinates are physics units, the ones objects.world[name].x / .y and setPosition use; angles are radians.

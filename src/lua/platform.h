@@ -214,7 +214,7 @@ public:
     // v2.4: SetBlendMode / SetShader on the render state itself (setRenderState's arguments 20 and 21)
     virtual void SetBlendMode(int mode) { (void)mode; }
     virtual void SetShaderEffect(int effect) { (void)effect; }
-    // v3.4: shaders written in GLSL. ShaderByName: the effect number to use with setShader for a shader of that name (a file shaders/<name>.frag or one made by
+    // v3.3: shaders written in GLSL. ShaderByName: the effect number to use with setShader for a shader of that name (a file shaders/<name>.frag or one made by
     // createShader), -1 if there is none; CreateShaderFromSource compiles one from text (error: the compiler's messages)
     virtual int ShaderByName(const std::string& name) { (void)name; return -1; }
     virtual bool CreateShaderFromSource(const std::string& name, const std::string& source, std::string& error) { (void)name; (void)source; error = "no shaders here"; return false; }
@@ -354,7 +354,7 @@ public:
     virtual void ResPauseAudio(bool paused, int track) { (void)paused; (void)track; }
     virtual bool ResIsAudioPaused(int track) { (void)track; return false; }
     virtual void ResSetMasterVolume(float v) { (void)v; }
-    // v3.4: the history behind rewind. RewindDepth() is how many frames can be gone back, RewindFrame(back, out) copies the state of every body that many frames ago (0 = the newest), SetRewindLimit sets how many frames are kept
+    // v3.3: the history behind rewind. RewindDepth() is how many frames can be gone back, RewindFrame(back, out) copies the state of every body that many frames ago (0 = the newest), SetRewindLimit sets how many frames are kept
     struct RewindInfo { std::string name; float x, y, a, vx, vy, w; bool awake; };
     virtual int RewindDepth() { return 0; }
     virtual bool RewindFrame(int back, std::vector<RewindInfo>& out) { (void)back; (void)out; return false; }

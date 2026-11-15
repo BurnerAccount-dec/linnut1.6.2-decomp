@@ -2,8 +2,8 @@
 -- (or by hand: loadLuaFile(scriptPath .. "/extra_scripts.lua", "", false, false) at the end of gamelogic.lua).
 --   1. the Star Wars screen wipe between a menu and a level
 --   2. the Star Wars aiming aid: while the bird is pulled back, the whole flight path is drawn as dots
---   4. (3.4) restart: the restart button first moves every object back to where the level began, then restarts without the screen wipe
---   3. (3.4) the laser mod: a piercing laser and slow motion for the Red Bird, a heat-wave GLSL shader on the background, an anti-gravity sensor zone
+--   4. (3.3) restart: the restart button first moves every object back to where the level began, then restarts without the screen wipe
+--   3. (3.3) the laser mod: a piercing laser and slow motion for the Red Bird, a heat-wave GLSL shader on the background, an anti-gravity sensor zone
 -- Loading it a second time does nothing.
 
 if extraScripts ~= nil or _G.type(loadLevel) ~= "function" or _G.type(update) ~= "function" then
@@ -204,7 +204,7 @@ drawGame = function(...)
 	originalDrawGame2(...)
 end
 
------------------------------------------------------------------- 3. laser mod (3.4)
+------------------------------------------------------------------ 3. laser mod (3.3)
 -- Three effects that work together. Each one has its switch below, set it to false to turn it off; all numbers can be changed from the console (lua laserMod.damage = 50).
 --   laserBird:   tap (or press SPACE) while a Red Bird flies. The game slows down and a laser shoots from the bird to the cursor (at most laserMod.maxRange units) and pierces what it crosses:
 --                it pushes the blocks and pigs on its line and takes strength from them (the game destroys what reaches 0 itself, with score and particles).
@@ -590,7 +590,7 @@ vec4 shade(vec4 texel, vec2 uv, vec4 tint) {
 	end)
 end
 
------------------------------------------------------------------- 4. restart (3.4)
+------------------------------------------------------------------ 4. restart (3.3)
 -- The restart button (and F5, and the restart buttons of the pause and the end-of-level pages) first moves every object that is left back to where the level began, as a tween
 -- (motion.to, so the movement can be changed here), and then restarts the level with no screen wipe. Objects that were destroyed come back with the restart itself.
 -- The entrance to a level, and every other wipe, are as before.
