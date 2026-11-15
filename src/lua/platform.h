@@ -27,6 +27,13 @@ struct JointDef {
     bool backAndForth = false;
     float worldAxisX = 0, worldAxisY = 0;
     float destroyTimer = 1.0f;     // type 5 only
+    // types 6-11 (pulley, gear, mouse, line/wheel, friction, rope)
+    float groundX1 = 0, groundY1 = 0, groundX2 = 0, groundY2 = 0;   // 6: the two fixed pulley points, in world coordinates
+    float ratio = 1.0f;                                              // 6 pulley ratio, 7 gear ratio
+    std::string joint1, joint2;                                      // 7: the names of the two revolute/prismatic joints to couple
+    float maxForce = 0;                                              // 8 mouse, 10 friction
+    float targetX = 0, targetY = 0;                                  // 8: where the mouse joint pulls end1 towards
+    float maxLength = 0;                                             // 11 rope
 };
 
 // The table passed to setJointParameters{...}: only the fields that were present are set.
@@ -40,6 +47,9 @@ struct JointParams {
     bool hasUpperLimit = false; float upperLimit = 0;
     bool hasFrequency = false; float frequency = 0;
     bool hasDampingRatio = false; float dampingRatio = 0;
+    bool hasRatio = false; float ratio = 0;                    // gear
+    bool hasMaxForce = false; float maxForce = 0;              // mouse, friction
+    bool hasTarget = false; float targetX = 0, targetY = 0;    // mouse
 };
 
 // One shape of an Angry Birds Space compound body (addBox/Polygon/Line/CircleToCompoundList): placed relative to the body, in physics units

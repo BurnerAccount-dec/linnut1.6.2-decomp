@@ -1,13 +1,13 @@
 @echo off
 setlocal
 rem Everything from "I changed something" to "it is on GitHub", in one go. Run it from the x86 (or x64) Native Tools Command Prompt for VS, inside the engine folder:
-rem     publish.bat v3.4 "what changed"
-rem It builds, runs the tests, checks that no personal name is in the files, commits, pushes, and makes the GitHub release with the zip (make_release.bat v3.4 publish).
-rem Leave the message out to only build, test and check:   publish.bat v3.4
+rem     publish.bat v3.5 "what changed"
+rem It builds, runs the tests, checks that no personal name is in the files, commits, pushes, and makes the GitHub release with the zip (make_release.bat v3.5 publish).
+rem Leave the message out to only build, test and check:   publish.bat v3.5
 rem The routine and what to do when a step stops: docs/RELEASING.md
 set "VER=%~1"
 if "%VER%"=="" (
-  echo Usage: publish.bat v3.4 "what changed"
+  echo Usage: publish.bat v3.5 "what changed"
   exit /b 1
 )
 

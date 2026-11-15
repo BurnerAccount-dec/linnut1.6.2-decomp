@@ -461,7 +461,7 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
     }
 }
 
-ScriptHost::~ScriptHost() { lua_close(L_); }
+ScriptHost::~ScriptHost() { SaveStatesShutdown(L_); lua_close(L_); }
 
 // Pops the top value into the script environment under `name`.
 void ScriptHost::SetEnvField(const char* name) {
@@ -1371,6 +1371,7 @@ bool ScriptHost::Update(float dt, float realDt) {
     }
     if (ok) ok = DrawEditorOverlay();
     EmitHook(L_, "update", nullptr, nullptr, 2, dt, realDt);   // engine.on("update", function(dt, realDt) ... end)
+    SaveStatesFrame(L_, realDt > 0 ? realDt : dt);
     return ok;
 }
 

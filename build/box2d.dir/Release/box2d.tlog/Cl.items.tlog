@@ -26,6 +26,7 @@ C:\Users\Hugofritz\Downloads\engine\third_party\box2d\Box2D\Dynamics\Joints\b2Mo
 C:\Users\Hugofritz\Downloads\engine\third_party\box2d\Box2D\Dynamics\Joints\b2PrismaticJoint.cpp;C:\Users\Hugofritz\Downloads\engine\build\box2d.dir\Release\b2PrismaticJoint.obj
 C:\Users\Hugofritz\Downloads\engine\third_party\box2d\Box2D\Dynamics\Joints\b2PulleyJoint.cpp;C:\Users\Hugofritz\Downloads\engine\build\box2d.dir\Release\b2PulleyJoint.obj
 C:\Users\Hugofritz\Downloads\engine\third_party\box2d\Box2D\Dynamics\Joints\b2RevoluteJoint.cpp;C:\Users\Hugofritz\Downloads\engine\build\box2d.dir\Release\b2RevoluteJoint.obj
+C:\Users\Hugofritz\Downloads\engine\third_party\box2d\Box2D\Dynamics\Joints\b2RopeJoint.cpp;C:\Users\Hugofritz\Downloads\engine\build\box2d.dir\Release\b2RopeJoint.obj
 C:\Users\Hugofritz\Downloads\engine\third_party\box2d\Box2D\Dynamics\Joints\b2WeldJoint.cpp;C:\Users\Hugofritz\Downloads\engine\build\box2d.dir\Release\b2WeldJoint.obj
 C:\Users\Hugofritz\Downloads\engine\third_party\box2d\Box2D\Dynamics\b2Body.cpp;C:\Users\Hugofritz\Downloads\engine\build\box2d.dir\Release\b2Body.obj
 C:\Users\Hugofritz\Downloads\engine\third_party\box2d\Box2D\Dynamics\b2ContactManager.cpp;C:\Users\Hugofritz\Downloads\engine\build\box2d.dir\Release\b2ContactManager.obj

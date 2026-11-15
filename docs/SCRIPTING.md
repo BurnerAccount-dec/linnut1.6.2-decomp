@@ -257,6 +257,44 @@ A copy of `sourceSprite` cut to a polygon, for the sprite of a block that is not
 
 `extras/extra_scripts.lua` (section 5, table `shapeBlocks`) adds three blocks to the wood group: `WoodBlock13` a five-pointed star (concave), `WoodBlock14` a wedge, `WoodBlock15` a chevron (concave). They are put into `blockTable.blocks` (a block of type `"polygon"` with `vertices` from 0 to 1), the wood group's `lastIndex` is raised so the level editor's W / Q keys reach them, and the sprites (and the four damage stages) are cut from the wood square with `createPolygonSprite`. A level that names them loads them; from a script, `createObject` makes one. Add your own by putting another entry in `shapeBlocks.blocks`: a name like `WoodBlock16` and a list of points.
 
+### Save states (3.5)
+
+The engine remembers a level that was left half played, in every game. While a level runs (the game mode is `updateGame`) its state is written to `savestates.lua` in the save folder every `saveStates.autosave` seconds, when the level is left (to a menu, the level select or another level) and when the game is closed. When the same level is loaded again the state is put back in the first frame the level runs, also in a new run of the game: a dead bird stays dead, a cracked block stays cracked, a block that was moved stays where it was. A level is known by the path it was loaded from (`loadLevel(path)`). The code is `src/lua/save_states.cpp`; it needs nothing from the game's scripts except the names below, which the games share.
+
+What is kept: every object in `objects.world` (place, angle, speed, at rest or not, and each number, string and flag in its table: strength, damage sprite, `startNumber`, ...); the script variables named in `saveStates.globals` and the tables in `saveStates.tables` (the score table, the camera); the objects that `saveStates.objectGlobals` point to (the flying bird); the camera function. Objects that are gone are removed again (and taken out of the tables in `saveStates.objectTables`). Objects the scripts made after the level began (the halves of a Blue Bird, debris) are not part of it. A restart, finishing a level and failing it clear the state.
+
+The settings are the global table `saveStates`; the engine makes it with these values and a script may change any of them (at any time, from a game script, `extra_scripts.lua` or the console):
+
+| Field | Default | What it does |
+|---|---|---|
+| `enabled` | `true` | `false`: nothing is saved or put back. |
+| `file` | `"savestates.lua"` | The file in the save folder. Delete it to forget every level. |
+| `autosave` | `5` | Seconds (real time) between writes while a level runs; `0`: only when the level is left or the game is closed. |
+| `restartWindow` | `2` | A level that is loaded again within this many seconds after it was left is a restart, not a visit: its state is cleared and it starts from the beginning. |
+| `readyVariable` | `"levelStartPosition"` | The level counts as set up when this script variable exists and (for a table) has `x` not 0; `""`: at the first frame the level runs. |
+| `globals` | the bird queue (`currentBirdIndex`, `currentBirdName`, `birdFired`, `birdReady`, `birdsShot`, ...), `score`, the timers and `worldScale` | Script variables (numbers, strings, flags) that are saved. Add the names of your own. |
+| `tables` | `{"scoreTable", "screen"}` | Global tables whose plain values (down to three levels) are saved and merged back. |
+| `objectGlobals` | `{"flyingBird", "selectedBird", "cameraTargetObject"}` | Variables that hold one of the level's objects (saved by name). |
+| `objectTables` | `{"birds", "otherBirds", "levelGoals"}` | Tables keyed by object name that an object is taken out of when it is gone. |
+| `cameras` | the game's camera functions | Names of the functions `cameraFunction` can be, so it can be put back. |
+| `skipWhen`, `skipWhenPositive` | `{"levelCompleted"}`, `{"levelFailedTimer"}` | Variables that, when true (or above 0), mean the level is over and nothing is kept. |
+
+| Function | What it does |
+|---|---|
+| `saveStates.save()` | Writes the state of the level that is running now; true when it did. |
+| `saveStates.apply()` | Puts the saved state of the loaded level back now; true when there was one. |
+| `saveStates.has([path])` | True when a state is kept for the loaded level (or for `path`). |
+| `saveStates.forget([path])` | Clears the state of the loaded level (or of `path`) and keeps it cleared until the next level load: a script that restarts a level calls this first (`extra_scripts.lua` does for its own restart). |
+| `saveStates.clearAll()` | Clears every state. |
+
+To keep one more variable of a game, or to start every level from the beginning:
+
+```lua
+table.insert(saveStates.globals, "myComboCounter")
+-- or:
+saveStates.enabled = false
+```
+
 ### Polygon skin
 
 `setPolygonRadius(r)` / `getPolygonRadius()`: the collision skin of boxes and polygons created afterwards (Rio, Box2D 2.2 only; default 0.1, the skin only decides when blocks count as touching, it does not push stacked blocks apart).
@@ -569,11 +607,32 @@ end)
 
 | Function | What it does |
 |---|---|
-| `createJoint{name=, end1=, end2=, type=, coordType=, x1=, y1=, x2=, y2=, ...}` | Makes one joint. `type` 1 is a distance (spring) joint (`frequency`, `dampingRatio`, `collideConnected`), the others are revolute / prismatic / pulley / weld; the extra fields depend on the type (`motor`, `motorSpeed`, `maxTorque`, `limit`, `lowerLimit`, `upperLimit`, `breakable`, `breakForce`, `isDrawn`, `jointPosX`, `jointPosY`). It writes `objects.joints[name]`. |
+| `createJoint{name=, end1=, end2=, type=, coordType=, x1=, y1=, x2=, y2=, ...}` | Makes one joint. `type` 1 is a distance (spring) joint (`frequency`, `dampingRatio`, `collideConnected`), the others are revolute / prismatic / pulley / weld (types 6 to 11, which no editor offers, are in "Extra joint types" below); the extra fields depend on the type (`motor`, `motorSpeed`, `maxTorque`, `limit`, `lowerLimit`, `upperLimit`, `breakable`, `breakForce`, `isDrawn`, `jointPosX`, `jointPosY`). It writes `objects.joints[name]`. |
 | `createJoints(list)` | `createJoint` for every entry of a level's joint table (an entry without `name` takes its key). |
 | `setJointParameters{name=, motor=, motorSpeed=, maxTorque=, limit=, ...}` | Changes the joint's motor and limits. `setRevoluteJointSpeed(name, speed)` sets only the motor speed. |
 | `checkJointLimits(name)`, `handleJointLimits(name, on)` | Make a limited joint apply its limits now. |
 | `destroyJoint(name)` | Destroys the joint and clears `objects.joints[name]`. `removeJointsFromObject(name)` destroys all joints of an object, `removeBreakableJointsFromObject(name)` (Space) only the breakable ones. |
+
+### Extra joint types: pulley, gear, mouse, line / wheel, friction, rope (3.5)
+
+`createJoint` also takes the Box2D joints that no game editor offers. Types 1 to 5 are unchanged; the new ones are `type` 6 to 11. They are made with the same call, write the same `objects.joints[name]` table (with the values that were really used), are destroyed with `destroyJoint(name)` and with their bodies, and take `collideConnected` (default false). Positions are physics units, `x1, y1` and `x2, y2` are points **local to `end1` and `end2`** (as for a weld or revolute joint).
+
+| `type` | Joint | Fields (defaults) | `setJointParameters` |
+|---|---|---|---|
+| 6 | **Pulley**: `end1` and `end2` hang from two fixed points; length1 + ratio x length2 stays constant, so one side goes down as the other comes up | `x1, y1, x2, y2` anchors on the bodies; `groundX1, groundY1, groundX2, groundY2` the fixed points in the world (default: 3 units above each anchor, i.e. towards -y); `ratio` (1) | none (fixed at creation) |
+| 7 | **Gear**: couples two joints that already exist, which must be revolute (3) or prismatic (4): coordinate1 + ratio x coordinate2 stays constant | `joint1`, `joint2` the names of those joints; `ratio` (1, may be negative) | `ratio` |
+| 8 | **Mouse**: a soft spring that pulls `end1`'s centre to a point (it needs no `end2`) | `targetX, targetY` (the body's position); `maxForce` (1000 x the body's mass); `frequency` (5); `dampingRatio` (0.7) | `targetX`, `targetY` (either one alone keeps the other), `maxForce`, `frequency`, `dampingRatio` |
+| 9 | **Line** (Box2D 2.1: Classic, Seasons, Space): `end2` slides along an axis fixed in `end1`. **Wheel** (Box2D 2.2: Rio, Star Wars, Friends): the same with a suspension spring along the axis and a motor that turns it | `x1, y1` the anchor on `end1`; `worldAxisX, worldAxisY` the axis in the world (0, 1); line: `limit`, `lowerLimit`, `upperLimit` (0 to 1), `motor`, `motorSpeed`, `maxTorque` (the motor's force, 10000), `backAndForth`; wheel: `motor`, `motorSpeed`, `maxTorque`, `frequency` (2, 0 = no spring), `dampingRatio` (0.7) | `motor`, `motorSpeed`, `maxTorque`, and for the line `limit`, `lowerLimit`, `upperLimit`, for the wheel `frequency`, `dampingRatio` |
+| 10 | **Friction**: top-down friction between the two bodies at `x1, y1` | `maxForce` (10), `maxTorque` (10) | `maxForce`, `maxTorque` |
+| 11 | **Rope** (every game: Box2D 2.2 has it, and it was back-ported to the bundled 2.1.1): the anchors may come closer but not further apart than `maxLength` | `x1, y1, x2, y2` anchors; `maxLength` (the distance at creation) | none |
+
+Notes. A gear is destroyed when either joint it couples goes (explicitly or because a body was removed), since Box2D would otherwise read a joint that no longer exists. The mouse joint pulls against a hidden fixed body that is made the first time one is created; a body that is not dynamic does not move. `createJoint` returns nothing and makes no joint when a body or a joint name is missing (or, for the gear, when a joint is not revolute or prismatic); check `objects.joints[name]` afterwards. Example, an elevator that drags a block 4 units up and later lets go:
+
+```lua
+local o = objects.world["WoodBlock6_3"]
+createJoint{ name = "lift", end1 = "WoodBlock6_3", type = 8, targetX = o.x, targetY = o.y - 4 }
+-- later: setJointParameters{ name = "lift", targetY = o.y }   or   destroyJoint("lift")
+```
 
 ### World, physics and camera
 

@@ -308,6 +308,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\src\lua\save_states.cpp" />
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\src\lua\aes.cpp" />
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\src\lua\sevenzip.cpp" />
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\src\lua\dec_folder.cpp" />

@@ -17,6 +17,7 @@
 #include "lua/lua_api.h"
 
 #include <cmath>
+#include <limits>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -915,6 +916,7 @@ int l_loadLevel(lua_State* L) {
     lua_pop(L, 2);
     P(L)->EndLevelLoad();
     lua_pushboolean(L, ok);
+    SaveStatesLevelLoaded(L, file);
     EmitHook(L, "levelLoaded", file.c_str());
     return 1;
 }
@@ -1567,6 +1569,46 @@ int l_createJoint(lua_State* L) {
     case 5:
         d.destroyTimer = NumOr(L, 1, "destroyTimer", 1.0f);
         break;
+    case 6: {   // pulley: x1,y1 / x2,y2 are the anchors on end1 / end2; groundX1..groundY2 the fixed points above them
+        const float nan = std::numeric_limits<float>::quiet_NaN();
+        d.groundX1 = NumOr(L, 1, "groundX1", nan); d.groundY1 = NumOr(L, 1, "groundY1", nan);
+        d.groundX2 = NumOr(L, 1, "groundX2", nan); d.groundY2 = NumOr(L, 1, "groundY2", nan);
+        d.ratio = NumOr(L, 1, "ratio", 1.0f);
+        break;
+    }
+    case 7:     // gear: couples two joints made earlier with createJoint (revolute and/or prismatic)
+        d.joint1 = FieldS(L, 1, "joint1");
+        d.joint2 = FieldS(L, 1, "joint2");
+        d.ratio = NumOr(L, 1, "ratio", 1.0f);
+        break;
+    case 8: {   // mouse: pulls end1 towards targetX,targetY
+        const float nan = std::numeric_limits<float>::quiet_NaN();
+        d.targetX = NumOr(L, 1, "targetX", nan); d.targetY = NumOr(L, 1, "targetY", nan);
+        d.maxForce = NumOr(L, 1, "maxForce", -1.0f);              // negative: 1000 x the body's mass
+        d.frequency = NumOr(L, 1, "frequency", 5.0f);
+        d.dampingRatio = NumOr(L, 1, "dampingRatio", 0.7f);
+        break;
+    }
+    case 9:     // line (2.1) / wheel (2.2)
+        d.worldAxisX = NumOr(L, 1, "worldAxisX", 0.0f);
+        d.worldAxisY = NumOr(L, 1, "worldAxisY", 1.0f);
+        d.limit = BoolOr(L, 1, "limit", false);
+        d.lowerLimit = NumOr(L, 1, "lowerLimit", 0.0f);
+        d.upperLimit = NumOr(L, 1, "upperLimit", 1.0f);
+        d.motor = BoolOr(L, 1, "motor", false);
+        d.motorSpeed = NumOr(L, 1, "motorSpeed", 0.0f);
+        d.maxTorque = NumOr(L, 1, "maxTorque", 10000.0f);
+        d.frequency = NumOr(L, 1, "frequency", 2.0f);             // wheel only (suspension); 0 = rigid
+        d.dampingRatio = NumOr(L, 1, "dampingRatio", 0.7f);
+        d.backAndForth = BoolOr(L, 1, "backAndForth", false);
+        break;
+    case 10:    // friction
+        d.maxForce = NumOr(L, 1, "maxForce", 10.0f);
+        d.maxTorque = NumOr(L, 1, "maxTorque", 10.0f);
+        break;
+    case 11:    // rope (2.2 only)
+        d.maxLength = NumOr(L, 1, "maxLength", std::numeric_limits<float>::quiet_NaN());
+        break;
     default:
         break;
     }
@@ -1615,6 +1657,46 @@ int l_createJoint(lua_State* L) {
         break;
     case 5:
         SetNum(L, "destroyTimer", d.destroyTimer);
+        break;
+    case 6:
+        SetNum(L, "groundX1", d.groundX1); SetNum(L, "groundY1", d.groundY1);
+        SetNum(L, "groundX2", d.groundX2); SetNum(L, "groundY2", d.groundY2);
+        SetNum(L, "ratio", d.ratio);
+        SetBool(L, "collideConnected", d.collideConnected);
+        break;
+    case 7:
+        SetStr(L, "joint1", d.joint1);
+        SetStr(L, "joint2", d.joint2);
+        SetNum(L, "ratio", d.ratio);
+        SetBool(L, "collideConnected", d.collideConnected);
+        break;
+    case 8:
+        SetNum(L, "targetX", d.targetX); SetNum(L, "targetY", d.targetY);
+        SetNum(L, "maxForce", d.maxForce);
+        SetNum(L, "frequency", d.frequency);
+        SetNum(L, "dampingRatio", d.dampingRatio);
+        break;
+    case 9:
+        SetNum(L, "worldAxisX", d.worldAxisX); SetNum(L, "worldAxisY", d.worldAxisY);
+        SetBool(L, "limit", d.limit);
+        SetNum(L, "lowerLimit", d.lowerLimit);
+        SetNum(L, "upperLimit", d.upperLimit);
+        SetBool(L, "motor", d.motor);
+        SetNum(L, "motorSpeed", d.motorSpeed);
+        SetNum(L, "maxTorque", d.maxTorque);
+        SetNum(L, "frequency", d.frequency);
+        SetNum(L, "dampingRatio", d.dampingRatio);
+        SetBool(L, "backAndForth", d.backAndForth);
+        SetBool(L, "collideConnected", d.collideConnected);
+        break;
+    case 10:
+        SetNum(L, "maxForce", d.maxForce);
+        SetNum(L, "maxTorque", d.maxTorque);
+        SetBool(L, "collideConnected", d.collideConnected);
+        break;
+    case 11:
+        SetNum(L, "maxLength", d.maxLength);
+        SetBool(L, "collideConnected", d.collideConnected);
         break;
     default:
         break;
@@ -1673,6 +1755,12 @@ int l_setJointParameters(lua_State* L) {
     if ((p.hasUpperLimit = Has(L, 1, "upperLimit"))) p.upperLimit = FieldN(L, 1, "upperLimit");
     if ((p.hasFrequency = Has(L, 1, "frequency"))) p.frequency = FieldN(L, 1, "frequency");
     if ((p.hasDampingRatio = Has(L, 1, "dampingRatio"))) p.dampingRatio = FieldN(L, 1, "dampingRatio");
+    if ((p.hasRatio = Has(L, 1, "ratio"))) p.ratio = FieldN(L, 1, "ratio");
+    if ((p.hasMaxForce = Has(L, 1, "maxForce"))) p.maxForce = FieldN(L, 1, "maxForce");
+    if ((p.hasTarget = Has(L, 1, "targetX") || Has(L, 1, "targetY"))) {
+        p.targetX = NumOr(L, 1, "targetX", std::numeric_limits<float>::quiet_NaN());   // a missing half keeps its current value
+        p.targetY = NumOr(L, 1, "targetY", std::numeric_limits<float>::quiet_NaN());
+    }
     P(L)->SetJointParameters(p);
     if (PushObjectsTable(L, "joints")) {            // the joint's table follows
         lua_getfield(L, -1, p.name.c_str());
@@ -1685,6 +1773,12 @@ int l_setJointParameters(lua_State* L) {
             if (p.hasUpperLimit) SetNum(L, "upperLimit", p.upperLimit);
             if (p.hasFrequency) SetNum(L, "frequency", p.frequency);
             if (p.hasDampingRatio) SetNum(L, "dampingRatio", p.dampingRatio);
+            if (p.hasRatio) SetNum(L, "ratio", p.ratio);
+            if (p.hasMaxForce) SetNum(L, "maxForce", p.maxForce);
+            if (p.hasTarget) {
+                if (!std::isnan(p.targetX)) SetNum(L, "targetX", p.targetX);
+                if (!std::isnan(p.targetY)) SetNum(L, "targetY", p.targetY);
+            }
         }
         lua_pop(L, 2);
     }
@@ -3160,6 +3254,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"iAdsSupported", l_false},
     };
     Register(L, p, 0, globals, sizeof(globals) / sizeof(globals[0]));
+    RegisterSaveStates(L, p);
     // Seasons 4.x calls requireFile as `_G.requireFile(...)` (createStartUpAssets, loadFonts): the real global table gets it too
     lua_getfield(L, LUA_REGISTRYINDEX, "ab.env"); lua_getfield(L, -1, "requireFile"); lua_setfield(L, LUA_GLOBALSINDEX, "requireFile"); lua_pop(L, 1);
 

@@ -336,6 +336,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\third_party\box2d\Box2D\Dynamics\Joints\b2PrismaticJoint.cpp" />
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\third_party\box2d\Box2D\Dynamics\Joints\b2PulleyJoint.cpp" />
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\third_party\box2d\Box2D\Dynamics\Joints\b2RevoluteJoint.cpp" />
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\third_party\box2d\Box2D\Dynamics\Joints\b2RopeJoint.cpp" />
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\third_party\box2d\Box2D\Dynamics\Joints\b2WeldJoint.cpp" />
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\third_party\box2d\Box2D\Dynamics\b2Body.cpp" />
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\third_party\box2d\Box2D\Dynamics\b2ContactManager.cpp" />

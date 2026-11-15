@@ -210,6 +210,12 @@ float RelativeAngle(const b2Body* a, const b2Body* b) {
 #endif
 }
 
+#ifdef AB_BOX2D_V22
+#define AB_WHEEL 1
+#else
+#define AB_WHEEL 0
+#endif
+
 class Impl : public PhysicsWorld, public b2ContactListener, public b2ContactFilter, public b2DestructionListener {
 public:
     Impl() : world_(b2Vec2(kGravityX, kGravityY), true) {
@@ -254,6 +260,7 @@ public:
         b2_velocityThresholdV21 = Tn("solver.velocityThreshold", 1.0f); b2_maxLinearCorrectionV21 = Tn("solver.maxLinearCorrection", 0.2f);
         b2_contactBaumgarteV21 = Tn("solver.baumgarte", 0.2f); b2_maxRotationV21 = Tn("solver.maxRotation", 1.5707964f); b2_angularSleepToleranceV21 = Tn("solver.angularSleepTolerance", 0.034906585f);
 #endif
+        ProcessGearKills();
         world_.Step(dt, velocityIterations, positionIterations);
         for (size_t i = 0; i < joints_.size(); i++)      // v2.2: backAndForth joints turn round at their limits without the scripts having to ask
             if (joints_[i]->backAndForth) CheckJointLimits(joints_[i]->name);
@@ -563,11 +570,13 @@ public:
         }
         PhysObject* o1 = Find(d.end1);
         PhysObject* o2 = Find(d.end2);
-        if (!o1 || !o2) return false;
+        if (d.type == 8) { if (!o1) return false; }                         // mouse: one body, pulled towards a point
+        else if (d.type != 7 && (!o1 || !o2)) return false;                 // gear: two joints, no bodies of its own
         if (std::getenv("AB_JOINTDBG") && d.end1.find(std::getenv("AB_JOINTDBG")) != std::string::npos) std::fprintf(stderr, "JT type=%d %s - %s coord=%d freq=%g damp=%g limit=%d lo=%g hi=%g motor=%d coll=%d\n", d.type, d.end1.c_str(), d.end2.c_str(), d.coordType, d.frequency, d.dampingRatio, (int)d.limit, d.lowerLimit, d.upperLimit, (int)d.motor, (int)d.collideConnected);
-        b2Body* b1 = BodyOf(o1);
-        b2Body* b2b = BodyOf(o2);
+        b2Body* b1 = o1 ? BodyOf(o1) : nullptr;
+        b2Body* b2b = o2 ? BodyOf(o2) : nullptr;
         b2Joint* joint = nullptr;
+        b2Joint* gearJ1 = nullptr; b2Joint* gearJ2 = nullptr;
 
         switch (d.type) {
         case 1: {  // distance
@@ -640,15 +649,118 @@ public:
             joint = world_.CreateJoint(&jd);
             break;
         }
+        // ---- the joints no editor offers (6-11): the Box2D joint types the engine did not expose before
+        case 6: {  // pulley: end1's anchor and end2's anchor (local points) hang from two fixed world points; length1 + ratio * length2 stays constant
+            b2PulleyJointDef jd;
+            b2Vec2 a = b1->GetWorldPoint(b2Vec2(d.x1, d.y1));
+            b2Vec2 b = b2b->GetWorldPoint(b2Vec2(d.x2, d.y2));
+            if (std::isnan(d.groundX1) || std::isnan(d.groundY1)) { d.groundX1 = a.x; d.groundY1 = a.y - 3.0f; }   // default: 3 units above the anchor (+y is down)
+            if (std::isnan(d.groundX2) || std::isnan(d.groundY2)) { d.groundX2 = b.x; d.groundY2 = b.y - 3.0f; }
+            if (!(d.ratio > 0.001f)) d.ratio = 1.0f;
+            jd.Initialize(b1, b2b, b2Vec2(d.groundX1, d.groundY1), b2Vec2(d.groundX2, d.groundY2), a, b, d.ratio);
+            jd.collideConnected = d.collideConnected;
+            joint = world_.CreateJoint(&jd);
+            break;
+        }
+        case 7: {  // gear: couples two joints (revolute or prismatic) that already exist: coordinate1 + ratio * coordinate2 stays constant
+            JointRecord* r1 = FindJoint(d.joint1);
+            JointRecord* r2 = FindJoint(d.joint2);
+            if (!r1 || !r2 || r1 == r2) return false;
+            b2Joint* j1 = static_cast<b2Joint*>(r1->joint);
+            b2Joint* j2 = static_cast<b2Joint*>(r2->joint);
+            auto geared = [](b2Joint* j) { return j->GetType() == e_revoluteJoint || j->GetType() == e_prismaticJoint; };
+            if (!geared(j1) || !geared(j2)) return false;
+            b2GearJointDef jd;
+            jd.bodyA = j1->GetBodyB();
+            jd.bodyB = j2->GetBodyB();
+            jd.joint1 = j1;
+            jd.joint2 = j2;
+            jd.ratio = d.ratio;
+            jd.collideConnected = d.collideConnected;
+            joint = world_.CreateJoint(&jd);
+            gearJ1 = j1; gearJ2 = j2;
+            d.end1 = r1->end2; d.end2 = r2->end2;        // the bodies the gear acts on
+            break;
+        }
+        case 8: {  // mouse: a soft spring from end1 (at its centre) to the target point
+            if (!mouseGround_) { b2BodyDef gd; gd.type = b2_staticBody; mouseGround_ = world_.CreateBody(&gd); }
+            b2MouseJointDef jd;
+            jd.bodyA = mouseGround_;
+            jd.bodyB = b1;
+            b2Vec2 p = b1->GetPosition();
+            if (std::isnan(d.targetX)) d.targetX = p.x;
+            if (std::isnan(d.targetY)) d.targetY = p.y;
+            if (d.maxForce < 0) d.maxForce = 1000.0f * b1->GetMass();
+            jd.target = p;                  // the joint grabs the body at its centre; the real target is set right after
+            jd.maxForce = d.maxForce;
+            jd.frequencyHz = d.frequency;
+            jd.dampingRatio = d.dampingRatio;
+            jd.collideConnected = d.collideConnected;
+            joint = world_.CreateJoint(&jd);
+            static_cast<b2MouseJoint*>(joint)->SetTarget(b2Vec2(d.targetX, d.targetY));
+            d.x1 = p.x; d.y1 = p.y; d.x2 = d.targetX; d.y2 = d.targetY;
+            b1->SetAwake(true);
+            break;
+        }
+        case 9: {  // line (2.1): slide along an axis with an optional motor and limits. wheel (2.2): the same with a suspension spring and no limits
+            float ax = d.worldAxisX, ay = d.worldAxisY;
+            if (ax * ax + ay * ay < 1e-8f) { ax = 0; ay = 1; d.worldAxisX = 0; d.worldAxisY = 1; }
+            b2Vec2 anchor = b1->GetWorldPoint(b2Vec2(d.x1, d.y1));
+#ifdef AB_BOX2D_V22
+            b2WheelJointDef jd;
+            jd.Initialize(b1, b2b, anchor, b2Vec2(ax, ay));
+            jd.enableMotor = d.motor;
+            jd.motorSpeed = d.motorSpeed;
+            jd.maxMotorTorque = d.maxTorque;
+            jd.frequencyHz = d.frequency;
+            jd.dampingRatio = d.dampingRatio;
+#else
+            b2LineJointDef jd;
+            jd.Initialize(b1, b2b, anchor, b2Vec2(ax, ay));
+            jd.enableLimit = d.limit;
+            jd.lowerTranslation = d.lowerLimit;
+            jd.upperTranslation = d.upperLimit;
+            jd.enableMotor = d.motor;
+            jd.motorSpeed = d.motorSpeed;
+            jd.maxMotorForce = d.maxTorque;
+#endif
+            jd.collideConnected = d.collideConnected;
+            joint = world_.CreateJoint(&jd);
+            break;
+        }
+        case 10: {  // friction: top-down friction between the two bodies at the anchor (force and torque limits)
+            b2FrictionJointDef jd;
+            b2Vec2 anchor = b1->GetWorldPoint(b2Vec2(d.x1, d.y1));
+            jd.Initialize(b1, b2b, anchor);
+            jd.maxForce = d.maxForce;
+            jd.maxTorque = d.maxTorque;
+            jd.collideConnected = d.collideConnected;
+            joint = world_.CreateJoint(&jd);
+            break;
+        }
+        case 11: {  // rope: the two local anchors may not be further apart than maxLength (they can come closer)
+            b2RopeJointDef jd;
+            jd.bodyA = b1;
+            jd.bodyB = b2b;
+            jd.localAnchorA.Set(d.x1, d.y1);
+            jd.localAnchorB.Set(d.x2, d.y2);
+            if (std::isnan(d.maxLength)) d.maxLength = b2Distance(b1->GetWorldPoint(jd.localAnchorA), b2b->GetWorldPoint(jd.localAnchorB));
+            jd.maxLength = d.maxLength;
+            jd.collideConnected = d.collideConnected;
+            joint = world_.CreateJoint(&jd);
+            break;
+        }
         default:
             return false;
         }
+        if (!joint) return false;
+        if (gearJ1) gearDeps_[joint] = std::make_pair(gearJ1, gearJ2);
 
         std::unique_ptr<JointRecord> r(new JointRecord());
         r->name = d.name; r->end1 = d.end1; r->end2 = d.end2;
         r->joint = joint;
-        r->coordType = d.coordType;
-        r->backAndForth = d.backAndForth && d.motor && d.limit && (d.type == 3 || d.type == 4);
+        r->coordType = d.type == 8 ? 1 : d.coordType;
+        r->backAndForth = d.backAndForth && d.motor && d.limit && (d.type == 3 || d.type == 4 || (d.type == 9 && !AB_WHEEL));
         if (d.motor) { joint->GetBodyA()->SetAwake(true); joint->GetBodyB()->SetAwake(true); }   // a motor drives its bodies from the start
         r->view.reset(new B2JointView(joint, d.coordType));
         joints_.push_back(std::move(r));
@@ -680,6 +792,41 @@ public:
             b2DistanceJoint* j = static_cast<b2DistanceJoint*>(joint);
             if (p.hasFrequency) j->SetFrequency(p.frequency);
             if (p.hasDampingRatio) j->SetDampingRatio(p.dampingRatio);
+        } else if (joint->GetType() == e_gearJoint) {
+            if (p.hasRatio) static_cast<b2GearJoint*>(joint)->SetRatio(p.ratio);
+        } else if (joint->GetType() == e_mouseJoint) {
+            b2MouseJoint* j = static_cast<b2MouseJoint*>(joint);
+            if (p.hasTarget) {
+                b2Vec2 t = j->GetTarget();
+                if (!std::isnan(p.targetX)) t.x = p.targetX;
+                if (!std::isnan(p.targetY)) t.y = p.targetY;
+                j->SetTarget(t);
+            }
+            if (p.hasMaxForce) j->SetMaxForce(p.maxForce);
+            if (p.hasFrequency) j->SetFrequency(p.frequency);
+            if (p.hasDampingRatio) j->SetDampingRatio(p.dampingRatio);
+        } else if (joint->GetType() == e_frictionJoint) {
+            b2FrictionJoint* j = static_cast<b2FrictionJoint*>(joint);
+            if (p.hasMaxForce) j->SetMaxForce(p.maxForce);
+            if (p.hasMaxTorque) j->SetMaxTorque(p.maxTorque);
+#ifdef AB_BOX2D_V22
+        } else if (joint->GetType() == e_wheelJoint) {
+            b2WheelJoint* j = static_cast<b2WheelJoint*>(joint);
+            if (p.hasMotor) j->EnableMotor(p.motor);
+            if (p.hasMotorSpeed) j->SetMotorSpeed(p.motorSpeed);
+            if (p.hasMaxTorque) j->SetMaxMotorTorque(p.maxTorque);
+            if (p.hasFrequency) j->SetSpringFrequencyHz(p.frequency);
+            if (p.hasDampingRatio) j->SetSpringDampingRatio(p.dampingRatio);
+#else
+        } else if (joint->GetType() == e_lineJoint) {
+            b2LineJoint* j = static_cast<b2LineJoint*>(joint);
+            if (p.hasMotor) j->EnableMotor(p.motor);
+            if (p.hasMotorSpeed) j->SetMotorSpeed(p.motorSpeed);
+            if (p.hasMaxTorque) j->SetMaxMotorForce(p.maxTorque);
+            if (p.hasLimit) j->EnableLimit(p.limit);
+            if (p.hasLowerLimit) j->SetLimits(p.lowerLimit, j->GetUpperLimit());
+            if (p.hasUpperLimit) j->SetLimits(j->GetLowerLimit(), p.upperLimit);
+#endif
         }
         }
     }
@@ -703,6 +850,15 @@ public:
             float t = j->GetJointTranslation();
             if ((j->IsMotorEnabled() && j->IsLimitEnabled() && speed > 0 && t >= j->GetUpperLimit()) || (speed < 0 && t <= j->GetLowerLimit()))
                 j->SetMotorSpeed(stop ? 0.0f : -speed);
+#ifndef AB_BOX2D_V22
+        } else if (joint->GetType() == e_lineJoint) {      // the line joint (2.1) turns round at its limits like the prismatic one
+            b2LineJoint* j = static_cast<b2LineJoint*>(joint);
+            if (!(j->IsMotorEnabled() && j->IsLimitEnabled())) continue;
+            float speed = j->GetMotorSpeed();
+            float t = j->GetJointTranslation();
+            if ((speed > 0 && t >= j->GetUpperLimit()) || (speed < 0 && t <= j->GetLowerLimit()))
+                j->SetMotorSpeed(stop ? 0.0f : -speed);
+#endif
         }
         }
     }
@@ -723,12 +879,22 @@ public:
     bool ShouldCollide(b2Fixture* fa, b2Fixture* fb) override {
         return ShouldCollideObjects(static_cast<PhysObject*>(fa->GetUserData()), static_cast<PhysObject*>(fb->GetUserData()));
     }
-    void SayGoodbye(b2Joint* joint) override { DropJointRecord(joint); }
+    void SayGoodbye(b2Joint* joint) override {
+        gearDeps_.erase(joint);
+        gearsToKill_.erase(std::remove(gearsToKill_.begin(), gearsToKill_.end(), joint), gearsToKill_.end());
+        KillDependentGears(joint, false);
+        DropJointRecord(joint);
+    }
     void SayGoodbye(b2Fixture*) override {}
 
 protected:
-    void DestroyBody(PhysObject* o) override { world_.DestroyBody(BodyOf(o)); }
-    void DestroyBox2DJoint(void* joint) override { world_.DestroyJoint(static_cast<b2Joint*>(joint)); }
+    void DestroyBody(PhysObject* o) override { world_.DestroyBody(BodyOf(o)); ProcessGearKills(); }
+    void DestroyBox2DJoint(void* joint) override {
+        b2Joint* j = static_cast<b2Joint*>(joint);
+        gearDeps_.erase(j);
+        KillDependentGears(j, true);
+        world_.DestroyJoint(j);
+    }
 
 private:
     // the object and its Box2D body (b2BodyDef as the exe fills it)
@@ -778,7 +944,35 @@ private:
         body->CreateFixture(&fd);
     }
 
+    // A gear joint holds pointers to the two joints it couples, so it has to go before either of them does.
+    // Explicit destruction takes the gears first; when a body (and with it a joint) is removed, the gears are queued and destroyed
+    // before the next step.
+    void KillDependentGears(b2Joint* j, bool now) {
+        std::vector<b2Joint*> gears;
+        for (auto& g : gearDeps_) if (g.second.first == j || g.second.second == j) gears.push_back(g.first);
+        for (b2Joint* g : gears) {
+            if (!now) { if (std::find(gearsToKill_.begin(), gearsToKill_.end(), g) == gearsToKill_.end()) gearsToKill_.push_back(g); continue; }
+            gearDeps_.erase(g);
+            DropJointRecord(g);
+            KillDependentGears(g, true);
+            world_.DestroyJoint(g);
+        }
+    }
+    void ProcessGearKills() {
+        std::vector<b2Joint*> list;
+        list.swap(gearsToKill_);
+        for (b2Joint* g : list) {
+            if (!gearDeps_.count(g)) continue;       // already gone with its bodies
+            gearDeps_.erase(g);
+            DropJointRecord(g);
+            world_.DestroyJoint(g);
+        }
+    }
+
     b2World world_;
+    b2Body* mouseGround_ = nullptr;                                          // the fixed body mouse joints pull against (made on first use)
+    std::map<b2Joint*, std::pair<b2Joint*, b2Joint*>> gearDeps_;            // gear joint -> the two joints it couples
+    std::vector<b2Joint*> gearsToKill_;
 };
 
 }  // namespace

@@ -21,4 +21,10 @@ bool LoadRioTables(lua_State* L);
 // lookup) while no handler is registered.
 void EmitHook(lua_State* L, const char* event, const char* s1 = nullptr, const char* s2 = nullptr, int numbers = 0, double a = 0, double b = 0);
 
+// Save states (save_states.cpp): the Lua table saveStates, and the three moments the engine tells it about
+void RegisterSaveStates(lua_State* L, Platform* platform);
+void SaveStatesLevelLoaded(lua_State* L, const std::string& file);
+void SaveStatesFrame(lua_State* L, double realDt);
+void SaveStatesShutdown(lua_State* L);
+
 }  // namespace ab

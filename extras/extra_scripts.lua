@@ -10,7 +10,7 @@ if extraScripts ~= nil or _G.type(loadLevel) ~= "function" or _G.type(update) ~=
 	return
 end
 extraScripts = true
-print("extra_scripts.lua loaded (screen wipe, aiming aid, laser mod, restart, shape blocks, version 16" .. (_G.type(simulateAimingAid) == "function" and ")" or ": this engine build is too old for the aiming aid, rebuild it)"))
+print("extra_scripts.lua loaded (screen wipe, aiming aid, laser mod, restart, shape blocks, version 17" .. (_G.type(simulateAimingAid) == "function" and ")" or ": this engine build is too old for the aiming aid, rebuild it)"))
 
 ------------------------------------------------------------------ 1. screen wipe
 screenwipe = {
@@ -636,6 +636,7 @@ do
 			-- only the same level again is a restart: the menu item that was used last can be a restart button that is still selected when another level is picked,
 			-- so the level that is about to load must be the one the snapshot is of
 			local isRestart = levelId() == snapLevel and ((item ~= nil and item.restartLevel) or (item == nil and currentGameMode == updateGame))
+			if isRestart and (mode == updateLoading or mode == updateLoadingEx) and _G.type(saveStates) == "table" and saveStates.forget then saveStates.forget() end   -- a restart starts the level again, from the beginning
 			if (mode ~= updateLoading and mode ~= updateLoadingEx) or not levelRestart.enabled or not isRestart or snapshot == nil or objects.world == nil then
 				return originalSetGameMode2(mode, ...)
 			end
@@ -742,3 +743,4 @@ do
 	engine.on("levelLoaded", function() register() cut() end)
 	engine.on("update", function() if shapeBlocks.enabled then register() cut() end end)
 end
+

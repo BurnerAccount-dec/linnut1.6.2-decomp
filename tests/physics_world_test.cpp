@@ -8,6 +8,7 @@
 #include <vector>
 #include <cstdlib>
 #include <cmath>
+#include <limits>
 #include <cstdio>
 #include <string>
 
@@ -496,7 +497,113 @@ static void LineShape() {
     CHECK(bi.posY > 3.0f && bi.posY < 5.2f);          // it fell onto the line near y 5 and did not go through
 }
 
-int main() {
+// The joints no editor offers: pulley, gear, mouse, line / wheel, friction and rope (createJoint types 6-11)
+static void ExtraJoints(Box2DVersion ver) {
+    bool v22 = ver == Box2DVersion::V22;
+    // pulley: the heavy side goes down, the light side comes up
+    {
+        auto wp = MakePhysicsWorld(ver); PhysicsWorld& w = *wp;
+        w.CreateBox(Def("heavy", -2, 0, 1, 1, 4));
+        w.CreateBox(Def("light", 2, 0, 1, 1, 1));
+        JointDef p; p.name = "pul"; p.end1 = "heavy"; p.end2 = "light"; p.type = 6;
+        p.groundX1 = -2; p.groundY1 = -5; p.groundX2 = 2; p.groundY2 = -5; p.ratio = 1;
+        CHECK(w.CreateJoint(p));
+        Host h(w); Run(w, h, 1.5f);
+        CHECK(w.Inspect("heavy").posY > 0.5f);
+        CHECK(w.Inspect("light").posY < -0.3f);
+    }
+    // gear: two hinges coupled; removing one of the bodies and destroying a joint do not leave a dangling gear
+    {
+        auto wp = MakePhysicsWorld(ver); PhysicsWorld& w = *wp;
+        w.CreateBox(Def("base", 0, 0, 1, 1, 0));
+        w.CreateBox(Def("w1", 2, 0, 1, 1, 1));
+        w.CreateBox(Def("w2", 5, 0, 1, 1, 1));
+        JointDef a; a.name = "h1"; a.end1 = "base"; a.end2 = "w1"; a.type = 3; a.x1 = 2; a.y1 = 0;
+        JointDef b = a; b.name = "h2"; b.end2 = "w2"; b.x1 = 5;
+        a.motor = true; a.motorSpeed = 2; a.maxTorque = 10000;
+        CHECK(w.CreateJoint(a)); CHECK(w.CreateJoint(b));
+        JointDef g; g.name = "gear"; g.type = 7; g.joint1 = "h1"; g.joint2 = "h2"; g.ratio = 1;
+        CHECK(w.CreateJoint(g));
+        JointDef bad = g; bad.name = "badgear"; bad.joint2 = "nothing";
+        CHECK(!w.CreateJoint(bad));
+        CHECK(w.Frame().joints.size() == 3);
+        Host h(w); Run(w, h, 1.0f);
+        CHECK(std::fabs(w.Inspect("w2").angle) > 0.2f);          // w2 turns with w1 (the gear carries the motor's rotation over)
+        w.DestroyJoint("h1");                                     // the gear goes with it
+        CHECK(w.Frame().joints.size() == 1);
+        Run(w, h, 0.5f);
+    }
+    {
+        auto wp = MakePhysicsWorld(ver); PhysicsWorld& w = *wp;
+        w.CreateBox(Def("base", 0, 0, 1, 1, 0));
+        w.CreateBox(Def("w1", 2, 0, 1, 1, 1));
+        w.CreateBox(Def("w2", 5, 0, 1, 1, 1));
+        JointDef a; a.name = "h1"; a.end1 = "base"; a.end2 = "w1"; a.type = 3; a.x1 = 2; a.y1 = 0;
+        JointDef b = a; b.name = "h2"; b.end2 = "w2"; b.x1 = 5;
+        w.CreateJoint(a); w.CreateJoint(b);
+        JointDef g; g.name = "gear"; g.type = 7; g.joint1 = "h1"; g.joint2 = "h2";
+        CHECK(w.CreateJoint(g));
+        w.RemoveObject("base");                                   // both hinges go; the gear must be cleaned up before the next step
+        Host h(w); Run(w, h, 0.5f);
+        CHECK(w.Frame().joints.empty());
+    }
+    // mouse: end1 is pulled to the target and setJointParameters moves the target
+    {
+        auto wp = MakePhysicsWorld(ver); PhysicsWorld& w = *wp;
+        w.CreateBox(Def("ball", 0, 0, 1, 1, 1));
+        JointDef m; m.name = "mouse"; m.end1 = "ball"; m.type = 8;
+        m.targetX = 5; m.targetY = -3; m.maxForce = -1; m.frequency = 5; m.dampingRatio = 0.7f;
+        CHECK(w.CreateJoint(m));
+        Host h(w); Run(w, h, 3.0f);
+        BodyInfo bi = w.Inspect("ball");
+        CHECK(Near(bi.posX, 5, 0.3f) && Near(bi.posY, -3, 0.3f));
+        JointParams p; p.name = "mouse"; p.hasTarget = true; p.targetX = -4; p.targetY = std::numeric_limits<float>::quiet_NaN();
+        w.SetJointParameters(p);
+        Run(w, h, 3.0f);
+        bi = w.Inspect("ball");
+        CHECK(Near(bi.posX, -4, 0.3f) && Near(bi.posY, -3, 0.3f));
+        JointDef noBody = m; noBody.name = "m2"; noBody.end1 = "nothing";
+        CHECK(!w.CreateJoint(noBody));
+    }
+    // line (2.1) / wheel (2.2): the body slides along the axis only
+    {
+        auto wp = MakePhysicsWorld(ver); PhysicsWorld& w = *wp;
+        w.CreateBox(Def("rail", 0, 0, 1, 1, 0));
+        w.CreateBox(Def("car", 0, 0.5f, 1, 1, 1));
+        JointDef l; l.name = "slide"; l.end1 = "rail"; l.end2 = "car"; l.type = 9; l.x1 = 0; l.y1 = 0;
+        l.worldAxisX = 0; l.worldAxisY = 1; l.frequency = 0; l.dampingRatio = 0;
+        CHECK(w.CreateJoint(l));
+        Host h(w); Run(w, h, 1.0f);
+        BodyInfo bi = w.Inspect("car");
+        CHECK(Near(bi.posX, 0, 0.05f) && bi.posY > 2.0f);
+    }
+    // friction: created and its limits can be changed
+    {
+        auto wp = MakePhysicsWorld(ver); PhysicsWorld& w = *wp;
+        w.CreateBox(Def("floor", 0, 0, 1, 1, 0));
+        w.CreateBox(Def("crate", 0, 0, 1, 1, 1));
+        JointDef f; f.name = "fric"; f.end1 = "floor"; f.end2 = "crate"; f.type = 10; f.maxForce = 100; f.maxTorque = 100;
+        CHECK(w.CreateJoint(f));
+        JointParams p; p.name = "fric"; p.hasMaxForce = true; p.maxForce = 1; p.hasMaxTorque = true; p.maxTorque = 1;
+        w.SetJointParameters(p);
+        Host h(w); Run(w, h, 0.5f);
+    }
+    // rope: the body cannot get further than maxLength
+    {
+        auto wp = MakePhysicsWorld(ver); PhysicsWorld& w = *wp;
+        w.CreateBox(Def("hook", 0, 0, 1, 1, 0));
+        w.CreateBox(Def("weight", 0, 1, 1, 1, 1));
+        JointDef r; r.name = "rope"; r.end1 = "hook"; r.end2 = "weight"; r.type = 11; r.maxLength = 2;
+        CHECK(w.CreateJoint(r));
+        Host h(w); Run(w, h, 3.0f);
+        BodyInfo bi = w.Inspect("weight");
+        CHECK(bi.posY > 1.5f && bi.posY < 2.4f);
+    }
+}
+
+ int main() {
+    ExtraJoints(Box2DVersion::V21);
+    ExtraJoints(Box2DVersion::V22);
     LineShape();
     StarWarsFilter(Box2DVersion::V21);
     StarWarsFilter(Box2DVersion::V22);

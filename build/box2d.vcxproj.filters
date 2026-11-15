@@ -85,6 +85,9 @@
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\third_party\box2d\Box2D\Dynamics\Joints\b2RevoluteJoint.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\third_party\box2d\Box2D\Dynamics\Joints\b2RopeJoint.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\third_party\box2d\Box2D\Dynamics\Joints\b2WeldJoint.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
