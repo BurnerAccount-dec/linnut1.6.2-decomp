@@ -974,89 +974,170 @@ do
 	if type(originalDrawMenu) == "function" then drawMenu = function(...) originalDrawMenu(...) drawPrompt() end end
 end
 
------------------------------------------------------------------- 8. level spawner (3.7)
--- F1 in a level opens the spawner: the game stops, Left / Right pick another level of the same folder, Up / Down another level folder (pack1, pack2, ...), and Return (or a click on
--- the panel) puts that level's blocks, pigs and joints into the level that is being played, around the cursor; Escape (or F1 again) closes it. It works like the vehicles of
--- Red's Mighty Feathers (3.3.0), which are level files (`world` and `joints`) that are made with createObject / createJoint at a place of the running level, every
--- object with a new name (spawnPrefix + number + the old name) and every joint tied to the new names. The ground, the slingshot's zone and the birds of the spawned level
--- are left out, so the flock of the level that is played stays as it is. Spawned objects are ordinary objects of the level: they take damage, they are in the save states.
+------------------------------------------------------------------ 8. level spawner (3.7, folders and preview 3.8)
+-- F1 in a level opens the spawner: the game stops and a small picture of the level shows what is chosen. Left / Right pick another level of the folder, Up / Down another level folder
+-- (pack1, pack2, ... in the game's levels folder, any folder that has level files), and Return (or a click on the picture) puts that level's blocks, pigs and joints into the level that is being
+-- played, around the cursor; Escape (or F1 again) closes it. A level file dropped on the window does the same without the panel. It works like the vehicles of Red's Mighty Feathers
+-- (3.3.0), which are level files (`world` and `joints`) made at a place of the running level, every object with a new name (spawnPrefix + number + the old name) and every joint tied to the
+-- new names. Every object is made the way the game's own level loader makes it (turned to its angle, with its material and the theme's texture, pigs counted as level goals), so static
+-- blocks have their pictures and everything stands as it was saved. The ground and the slingshot's zone are left out. The birds of the spawned level join the line-up behind the birds
+-- that are left (`levelSpawner.birds = false` leaves them out). Spawned objects are ordinary objects of the level: they take damage, they are in the save states.
 levelSpawner = {
 	enabled = true,
 	key = "F1",
 	closeKeys = { "ESCAPE", "F1", "KEY_BACK" },
 	spawnKeys = { "RETURN", "SPACE" },
 	prefix = "sp",             -- the names of spawned objects start with this and a number
-	skip = { "Ground", "Slingshot" },   -- definitions that are not spawned (birds are never spawned)
+	skip = { "Ground", "Slingshot" },   -- definitions that are not spawned
+	birds = true,              -- (3.8) the birds of the spawned level join the line-up (false: they are left out, as in 3.7)
+	preview = true,            -- (3.8) a small picture of the level in the panel
 	drop = true,               -- a level file dropped on the window is spawned too (false: it replaces the level, as in 3.1)
 	title = "Spawn a level here",
 }
 do
-	local type, pairs, ipairs, find, match, gsub = _G.type, _G.pairs, _G.ipairs, _G.string.find, _G.string.match, _G.string.gsub
-	local open, folder, number, prefixName, count = false, nil, 1, "Level", 0
-	local current = nil       -- the level that is shown: { folder =, name =, path = }
-	local panel = nil
+	local type, pairs, ipairs, find, match, gsub, tonumber = _G.type, _G.pairs, _G.ipairs, _G.string.find, _G.string.match, _G.string.gsub, _G.tonumber
+	local sort, floor, fmod, cos, sin, pi, max, min = _G.table.sort, _G.math.floor, _G.math.fmod, _G.math.cos, _G.math.sin, _G.math.pi, _G.math.max, _G.math.min
+	local open = false
+	local root, folders, folderIndex, files, fileIndex = "levels/", {}, 1, {}, 1
+	local count = 0
+	local panel, buttons = nil, {}
+	local cache = {}          -- file -> the level's tables (or false), kept while the panel is open
 
 	local function readLevel(file)
-		local path = file
+		local c = cache[file]
+		if c ~= nil then return c or nil end
 		local text = type(readDataFile) == "function" and readDataFile(file) or nil
-		if text == nil then return nil end
-		local chunk = _G.loadstring(text, path)
-		if chunk == nil then return nil end
-		local env = {}
-		_G.setfenv(chunk, env)
-		if not _G.pcall(chunk) then return nil end
-		if type(env.world) ~= "table" then return nil end
+		local env = nil
+		if text ~= nil then
+			local chunk = _G.loadstring(text, file)
+			if chunk ~= nil then
+				local e = {}
+				_G.setfenv(chunk, e)
+				if _G.pcall(chunk) and type(e.world) == "table" then env = e end
+			end
+		end
+		cache[file] = env or false
 		return env
 	end
 
-	local function exists(path) return type(readDataFile) == "function" and readDataFile(path .. ".lua") ~= nil end
+	local function natural(a, b)
+		local pa, na = match(a, "^(.-)(%d+)$")
+		local pb, nb = match(b, "^(.-)(%d+)$")
+		if pa ~= nil and pa == pb then return tonumber(na) < tonumber(nb) end
+		return a < b
+	end
+
+	local function listFiles(folder)
+		local out = {}
+		local list = type(listDataFolder) == "function" and listDataFolder(folder) or nil
+		if list ~= nil then
+			for _, e in ipairs(list) do
+				if not e.dir and find(e.name, "%.lua$") and not find(e.name, "%.temp") then out[#out + 1] = (gsub(e.name, "%.lua$", "")) end
+			end
+		end
+		sort(out, natural)
+		return out
+	end
 
 	local function start()
-		local f, n = _G.tostring(levelFolder or ""), _G.tostring(levelName or "")
-		folder = f
-		local pre, num = match(n, "^(.-)(%d+)$")
-		prefixName, number = pre or n, _G.tonumber(num) or 1
-	end
-
-	local function pathOf() return folder .. prefixName .. number end
-
-	local function step(dir)
-		-- the next level number that has a file (up to 400 away), or the same one when there is none
-		for i = 1, 400 do
-			local n = number + dir * i
-			if n < 0 then break end
-			if exists(folder .. prefixName .. n) then number = n return end
+		local f = gsub(_G.tostring(levelFolder or "levels/"), "\\", "/")
+		if not find(f, "/$") then f = f .. "/" end
+		local base, pack = match(f, "^(.*/)([^/]+)/$")
+		root, pack = base or f, pack or ""
+		folders = {}
+		local list = type(listDataFolder) == "function" and listDataFolder(root) or nil
+		if list ~= nil then
+			for _, e in ipairs(list) do
+				if e.dir and e.name ~= "temp" and #listFiles(root .. e.name .. "/") > 0 then folders[#folders + 1] = e.name end
+			end
 		end
+		sort(folders, natural)
+		folderIndex = 0
+		for i, n in ipairs(folders) do if n == pack then folderIndex = i end end
+		if folderIndex == 0 then folders[#folders + 1] = pack folderIndex = #folders end
+		files = listFiles(root .. folders[folderIndex] .. "/")
+		fileIndex = 0
+		for i, n in ipairs(files) do if n == _G.tostring(levelName) then fileIndex = i end end
+		if fileIndex == 0 then files[#files + 1] = _G.tostring(levelName) sort(files, natural) for i, n in ipairs(files) do if n == _G.tostring(levelName) then fileIndex = i end end end
+		cache = {}
 	end
+
+	local function pathOf() return root .. folders[folderIndex] .. "/" .. files[fileIndex] .. ".lua" end
+
+	local function stepFile(dir) if #files > 0 then fileIndex = (fileIndex - 1 + dir) % #files + 1 end end
 
 	local function stepFolder(dir)
-		local base, pack = match(folder, "^(.*[/\\])([^/\\]+)[/\\]?$")
-		local number2 = match(pack or "", "^pack(%d+)$")
-		if base == nil or number2 == nil then return end
-		for i = 1, 12 do
-			local p = base .. "pack" .. (_G.tonumber(number2) + dir * i) .. "/"
-			if exists(p .. prefixName .. number) then folder = p return end
+		for _ = 1, #folders do
+			folderIndex = (folderIndex - 1 + dir) % #folders + 1
+			local list = listFiles(root .. folders[folderIndex] .. "/")
+			if #list > 0 then files, fileIndex = list, 1 return end
 		end
 	end
 
 	local function isSkipped(def)
 		for _, s in ipairs(levelSpawner.skip) do if def == s then return true end end
-		return blockTable ~= nil and blockTable.birds ~= nil and blockTable.birds[def] ~= nil
+		local b = blockTable.blocks[def]
+		if b == nil then return true end
+		return b.controllable == true and not levelSpawner.birds
+	end
+
+	-- one object the way loadLevelInternal makes it: created, turned, material, the theme's texture, the sprites of its damage and, for a pig, a level goal
+	local function make(o, name, x, y)
+		local ok, made = _G.pcall(createObject, blockTable, o.definition, name, x, y)
+		made = made or name
+		local v = ok and objects.world[made] or nil
+		if v == nil then return nil end
+		local a = fmod(o.angle or 0, pi * 2)
+		if a < 0 then a = a + pi * 2 end
+		setRotation(made, a)
+		setMaterial(made, v.material)
+		if v.texture ~= nil then
+			local theme = blockTable.themes ~= nil and blockTable.themes[currentTheme] or nil
+			setTexture(made, theme ~= nil and theme.texture or v.texture)
+		end
+		if v.levelGoal then
+			v.blinkTimer = _G.math.random(5, 30) / 10
+			v.oinkTimer = _G.math.random(5, 30) / 10
+			if levelGoals ~= nil then levelGoals[made] = v end
+			setObjectParameter(made, 1, 1)
+		end
+		if type(getDamageSprite) == "function" then
+			local ok2, sprites = _G.pcall(getDamageSprite, v, blockTable.blocks)
+			if ok2 and sprites ~= nil then v.damageSprite, v.blinkSprite, v.smileSprite = sprites.sprite, sprites.blink, sprites.smile end
+		end
+		v.frozen = false
+		return made, v
+	end
+
+	-- where the next bird of the line-up stands: behind the waiting bird that is last, one gap further (the gap between the waiting birds, 3.4 when there is one or none)
+	local function lineEnd()
+		local lastX, lastY, gap, waiting = nil, nil, 3.4, {}
+		for n, v in pairs(objects.world) do
+			if v.controllable and v.startNumber ~= nil and not v.shot and v ~= flyingBird and n ~= birdToSlingshotBirdName and n ~= currentBirdName then waiting[#waiting + 1] = v end
+		end
+		sort(waiting, function(a, b) return a.x > b.x end)
+		if #waiting >= 2 then gap = max(1.5, waiting[1].x - waiting[2].x) end
+		if #waiting >= 1 then lastX, lastY = waiting[#waiting].x, waiting[#waiting].y end
+		if lastX == nil then
+			lastX = levelStartPosition ~= nil and levelStartPosition.x or -10     -- no bird waits: the line starts at the slingshot, on the ground
+			lastY = levelStartPosition ~= nil and levelStartPosition.y + 7.35 or -1.8
+		end
+		return lastX, lastY, gap
 	end
 
 	local function spawn(file)
-		local data = readLevel(file or pathOf() .. ".lua")
+		local data = readLevel(file or pathOf())
 		if data == nil then return false end
-		local cx, cy, n = 0, 0, 0
-		local list = {}
+		local list, birdList, cx, cy, n = {}, {}, 0, 0, 0
 		for name, o in pairs(data.world) do
-			if type(o) == "table" and o.definition ~= nil and o.x ~= nil and not isSkipped(o.definition) and not find(name, "^zone_") then
-				list[#list + 1] = o
-				cx, cy, n = cx + o.x, cy + o.y, n + 1
+			if type(o) == "table" and o.definition ~= nil and o.x ~= nil and not find(name, "^zone_") and not isSkipped(o.definition) then
+				o.name = o.name or name
+				if blockTable.blocks[o.definition].controllable then birdList[#birdList + 1] = o
+				else list[#list + 1] = o cx, cy, n = cx + o.x, cy + o.y, n + 1 end
 			end
 		end
-		if n == 0 then return false end
-		cx, cy = cx / n, cy / n
+		if n == 0 and #birdList == 0 then return false end
+		if n > 0 then cx, cy = cx / n, cy / n end
 		local tx, ty = cx, cy
 		if cursor ~= nil and type(screenToPhysicsTransform) == "function" then tx, ty = screenToPhysicsTransform(cursor.x, cursor.y)
 		elseif cursor ~= nil and type(getCamera) == "function" then
@@ -1066,11 +1147,30 @@ do
 		count = count + 1
 		local names = {}
 		for _, o in ipairs(list) do
-			local newName = levelSpawner.prefix .. count .. "_" .. o.name
-			local extra = {}
-			for k, v in pairs(o) do if k ~= "name" and k ~= "x" and k ~= "y" and k ~= "definition" then extra[k] = v end end
-			local ok, made = _G.pcall(createObject, blockTable, o.definition, newName, o.x - cx + tx, o.y - cy + ty, extra)
-			if ok and objects.world[made or newName] ~= nil then names[o.name] = made or newName end
+			local made = make(o, levelSpawner.prefix .. count .. "_" .. o.name, o.x - cx + tx, o.y - cy + ty)
+			if made ~= nil then names[o.name] = made end
+		end
+		-- the birds: in the order of the spawned level, behind the birds that are left, and made static as the birds that wait are
+		sort(birdList, function(a, b)
+			if a.startNumber ~= nil and b.startNumber ~= nil and a.startNumber ~= b.startNumber then return a.startNumber < b.startNumber end
+			return natural(a.name, b.name)
+		end)
+		if #birdList > 0 then
+			local lx, ly, gap = lineEnd()
+			for _, o in ipairs(birdList) do
+				lx = lx - gap
+				local made, v = make(o, levelSpawner.prefix .. count .. "_" .. o.name, lx, ly)
+				if made ~= nil then
+					names[o.name] = made
+					setRotation(made, 0)
+					birdsCounter = (birdsCounter or 0) + 1
+					v.startNumber = birdsCounter
+					v.animTimer = _G.math.random(10, 30) / 10
+					v.jumpTimer = _G.math.random(10, 30) / 10
+					setObjectParameter(made, 2, 0)
+					birds[made] = v
+				end
+			end
 		end
 		if type(data.joints) == "table" then
 			for _, j in pairs(data.joints) do
@@ -1086,20 +1186,24 @@ do
 		return true
 	end
 
-	local function close() open, modalOpen, modalInput = false, false, nil end
+	local function close() open, modalOpen, modalInput, cache = false, false, nil, {} end
 
 	local function anyKey(list, pressed)
 		for _, k in ipairs(list) do if pressed[k] then return true end end
 		return false
 	end
 
+	local function inside(r, x, y) return r ~= nil and x >= r.x1 and x <= r.x2 and y >= r.y1 and y <= r.y2 end
+
 	engine.on("levelLoaded", function() open = false end)
 
 	-- a level file dropped on the window while a level is played is spawned at the cursor instead of replacing the level (outside a level, or with the spawner off, as before)
 	local originalDropped = onFileDropped
 	onFileDropped = function(path)
-		if levelSpawner.enabled and levelSpawner.drop and currentGameMode == updateGame and objects.world ~= nil and not open then
-			if spawn(path) then return true end
+		if levelSpawner.enabled and levelSpawner.drop and currentGameMode == updateGame and objects ~= nil and objects.world ~= nil then
+			if open then close() end
+			if spawn(gsub(_G.tostring(path), "\\", "/")) then _G.print("spawned " .. _G.tostring(path) .. "\n") return true end
+			_G.print("not spawned (not a level file?): " .. _G.tostring(path) .. "\n")
 		end
 		if type(originalDropped) == "function" then return originalDropped(path) end
 	end
@@ -1118,11 +1222,84 @@ do
 		if input == nil then return end
 		local p = input.pressed
 		if anyKey(levelSpawner.closeKeys, p) then close() return end
-		if p["LEFT"] then step(-1) elseif p["RIGHT"] then step(1) elseif p["UP"] then stepFolder(1) elseif p["DOWN"] then stepFolder(-1) end
-		if anyKey(levelSpawner.spawnKeys, p) or (input.clicked and panel ~= nil and input.x >= panel.x1 and input.x <= panel.x2 and input.y >= panel.y1 and input.y <= panel.y2) then
+		if p["LEFT"] then stepFile(-1) elseif p["RIGHT"] then stepFile(1) elseif p["UP"] then stepFolder(1) elseif p["DOWN"] then stepFolder(-1) end
+		if input.clicked then
+			for _, b in ipairs(buttons) do
+				if inside(b, input.x, input.y) then b.action() return end
+			end
+		end
+		if anyKey(levelSpawner.spawnKeys, p) or (input.clicked and inside(panel, input.x, input.y)) then
 			spawn()
 			close()
 		elseif input.clicked then close() end
+	end
+
+	-- the level's blocks as coloured bars (a box is a line as thick as the block, turned like it), ice light blue, wood brown, stone grey, pigs green, birds red, static blocks dark
+	local function colourOf(b)
+		if b.controllable then return 230, 60, 60 end
+		if b.levelGoal then return 90, 200, 90 end
+		local s = b.sprite or ""
+		if find(s, "LIGHT") or find(s, "GLASS") or find(s, "ICE") then return 150, 215, 250 end
+		if find(s, "WOOD") then return 190, 130, 70 end
+		if find(s, "STONE") or find(s, "HEAVY") then return 165, 165, 165 end
+		if b.material == "immovable" then return 85, 68, 50 end
+		return 205, 205, 205
+	end
+
+	local function previewOf(file)
+		local c = cache["preview " .. file]
+		if c ~= nil then return c or nil end
+		local data = readLevel(file)
+		local items, x1, y1, x2, y2 = {}, 1e9, 1e9, -1e9, -1e9
+		if data ~= nil then
+			for name, o in pairs(data.world) do
+				local b = type(o) == "table" and o.definition ~= nil and o.x ~= nil and blockTable.blocks[o.definition] or nil
+				if b ~= nil and not find(name, "^zone_") and o.definition ~= "Ground" then
+					local w, h
+					if b.radius ~= nil then w, h = b.radius * 2, b.radius * 2
+					else
+						local sw, sh = _G.res.getSpriteBounds("", b.sprite or "")
+						w, h = (sw or 0) * (physicsScale or 0.05), (sh or 0) * (physicsScale or 0.05)
+					end
+					if w == nil or w <= 0 then w, h = 1, 1 end
+					local r, g, bl = colourOf(b)
+					items[#items + 1] = { x = o.x, y = o.y, w = w, h = h, a = o.angle or 0, r = r, g = g, b = bl, static = b.material == "immovable" }
+					local e = max(w, h) / 2
+					x1, y1, x2, y2 = min(x1, o.x - e), min(y1, o.y - e), max(x2, o.x + e), max(y2, o.y + e)
+				end
+			end
+		end
+		local result = #items > 0 and { items = items, x1 = x1, y1 = y1, x2 = x2, y2 = y2 } or false
+		cache["preview " .. file] = result
+		return result or nil
+	end
+
+	local function drawPreview(ax1, ay1, ax2, ay2)
+		drawRect(0.1, 0.1, 0.13, 1, ax1, ay1, ax2, ay2, false)
+		local pv = previewOf(pathOf())
+		if pv == nil then return end
+		local pw, ph = ax2 - ax1 - 12, ay2 - ay1 - 12
+		local sc = min(pw / max(pv.x2 - pv.x1, 0.01), ph / max(pv.y2 - pv.y1, 0.01))
+		local ox = ax1 + 6 + (pw - (pv.x2 - pv.x1) * sc) / 2
+		local oy = ay1 + 6 + (ph - (pv.y2 - pv.y1) * sc) / 2
+		for pass = 1, 2 do
+			for _, it in ipairs(pv.items) do
+				if (pass == 1) == it.static then
+					local cxs, cys = ox + (it.x - pv.x1) * sc, oy + (it.y - pv.y1) * sc
+					local len, thick, ang = it.w, it.h, it.a
+					if it.h > it.w then len, thick, ang = it.h, it.w, it.a + pi / 2 end
+					local dx, dy = cos(ang) * len * sc / 2, sin(ang) * len * sc / 2
+					drawLine2D(cxs - dx, cys - dy, cxs + dx, cys + dy, max(1, thick * sc), it.r, it.g, it.b, 255)
+				end
+			end
+		end
+	end
+
+	local function button(x1, y1, x2, y2, label, action)
+		buttons[#buttons + 1] = { x1 = x1, y1 = y1, x2 = x2, y2 = y2, action = action }
+		drawRect(0.3, 0.22, 0.12, 1, x1, y1, x2, y2, false)
+		drawRectLines(x1, y1, x2, y2, 2, 240, 200, 120, 255)
+		_G.res.drawString("", label, (x1 + x2) / 2, (y1 + y2) / 2, "VCENTER", "HCENTER")
 	end
 
 	local function drawPanel()
@@ -1130,16 +1307,28 @@ do
 		local w, h = screenWidth, screenHeight
 		setRenderState(0, 0, 1, 1, 0, 0, 0, 1)
 		drawRect(0, 0, 0, 0.45, 0, 0, w, h, false)
-		local pw, ph = w * 0.5, h * 0.3
+		local pw, ph = w * 0.62, h * (levelSpawner.preview and 0.74 or 0.3)
 		local x1, y1 = (w - pw) / 2, (h - ph) / 2
 		panel = { x1 = x1, y1 = y1, x2 = x1 + pw, y2 = y1 + ph }
+		buttons = {}
 		drawRect(0.16, 0.12, 0.08, 0.95, x1, y1, x1 + pw, y1 + ph, false)
 		drawRectLines(x1, y1, x1 + pw, y1 + ph, 3, 240, 200, 120, 255)
 		if type(fontBasic) ~= "nil" then _G.res.useFont(fontBasic) end
-		_G.res.drawString("", levelSpawner.title, w / 2, y1 + ph * 0.2, "VCENTER", "HCENTER")
-		_G.res.drawString("", pathOf(), w / 2, y1 + ph * 0.5, "VCENTER", "HCENTER")
-		_G.res.drawString("", "Left / Right: level    Up / Down: folder", w / 2, y1 + ph * 0.72, "VCENTER", "HCENTER")
-		_G.res.drawString("", "Return: spawn    Esc: close", w / 2, y1 + ph * 0.88, "VCENTER", "HCENTER")
+		_G.res.drawString("", levelSpawner.title, w / 2, y1 + ph * 0.06, "VCENTER", "HCENTER")
+		local bw, bh = 44, 44
+		local rowY
+		if levelSpawner.preview then
+			drawPreview(x1 + bw + 24, y1 + ph * 0.11, x1 + pw - bw - 24, y1 + ph * 0.66)
+			rowY = y1 + ph * 0.73
+		else rowY = y1 + ph * 0.45 end
+		_G.res.drawString("", pathOf() .. "   (" .. fileIndex .. " / " .. #files .. ")", w / 2, rowY, "VCENTER", "HCENTER")
+		local midY = y1 + ph * (levelSpawner.preview and 0.385 or 0.45)
+		button(x1 + 10, midY - bh / 2, x1 + 10 + bw, midY + bh / 2, "<", function() stepFile(-1) end)
+		button(x1 + pw - 10 - bw, midY - bh / 2, x1 + pw - 10, midY + bh / 2, ">", function() stepFile(1) end)
+		local fy = rowY + 52
+		button(w / 2 - 150, fy - 16, w / 2 - 20, fy + 16, "folder -", function() stepFolder(-1) end)
+		button(w / 2 + 20, fy - 16, w / 2 + 150, fy + 16, "folder +", function() stepFolder(1) end)
+		_G.res.drawString("", "Left / Right: level    Up / Down: folder    Return: spawn    Esc: close", w / 2, y1 + ph * 0.955, "VCENTER", "HCENTER")
 	end
 
 	local originalUpdate, originalDrawGame = update, drawGame

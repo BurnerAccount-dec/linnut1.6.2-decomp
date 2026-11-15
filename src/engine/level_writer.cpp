@@ -1,6 +1,10 @@
 #include "engine/level_writer.h"
 
+#include <algorithm>
 #include <cstdio>
+#ifndef _WIN32
+#include <dirent.h>
+#endif
 #include <sys/stat.h>
 #ifdef _WIN32
 #include <direct.h>
@@ -97,6 +101,31 @@ bool ReplaceFile(const std::string& from, const std::string& to) {
 bool DirectoryExists(const std::string& path) {
     struct stat st;
     return stat(path.c_str(), &st) == 0 && (st.st_mode & S_IFDIR) != 0;
+}
+
+bool ListDirectory(const std::string& path, std::vector<std::pair<std::string, bool>>& out) {
+    out.clear();
+#ifdef _WIN32
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA((path + "\\*").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    do {
+        std::string n = fd.cFileName;
+        if (n != "." && n != "..") out.push_back({n, (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0});
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+#else
+    DIR* d = opendir(path.c_str());
+    if (!d) return false;
+    while (dirent* e = readdir(d)) {
+        std::string n = e->d_name;
+        if (n == "." || n == "..") continue;
+        out.push_back({n, DirectoryExists(path + "/" + n)});
+    }
+    closedir(d);
+#endif
+    std::sort(out.begin(), out.end());
+    return true;
 }
 
 void MakeDirectory(const std::string& path) {

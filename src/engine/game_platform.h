@@ -18,6 +18,7 @@
 
 #include "lua/lua_frame_host.h"
 #include "lua/platform.h"
+#include "engine/level_writer.h"
 #include "lua/script_host.h"
 #include <cstdlib>
 #include <cmath>
@@ -148,6 +149,7 @@ public:
     void Print(const std::string& text) override;
     void BeginLevelLoad() override;
     std::string ResolveDataFile(const std::string& path) override;
+    bool ListDataFolder(const std::string& path, std::vector<std::pair<std::string, bool>>& out) override { return ab::ListDirectory(path, out); }
     // The level editor: setEditing(true) while a level is edited, saveLevel(file) writes it over the level file, the folders are made on demand.
     void SetEditing(bool on) override { editing_ = on; }
     void SaveLevel(const std::string& path) override;

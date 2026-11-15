@@ -1381,13 +1381,17 @@ Tell us about a game or call that misbehaves and it will be fixed.
 
 ---
 
-### `getBodyType(name)` (3.7.3.1)
+### `getBodyType(name)` (3.7.1)
 
 Returns `"static"`, `"dynamic"` or `"kinematic"` for an object (what `setBodyType` and `setObjectParameter(name, 2, 0 or 1)` set; the games keep birds that wait as static bodies), or `nil` for a name that is not in the world. Save states keep it, so a restored bird is as movable as it was.
 
 ### Level spawner (3.7)
 
-`levelSpawner` (in `extra_scripts.lua`) puts the data of another level into the level that is being played. F1 opens a picker (Left / Right: level, Up / Down: folder, Return: spawn, Escape: close). The level file is read with `readDataFile`, run in an empty table to get its `world` and `joints`, and every entry is made like Red's Mighty Feathers (3.3.0) makes a vehicle: `createObject(blockTable, definition, newName, x, y, fields)` with the level's other fields, and `createJoint` with `end1` / `end2` changed to the new names. Fields: `enabled`, `key`, `closeKeys`, `spawnKeys`, `prefix` (names are `prefix .. number .. "_" .. oldName`), `skip` (definitions that are not made; birds never are), `drop` (a level file dropped on the window during a level is spawned at the cursor; `false` loads it as the level, as before) and `title`.
+`levelSpawner` (in `extra_scripts.lua`) puts the data of another level into the level that is being played. F1 opens a picker (Left / Right: level, Up / Down: folder, Return: spawn, Escape: close). The level file is read with `readDataFile`, run in an empty table to get its `world` and `joints`, and every entry is made like Red's Mighty Feathers (3.3.0) makes a vehicle: `createObject(blockTable, definition, newName, x, y)` and then, as the game's own `loadLevelInternal` does, `setRotation` (the saved angle), `setMaterial`, `setTexture` (the theme's texture, so static blocks have their pictures), the damage sprites and, for a pig, the level goal; `createJoint` has `end1` / `end2` changed to the new names. Since 3.8 the panel shows a small picture of the level (ice light blue, wood brown, stone grey, static blocks dark, pigs green, birds red), Up / Down walk through every folder of the game's `levels` folder that has level files (and the `<` `>` `folder -` `folder +` buttons do the same with the mouse), and the birds of the spawned level join the line-up: each gets the next `startNumber`, is made static like the birds that wait, goes into `birds` and stands on the ground behind the last waiting bird. Fields: `enabled`, `key`, `closeKeys`, `spawnKeys`, `prefix` (names are `prefix .. number .. "_" .. oldName`), `skip` (definitions that are not made), `birds` (`false`: the birds of the spawned level are left out), `preview` (`false`: no picture), `drop` (a level file dropped on the window during a level is spawned at the cursor; `false` loads it as the level, as before; the console says `spawned <file>` or `not spawned` for each file) and `title`.
+
+### `listDataFolder(path)` (3.8)
+
+Returns the entries of a folder of the game's data (`"levels/"`) as a table of `{name = "pack1", dir = true}` / `{name = "Level1.lua", dir = false}` sorted by name, or `nil` when the folder does not exist. The level spawner uses it to find the level folders and files.
 
 
 ## Changing how damage is worked out and how things are drawn (2.9)

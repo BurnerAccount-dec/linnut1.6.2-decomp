@@ -7,6 +7,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 #include "physics/collision_prediction.h"
 
@@ -95,6 +96,7 @@ public:
     virtual void BeginLevelLoad() {}
     virtual void EndLevelLoad() {}
     virtual std::string ResolveDataFile(const std::string& path) { return path; }
+    virtual bool ListDataFolder(const std::string& path, std::vector<std::pair<std::string, bool>>& out) { (void)path; out.clear(); return false; }   // 3.8: listDataFolder
     virtual void SaveLevel(const std::string& path) { (void)path; }
     // v2.2: the text of a level the editor saved in this session (its temp copies), read before the file
     virtual bool FindSavedLevel(const std::string& path, std::vector<uint8_t>& bytes) { (void)path; (void)bytes; return false; }

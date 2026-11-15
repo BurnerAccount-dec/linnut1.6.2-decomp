@@ -81,7 +81,7 @@ Two editors exist. The **classic editor** is Rovio's own (the 1.6.2 editor, whic
 | R | Rotate the selected objects |
 | Ctrl + C, then click | Copy the selection and place the copy |
 | Delete | Remove the selection (and its joints) |
-| F1 (in a level, nothing selected in the editor) | Level spawner: pick another level with the arrows, Return puts its blocks, pigs and joints at the cursor |
+| F1 (in a level, nothing selected in the editor) | Level spawner: a picture of the level, Left / Right pick another level, Up / Down another folder, Return puts its blocks, pigs, joints and birds (they join the line-up) at the cursor; a level file dropped on the window does the same |
 | J, or F1 .. F5 (two objects selected; Shift + J in 1.6.x, where J is a block key) | Open the joint window (F1 distance, F2 weld, F3 revolute, F4 prismatic, F5 "destroy attached"); 1.6.x games without one get the window of Seasons 2.3.0 |
 | Tab | Physics on / off (the level is restored when it is switched off) |
 | Shift + P | Play the level, Escape (also on the clear / failed page) comes back to the editor |

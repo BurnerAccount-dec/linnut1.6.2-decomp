@@ -3248,6 +3248,22 @@ int l_readDataFile(lua_State* L) {
     lua_pushlstring(L, (const char*)bytes.data(), bytes.size());
     return 1;
 }
+// listDataFolder(path) -> { {name = "Level1.lua", dir = false}, {name = "pack2", dir = true}, ... } sorted by name, or nil when there is no such folder (3.8)
+int l_listDataFolder(lua_State* L) {
+    std::string path = S(L, 1);
+    while (!path.empty() && (path.back() == '/' || path.back() == '\\')) path.pop_back();
+    std::vector<std::pair<std::string, bool>> names;
+    if (!P(L)->ListDataFolder(path, names) && !P(L)->ListDataFolder(P(L)->ResolveDataFile(path), names)) { lua_pushnil(L); return 1; }
+    lua_newtable(L);
+    int i = 0;
+    for (const auto& n : names) {
+        lua_newtable(L);
+        lua_pushstring(L, n.first.c_str()); lua_setfield(L, -2, "name");
+        lua_pushboolean(L, n.second); lua_setfield(L, -2, "dir");
+        lua_rawseti(L, -2, ++i);
+    }
+    return 1;
+}
 int l_drawParticlesFiltered(lua_State* L) { P(L)->DrawParticlesFiltered((int)N(L, 1)); return 0; }
 int l_setRestitution(lua_State* L) { P(L)->SetObjectRestitution(S(L, 1), N(L, 2)); return 0; }
 int l_getFullScreenWidth(lua_State* L) { lua_getfield(L, LUA_REGISTRYINDEX, "ab.env"); lua_getfield(L, -1, "screenWidth"); lua_remove(L, -2); if (!lua_isnumber(L, -1)) { lua_pop(L, 1); lua_pushnumber(L, 0); } return 1; }
@@ -3368,7 +3384,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"setRenderState", l_setRenderState}, {"drawRect", l_drawRect}, {"drawLine2D", l_drawLine2D},
         {"drawTexturedRect", l_nothing}, {"drawSome", l_nothing},
         {"drawGameNative", l_drawGameNative}, {"drawBackgroundNative", l_drawBackgroundNative},
-        {"drawForegroundNative", l_drawForegroundNative}, {"drawParticlesFiltered", l_drawParticlesFiltered}, {"readDataFile", l_readDataFile}, {"setObjectDensity", l_setObjectDensity}, {"setDensity", l_setObjectDensity}, {"setFriction", l_setFriction}, {"resizeCircle", l_resizeCircle}, {"setVisible", l_setVisible}, {"isVisible", l_isVisible}, {"inheritTeleportation", l_retailNoop}, {"setRestitution", l_setRestitution}, {"handleJointLimits", l_handleJointLimits}, {"getFullScreenWidth", l_getFullScreenWidth}, {"getFullScreenHeight", l_getFullScreenHeight}, {"performBitwiseOr", l_performBitwiseOr}, {"setWaterForceMultiplier", l_setWaterForceMultiplier}, {"getWaterForceMultiplier", l_getWaterForceMultiplier}, {"setBirdWaterDrag", l_setBirdWaterDrag}, {"setObjectWaterDrag", l_setObjectWaterDrag}, {"fileExistsInAppData", l_fileExistsInAppData}, {"loadTextFileToString", l_loadTextFileToString}, {"isGameOverlayActive", l_isGameOverlayActive}, {"clearScreen", l_retailNoop}, {"isEditing", l_false}, {"setRollingSound", l_retailNoop}, {"setRovioShelfAllowed", l_retailNoop}, {"setChannelCountLimit", l_retailNoop}, {"setOffsetedViewport", l_retailNoop}, {"refreshCurrentLocale", l_retailNoop}, {"recoverRenderObjects", l_retailNoop}, {"drawParticlesNative", l_drawParticlesNative}, {"drawMenuParticlesInAdvance", l_drawMenuParticlesInAdvance},
+        {"drawForegroundNative", l_drawForegroundNative}, {"drawParticlesFiltered", l_drawParticlesFiltered}, {"readDataFile", l_readDataFile}, {"listDataFolder", l_listDataFolder}, {"setObjectDensity", l_setObjectDensity}, {"setDensity", l_setObjectDensity}, {"setFriction", l_setFriction}, {"resizeCircle", l_resizeCircle}, {"setVisible", l_setVisible}, {"isVisible", l_isVisible}, {"inheritTeleportation", l_retailNoop}, {"setRestitution", l_setRestitution}, {"handleJointLimits", l_handleJointLimits}, {"getFullScreenWidth", l_getFullScreenWidth}, {"getFullScreenHeight", l_getFullScreenHeight}, {"performBitwiseOr", l_performBitwiseOr}, {"setWaterForceMultiplier", l_setWaterForceMultiplier}, {"getWaterForceMultiplier", l_getWaterForceMultiplier}, {"setBirdWaterDrag", l_setBirdWaterDrag}, {"setObjectWaterDrag", l_setObjectWaterDrag}, {"fileExistsInAppData", l_fileExistsInAppData}, {"loadTextFileToString", l_loadTextFileToString}, {"isGameOverlayActive", l_isGameOverlayActive}, {"clearScreen", l_retailNoop}, {"isEditing", l_false}, {"setRollingSound", l_retailNoop}, {"setRovioShelfAllowed", l_retailNoop}, {"setChannelCountLimit", l_retailNoop}, {"setOffsetedViewport", l_retailNoop}, {"refreshCurrentLocale", l_retailNoop}, {"recoverRenderObjects", l_retailNoop}, {"drawParticlesNative", l_drawParticlesNative}, {"drawMenuParticlesInAdvance", l_drawMenuParticlesInAdvance},
         {"setSprite", l_setSprite}, {"setMaterial", l_setMaterial}, {"setTexture", l_setTexture}, {"setTheme", l_setTheme},
         {"clipText", l_clipText},
         {"startNewTrajectory", l_startNewTrajectory}, {"addToTrajectory", l_addToTrajectory},
