@@ -95,6 +95,12 @@ ContactResult ResolveContact(const ContactObject& a, const ContactObject& b) {
     if (bird.damageFactors) {
         damageMultiplier = Lookup(bird.damageFactors->damageMultiplier, block.material, 1.0f);
         velocityMultiplier = Lookup(bird.damageFactors->velocityMultiplier, block.material, 1.0f);
+    } else if (!bird.material.empty() && bird.material == block.material) {
+        // v3.1: Angry Birds 1.0 has no damage factors: a bird is strong against the material it is made of (the blue bird is "light" like ice,
+        // the yellow one "wood", the black one "rock"); x4, the factor the later games' tables started from (light 4 * 0.725, wood 4 * 0.6, rock 4)
+        damageMultiplier = T("classic.sameMaterialDamage", 4.0f);
+        // and the Blue Bird keeps its speed through the ice it breaks (the later games' BlueBirdDamageFactors.velocityMultiplier.light, 1.9)
+        if (bird.material == "light") velocityMultiplier = T("classic.sameMaterialVelocityLight", 1.9f);
     }
 
     float impact = Length(bird.velocity) * bird.mass / T("classic.birdForceDivisor", 10.0f);

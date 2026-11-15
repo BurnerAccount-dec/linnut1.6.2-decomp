@@ -273,7 +273,7 @@ bool VideoPlayer::Advance(double dt) {
 
 namespace ab {
 namespace {
-struct MfState { IMFSourceReader* reader = nullptr; bool coInit = false; bool started = false; bool bottomUp = false; };
+struct MfState { IMFSourceReader* reader = nullptr; bool coInit = false; bool started = false; LONG stride = 0; };
 template <class T> void Rel(T*& p) { if (p) { p->Release(); p = nullptr; } }
 }
 
@@ -319,7 +319,7 @@ bool VideoPlayer::OpenSystem(const std::string& path, std::string* error) {
     }
     UINT32 w = 0, h = 0;
     MFGetAttributeSize(actual, MF_MT_FRAME_SIZE, &w, &h);
-    m->bottomUp = (INT32)MFGetAttributeUINT32(actual, MF_MT_DEFAULT_STRIDE, 0) < 0;      // a negative stride: the bottom row comes first
+    m->stride = (LONG)(INT32)MFGetAttributeUINT32(actual, MF_MT_DEFAULT_STRIDE, 0);
     Rel(actual);
     if (!w || !h) { if (error) *error = "the video has no size"; mf_ = m; CloseSystem(); return false; }
     width_ = (int)w; height_ = (int)h;
@@ -335,32 +335,61 @@ bool VideoPlayer::OpenSystem(const std::string& path, std::string* error) {
     return true;
 }
 
-// reads the next picture into pending_; false at the end of the stream
-static bool ReadPicture(IMFSourceReader* reader, int w, int h, bool bottomUp, std::vector<uint8_t>& out, double& time) {
+// the size and row step of the pictures the reader delivers now (they can differ from the size at the start: the decoder may work on whole
+// macroblocks and the reader may change its output type after the first sample)
+static void ReadOutputType(IMFSourceReader* reader, int& w, int& h, LONG& stride) {
+    IMFMediaType* t = nullptr;
+    if (FAILED(reader->GetCurrentMediaType((DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, &t)) || !t) return;
+    UINT32 cw = 0, ch = 0;
+    if (SUCCEEDED(MFGetAttributeSize(t, MF_MT_FRAME_SIZE, &cw, &ch)) && cw && ch) { w = (int)cw; h = (int)ch; }
+    stride = (LONG)(INT32)MFGetAttributeUINT32(t, MF_MT_DEFAULT_STRIDE, 0);
+    if (stride == 0) { LONG s = 0; if (SUCCEEDED(MFGetStrideForBitmapInfoHeader(MFVideoFormat_RGB32.Data1, (DWORD)w, &s))) stride = s; }
+    Rel(t);
+}
+
+// reads the next picture into out (w x h RGBA, top row first); false at the end of the stream
+static bool ReadPicture(IMFSourceReader* reader, int& w, int& h, LONG& stride, std::vector<uint8_t>& out, double& time) {
     for (;;) {
         DWORD flags = 0;
         LONGLONG stamp = 0;
         IMFSample* sample = nullptr;
         HRESULT hr = reader->ReadSample((DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, nullptr, &flags, &stamp, &sample);
         if (FAILED(hr) || (flags & MF_SOURCE_READERF_ENDOFSTREAM)) { Rel(sample); return false; }
+        if (flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) ReadOutputType(reader, w, h, stride);
         if (!sample) continue;                      // a gap in the stream: ask again
         IMFMediaBuffer* buffer = nullptr;
         bool got = false;
         if (SUCCEEDED(sample->ConvertToContiguousBuffer(&buffer))) {
+            const BYTE* row0 = nullptr;       // the first row of the picture, top
+            LONG pitch = 0;                   // the step from one row to the next (negative: the rows are stored bottom first)
+            IMF2DBuffer* b2 = nullptr;
             BYTE* locked = nullptr;
-            DWORD maxLen = 0, curLen = 0;
-            if (SUCCEEDED(buffer->Lock(&locked, &maxLen, &curLen)) && locked) {
-                // the rows can be padded (270 pixels wide: 288 in memory), so the row length is the buffer's size over the height
-                size_t pitch = curLen >= (DWORD)w * 4 * h ? (size_t)curLen / (size_t)h : (size_t)w * 4;
+            bool plain = false;
+            if (SUCCEEDED(buffer->QueryInterface(__uuidof(IMF2DBuffer), (void**)&b2)) && b2 && SUCCEEDED(b2->Lock2D(&locked, &pitch))) {
+                row0 = locked;
+            } else {
+                Rel(b2);
+                DWORD maxLen = 0, curLen = 0;
+                if (SUCCEEDED(buffer->Lock(&locked, &maxLen, &curLen)) && locked) {
+                    plain = true;
+                    LONG st = stride ? stride : -(LONG)w * 4;
+                    pitch = st;
+                    row0 = pitch < 0 ? locked + (size_t)(h - 1) * (size_t)(-pitch) : locked;
+                }
+            }
+            static bool said = false;
+            if (!said) { said = true; std::printf("playVideo: picture %dx%d, row step %ld, %s buffer\n", w, h, (long)pitch, plain ? "plain" : "2D"); std::fflush(stdout); }
+            if (row0) {
                 out.resize((size_t)w * h * 4);
                 for (int y = 0; y < h; y++) {
-                    const BYTE* src = locked + (bottomUp ? (size_t)(h - 1 - y) : (size_t)y) * pitch;
+                    const BYTE* src = row0 + (ptrdiff_t)y * (ptrdiff_t)pitch;
                     uint8_t* dst = &out[(size_t)y * w * 4];
                     for (int x = 0; x < w; x++) { dst[x * 4] = src[x * 4 + 2]; dst[x * 4 + 1] = src[x * 4 + 1]; dst[x * 4 + 2] = src[x * 4]; dst[x * 4 + 3] = 255; }   // BGRA -> RGBA
                 }
-                buffer->Unlock();
                 got = true;
+                if (b2) b2->Unlock2D(); else buffer->Unlock();
             }
+            Rel(b2);
         }
         Rel(buffer);
         Rel(sample);
@@ -374,7 +403,7 @@ bool VideoPlayer::AdvanceSystem(double dt) {
     bool changed = false;
     for (;;) {
         if (!havePending_) {
-            if (!ReadPicture(m->reader, width_, height_, m->bottomUp, pending_, pendingTime_)) { finished_ = true; break; }
+            if (!ReadPicture(m->reader, width_, height_, m->stride, pending_, pendingTime_)) { finished_ = true; break; }
             havePending_ = true;
         }
         if (pendingTime_ > clock_) break;

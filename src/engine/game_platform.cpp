@@ -11,6 +11,8 @@
 #include <iterator>
 #include "engine/game_platform.h"
 #include "game/collision_damage.h"
+#include "lua/aes.h"
+#include "lua/dec_folder.h"
 #include "lua/lua_api.h"
 #include "video/video_audio.h"
 #include "engine/level_writer.h"
@@ -115,12 +117,26 @@ void ReadContactFields(lua_State* L, int entry, ContactObject& c, DamageFactorSe
     lua_getfield(L, entry, "material");
     if (lua_type(L, -1) == LUA_TSTRING) c.material = lua_tostring(L, -1);
     lua_pop(L, 1);
+    if (c.material.empty()) {   // v3.1: Angry Birds Friends (and the 3.x scripts it shares) name it materialName
+        lua_getfield(L, entry, "materialName");
+        if (lua_type(L, -1) == LUA_TSTRING) c.material = lua_tostring(L, -1);
+        lua_pop(L, 1);
+    }
     lua_getfield(L, entry, "useLegacyCollisionPath");
     c.useLegacyCollisionPath = lua_toboolean(L, -1) != 0;
     lua_pop(L, 1);
 
-    // objects.world[name].damageFactors names a set in blockTable.damageFactors
+    // objects.world[name].damageFactors names a set in blockTable.damageFactors (v3.1: a block without one uses its material's, blockTable.materials[m].damageFactors, as Friends' blocks do)
     lua_getfield(L, entry, "damageFactors");
+    if (lua_isnil(L, -1) && !c.material.empty()) {
+        lua_pop(L, 1);
+        lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+        lua_getfield(L, -1, "blockTable"); lua_remove(L, -2);
+        if (lua_istable(L, -1)) { lua_getfield(L, -1, "materials"); lua_remove(L, -2); }
+        if (lua_istable(L, -1)) { lua_getfield(L, -1, c.material.c_str()); lua_remove(L, -2); }
+        if (lua_istable(L, -1)) { lua_getfield(L, -1, "damageFactors"); lua_remove(L, -2); }
+        if (lua_type(L, -1) != LUA_TSTRING) { lua_pop(L, 1); lua_pushnil(L); }
+    }
     if (lua_type(L, -1) == LUA_TSTRING) {
         lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
         lua_getfield(L, -1, "blockTable");
@@ -326,7 +342,7 @@ GamePlatform::GamePlatform(const std::string& dataRoot) : dataRoot_(dataRoot) {}
 // The physics world is made on first use, when the scripts have told which game this is: Rio uses Box2D 2.2.0, the others 2.1.x.
 PhysicsWorld& GamePlatform::Physics() {
     if (physics_) return *physics_;
-    Box2DVersion ver = scripts_ && (scripts_->IsRio() || scripts_->IsSpace()) ? Box2DVersion::V22 : Box2DVersion::V21;
+    Box2DVersion ver = scripts_ && (scripts_->IsRio() || scripts_->IsSpace() || scripts_->IsStella()) ? Box2DVersion::V22 : Box2DVersion::V21;   // (Stella: its blocks are a tenth of the classic size, see below)
     if (const char* f = std::getenv("AB_BOX2D")) ver = std::string(f) == "21" ? Box2DVersion::V21 : Box2DVersion::V22;  // test override
     if (requestedBox2D_) ver = requestedBox2D_ == 21 ? Box2DVersion::V21 : Box2DVersion::V22;
     physics_ = MakePhysicsWorld(ver);
@@ -357,9 +373,14 @@ PhysicsWorld& GamePlatform::Physics() {
         physics_->spaceRules = true;
         solverBase_[0] = 0.005f; solverBase_[1] = 0.5f; solverBase_[2] = 0.5f; physics_->SetSolverSettings(0.005f, 0.5f, 0.5f);      // AngryBirdsSpace.exe: linearSlop 0x512484, timeToSleep 0x50f6ac, linear sleep tolerance 0.25 squared (0x51270c)
         physics_->SetPolygonRadius(0.01f);                   // 0x50f77c
+    } else if (scripts_ && scripts_->IsStella()) {
+        // Stella's blocks are a tenth of the classic size (a 1X10 plank is 1 x 0.1): with the classic games' slop (0.05) and polygon skin (0.1)
+        // planks laid edge to edge overlapped by their skins and every structure blew apart on the first step. Box2D's stock values instead.
+        solverBase_[0] = 0.005f; solverBase_[1] = 0.5f; solverBase_[2] = 0.01f; physics_->SetSolverSettings(0.005f, 0.5f, 0.01f);
+        physics_->SetPolygonRadius(0.01f);
     } else if (scripts_ && scripts_->IsRio()) physics_->SetSolverSettings(0.05f, 0.25f, 0.1f);
     else physics_->SetSolverSettings(0.05f, 0.25f, 0.1f);
-    if (!(scripts_ && scripts_->IsSpace())) { solverBase_[0] = 0.05f; solverBase_[1] = 0.25f; solverBase_[2] = 0.1f; }
+    if (!(scripts_ && (scripts_->IsSpace() || scripts_->IsStella()))) { solverBase_[0] = 0.05f; solverBase_[1] = 0.25f; solverBase_[2] = 0.1f; }
     if (scripts_ && scripts_->IsSpace()) physics_->SetGravity(0, 0);   // Space: only the gravitation sensors pull (the scripts never call setWorldGravity)
     physics_->startAsleep = std::getenv("AB_ASLEEPSTART") != nullptr || (scripts_ && scripts_->IsFirstGame() && std::getenv("AB_ASLEEP10") != nullptr);   // v2.2: the exe creates every body awake (b2BodyDef.awake = 1 at 0x411590 and the other creators); AB_ASLEEPSTART=1 starts blocks asleep for testing
     if (std::getenv("AB_PHYSDBG")) std::fprintf(stderr, "PHYS Box2D %s\n", physics_->Version() == Box2DVersion::V22 ? "2.2.0" : "2.1.1");
@@ -393,6 +414,8 @@ PhysicsWorld& GamePlatform::Physics() {
         return material;
     };
     physics_->starWarsRules = scripts_ && scripts_->IsStarWars();
+    physics_->phoneSpaceGravity = scripts_ && scripts_->IsSpace() && !scripts_->IsStarWars() &&
+        (scripts_->ScriptPath().find("data_iphone") != std::string::npos || scripts_->ScriptPath().find("data_ipad") != std::string::npos);
     // the contact filter of an object with blockCollision false reads objects.world[name].collisionMaterials live
     physics_->collisionMaterialsOf = [this](const PhysObject& o) {
         std::vector<std::string> list;
@@ -425,7 +448,84 @@ void GamePlatform::AddSpeed(float step) {
     Print("speed: " + std::to_string(speed_) + "x");
 }
 
+// v3.1: the later PC exes (Space, Star Wars) take files dropped on their window. What they did with them is not known (no script asks), so:
+// engine.on("fileDropped", fn) and a script function onFileDropped(path) get the path first (onFileDropped returning true ends it there);
+// otherwise a dropped level file (a .lua with a world table) is loaded as the current level, and any other .lua runs in the game's scripts
+void GamePlatform::FileDropped(const std::string& path) {
+    Print("dropped: " + path);
+    if (!scripts_) return;
+    lua_State* L = scripts_->State();
+    EmitHook(L, "fileDropped", path.c_str());
+    int top = lua_gettop(L);
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    int env = lua_gettop(L);
+    lua_getfield(L, env, "onFileDropped");
+    if (lua_isfunction(L, -1)) {
+        lua_pushstring(L, path.c_str());
+        if (lua_pcall(L, 1, 1, 0) != 0) Print(std::string("onFileDropped: ") + lua_tostring(L, -1));
+        else if (lua_toboolean(L, -1)) { lua_settop(L, top); return; }
+    }
+    lua_settop(L, env);
+    const bool lua = path.size() > 4 && (path.compare(path.size() - 4, 4, ".lua") == 0 || path.compare(path.size() - 4, 4, ".LUA") == 0);
+    std::vector<uint8_t> bytes;
+    if (!lua || !ab::ReadLuaFile(path, bytes) || bytes.empty()) { lua_settop(L, top); return; }
+    std::string text(bytes.begin(), bytes.end());
+    const bool level = text.find("world") != std::string::npos && bytes[0] != 0x1b;
+    lua_getfield(L, env, "loadLevelInternal");
+    if (level && lua_isfunction(L, -1)) {
+        lua_getfield(L, env, "levelFolder");
+        std::string folder = lua_isstring(L, -1) ? lua_tostring(L, -1) : "levels/";
+        lua_pop(L, 1);
+        savedLevels_[folder + "dropped.temp.lua"] = text;      // loadLevel reads a .temp level from memory (the editor's TAB copy)
+        lua_pushstring(L, (folder + "dropped.temp").c_str());
+        if (lua_pcall(L, 1, 0, 0) != 0) Print(std::string("dropped level: ") + lua_tostring(L, -1));
+        lua_settop(L, top);
+        return;
+    }
+    lua_settop(L, env);
+    if (luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), path.c_str()) == 0) {
+        lua_pushvalue(L, env);
+        lua_setfenv(L, -2);
+        if (lua_pcall(L, 0, 0, 0) != 0) Print(std::string("dropped script: ") + lua_tostring(L, -1));
+    } else Print(std::string("dropped script: ") + lua_tostring(L, -1));
+    lua_settop(L, top);
+}
+
+void GamePlatform::RecordRewind() {
+    std::vector<RewindBody> snap;
+    for (const auto& o : Physics().Objects()) {
+        if (!o || !o->pbody) continue;
+        const PhysBody& b = *o->pbody;
+        snap.push_back(RewindBody{o->name, b.PosX(), b.PosY(), b.Angle(), b.VelX(), b.VelY(), b.AngularVelocity(), b.IsAwake()});
+    }
+    rewind_.push_back(std::move(snap));
+    while (rewind_.size() > 600) rewind_.pop_front();
+}
+
+// rewind(frames): back that many frames (1 when left out); objects made since then stay where they are, destroyed ones do not come back.
+// Returns how many frames it went back.
+int GamePlatform::Rewind(int frames) {
+    if (frames < 1) frames = 1;
+    int done = 0;
+    while (done < frames && rewind_.size() > 1) { rewind_.pop_back(); done++; }   // the newest is the frame being shown
+    if (rewind_.empty() || done == 0) return 0;
+    for (const RewindBody& r : rewind_.back()) {
+        PhysObject* o = nullptr;
+        for (const auto& p : Physics().Objects()) if (p && p->pbody && p->name == r.name) { o = p.get(); break; }
+        if (!o) continue;
+        o->pbody->SetTransform(r.x, r.y, r.a);
+        o->pbody->SetLinearVelocity(r.vx, r.vy);
+        o->pbody->SetAngularVelocity(r.w);
+        o->pbody->SetAwake(r.awake);
+        if (r.awake) { o->pbody->SetLinearVelocity(r.vx, r.vy); o->pbody->SetAngularVelocity(r.w); }   // SetAwake(false) zeroes the speeds
+    }
+    rewindBlock_ = true;     // the frame after a rewind is not recorded twice
+    return done;
+}
+
 void GamePlatform::RunFrame(float dt) {
+    if (!rewindBlock_) RecordRewind();
+    rewindBlock_ = false;
     dt *= speed_ * (speedBoost_ ? 2.0f : 1.0f);
     // v2.2: the script globals gameSpeedFactor (the time step of everything: scripts, animations, physics, particles) and
     // physicsSpeedFactor (only the physics steps; the retail 3.2.0+ exes scaled everything with it) are read every frame.
@@ -439,17 +539,42 @@ void GamePlatform::RunFrame(float dt) {
         if (lua_isnumber(L, -1) && lua_tonumber(L, -1) > 0) dt *= (float)lua_tonumber(L, -1);
         // Angry Birds Star Wars bullet time (Obi-Wan, the Force powers): the exe's delta-time multiplier set by
         // setDeltaTimeMultiplier scales the time step of the whole frame; updateBulletTime divides it back out for its own timers.
+        // Stella is different: its GameScene.update multiplies the time it is given by getDeltaTimeMultiplier() itself and keeps
+        // the given time as real time (g_realDt, the aim reticle's timers), so the scripts get the frame's real time and only the
+        // physics and the particles are slowed (scaled twice, Stella's aim timers ran at a millionth and its reticle never showed)
         lua_getfield(L, -2, "g_deltaTimeMultiplier");
-        if (lua_isnumber(L, -1) && lua_tonumber(L, -1) > 0) dt *= (float)lua_tonumber(L, -1);
+        if (lua_isnumber(L, -1) && lua_tonumber(L, -1) > 0) {
+            if (scripts_->IsStella()) stellaTimeMult_ = (float)lua_tonumber(L, -1);
+            else dt *= (float)lua_tonumber(L, -1);
+        } else stellaTimeMult_ = 1.0f;
         lua_pop(L, 1);
         lua_getfield(L, -2, "physicsSpeedFactor");
         if (lua_isnumber(L, -1) && lua_tonumber(L, -1) > 0) physicsScale = (float)lua_tonumber(L, -1);
+        if (scripts_->IsStella()) physicsScale *= stellaTimeMult_;
         lua_settop(L, top);
     }
     Physics().Frame().physicsScale = physicsScale;
     // Angry Birds Space (the exe's 0x482990): every frame each background element moves by its velocity and its scale grows by its scaleSpeed
-    if (scripts_ && scripts_->IsSpace() && newTheme_) { UpdateNewThemeLayers(bgLayers_, dt); UpdateNewThemeLayers(ntFg_, dt); }
+    if (scripts_ && (scripts_->IsSpace() || scripts_->IsStella()) && newTheme_) { UpdateNewThemeLayers(bgLayers_, dt); UpdateNewThemeLayers(ntFg_, dt); }
+    // Space 1.1.0 (iPhone): the planets and clouds drift sideways. velX is in physics units a second, as in the PC exe (0x482990: x += velX * dt,
+    // x in physics units), shown at the layer's scale: physicsToWorld * scale pixels of the 1024-wide screen for each unit. (It was taken as
+    // 480x320 pixels a frame at 30 fps, which moved the clouds about 3.5 times too fast.)
+    if (scripts_ && scripts_->IsSpace() && !newTheme_ && screenWidth_ > 0) {
+        float p2w = 20.0f;
+        lua_State* L = scripts_->State();
+        int top = lua_gettop(L);
+        lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+        float p = 0;
+        if (GetNumber(L, lua_gettop(L), "physicsToWorld", p) && p > 0) p2w = p;
+        lua_settop(L, top);
+        for (ThemeSprite& t : themeSprites_) {
+            if (t.wrapW != -1 || t.velX == 0) continue;
+            float scale = (t.layer >= 0 && t.layer < (int)bgLayers_.size()) ? bgLayers_[t.layer].scale : 1.0f;
+            t.x = std::fmod(t.x + t.velX * dt * p2w * scale / 1024.0f + 1.0f, 1.0f);
+        }
+    }
     if (scripts_ && scripts_->IsSpace()) for (ThemeSprite& t : themeSprites_) {
+        if (t.wrapW == -1) continue;   // the iPhone drift above moves these (they are a part of the screen: velX * dt moved them velX screens a second too)
         t.x += t.velX * dt; t.y += t.velY * dt;
         if (t.wrapW > 0) { if (t.x > t.wrapW) t.x -= 2 * t.wrapW; else if (t.x < -t.wrapW) t.x += 2 * t.wrapW; }
         if (t.wrapH > 0) { if (t.y > t.wrapH) t.y -= 2 * t.wrapH; else if (t.y < -t.wrapH) t.y += 2 * t.wrapH; }
@@ -570,10 +695,10 @@ void GamePlatform::RunFrame(float dt) {
         SelectRioAnimations(dt);
         if (Physics().Frame().running) { UpdateRioBirdFaces(dt); UpdateRioSquash(dt); }
     }
-    if (scripts_ && (scripts_->IsRio() || scripts_->IsSpace())) { bool ok = scripts_->Draw(); if (!ok && std::getenv("AB_DRAWDBG")) std::fprintf(stderr, "draw() failed\n"); }      // Rio: the exe calls draw() after update()
+    if (scripts_ && (scripts_->IsRio() || scripts_->IsSpace() || scripts_->IsStella())) { bool ok = scripts_->Draw(); if (!ok && std::getenv("AB_DRAWDBG")) std::fprintf(stderr, "draw() failed\n"); }      // Rio: the exe calls draw() after update()
     // 0x40a8cb: the particles move only while the physics is enabled
     bool seasons = IsSeasonsScripts();
-    if (Physics().Frame().running) UpdateParticles(dt, true, seasons ? -1 : 0);
+    if (Physics().Frame().running) UpdateParticles(scripts_ && scripts_->IsStella() ? dt * stellaTimeMult_ : dt, true, seasons ? -1 : 0);
     // Seasons: the menus switch their own particles on with the global enableMenuParticles
     if (scripts_) {
         lua_State* L = scripts_->State();
@@ -611,9 +736,10 @@ void GamePlatform::BeginLevelLoad() {
         Physics().SetGravity(gx, gy);
         // Space: onEntry enables physics before the level file loads, and the flag belongs to the game, not the world; without it the menu
         // levels (level / episode selection) never ran their camera, so the scroll arrows did nothing
-        if (scripts_ && scripts_->IsSpace()) Physics().SetRunning(wasRunning);
+        if (scripts_ && (scripts_->IsSpace() || scripts_->IsStella())) Physics().SetRunning(wasRunning);   // Stella: the same, its ButtonElement taps only update while physics runs
     }
     Physics().Clear();
+    rewind_.clear();
     Physics().SetMaxTranslation(2.0f);          // 0x40d2c0 writes 2.0 and 4.0 to the two translation limits
     // a new level (or a restart) starts without the old one's particles and bird trails
     particles_.clear();
@@ -798,6 +924,15 @@ std::string GamePlatform::ResolveDataFile(const std::string& path) {
             std::string alt = full.substr(0, profile) + "/1024x768/" + full.substr(profile + 4);
             if (std::ifstream(alt.c_str())) return alt;
         }
+    }
+    // v3.1: Rio HD 2.0.0 takes the Retina iPad pictures (2048x1536) for any screen wider than 1024 and draws them one to one, as on a
+    // 2048-pixel screen: at 1280x720 every menu, button and the power-up bar came out twice their size. Below 2048x1536 the 1024x768
+    // pictures of the same name are read instead
+    size_t retina = full.find("/2048x1536/");
+    const bool luaFile = full.size() > 4 && full.compare(full.size() - 4, 4, ".lua") == 0;   // (the load list keeps its own name: its table is keyed by the folder)
+    if (retina != std::string::npos && !luaFile && screenWidth_ < 2048 && screenHeight_ < 1536) {
+        std::string alt = full.substr(0, retina) + "/1024x768/" + full.substr(retina + 11);
+        if (std::ifstream(alt.c_str())) return alt;
     }
     return full;
 }
@@ -992,7 +1127,7 @@ void GamePlatform::OnContactStarWars(PhysObject& pa, PhysObject& pb, ContactHand
     }
 
     std::string matA, matB;
-    EntryString(L, ia, "material", matA); EntryString(L, ib, "material", matB);
+    if (!EntryString(L, ia, "material", matA)) EntryString(L, ia, "materialName", matA); if (!EntryString(L, ib, "material", matB)) EntryString(L, ib, "materialName", matB);
 
     if (cA || cB) {                                                  // a bird against a block
         PhysObject* bird = cA ? A : B; PhysObject* block = cA ? B : A;
@@ -1119,7 +1254,7 @@ void GamePlatform::OnContactStarWars(PhysObject& pa, PhysObject& pb, ContactHand
 
 void GamePlatform::OnContact(PhysObject& pa, PhysObject& pb, ContactHandle& contact) {
     if (scripts_) EmitHook(scripts_->State(), "contact", pa.name.c_str(), pb.name.c_str());
-    if (scripts_ && scripts_->IsStarWars()) { OnContactStarWars(pa, pb, contact); return; }
+    if (scripts_ && (scripts_->IsStarWars() || scripts_->IsStella())) { OnContactStarWars(pa, pb, contact); return; }
     // v2.5: a contact with a sensor goes to the global enterCollision(a, b) / exitCollision(a, b) in every game whose script defines one of them (Space always)
     if (scripts_ && (pa.isSensor || pb.isSensor) && (scripts_->IsSpace() || HasScriptFunction("enterCollision") || HasScriptFunction("exitCollision"))) {
         if (scripts_->IsSpace()) SpaceSensorTouch(pa, pb, true);
@@ -1228,6 +1363,7 @@ void GamePlatform::SetBackend(RenderBackend* backend, int screenWidth, int scree
 
 void GamePlatform::Resize(int screenWidth, int screenHeight) {
     bool changed = sizeKnown_ && (screenWidth != screenWidth_ || screenHeight != screenHeight_);
+    const int oldW = screenWidth_, oldH = screenHeight_;
     sizeKnown_ = true;
     screenWidth_ = screenWidth;
     screenHeight_ = screenHeight;
@@ -1236,6 +1372,30 @@ void GamePlatform::Resize(int screenWidth, int screenHeight) {
     lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
     lua_pushnumber(L, screenWidth); lua_setfield(L, -2, "screenWidth");
     lua_pushnumber(L, screenHeight); lua_setfield(L, -2, "screenHeight");
+    // v3.1: Friends 2.0.0 lays its menus out by the size the phone reports (g_updatedScreenWidth / Height, read by update()); a resized
+    // window reports its new size there too, so the game no longer stays at the size it started with
+    lua_getfield(L, -1, "g_updatedScreenWidth");
+    lua_getfield(L, -2, "g_updatedScreenHeight");
+    const bool phoneSize = !lua_isnil(L, -2);
+    const double reportedW = lua_tonumber(L, -2), reportedH = lua_tonumber(L, -1);
+    lua_pop(L, 2);
+    // v3.2: the Seasons 4.x PC exe sets them too, from the start (its update takes the screen size from them, and checkResolution and
+    // the cursor compare against them: without them the first frames stopped on "attempt to compare nil with number").
+    // And they follow the window whenever they differ from it, not only when it is resized: a window that opened at another size than
+    // the scripts were loaded at (maximized, or a saved size) left Friends 2.0.0 drawn at 800x480 in the corner, its buttons out of reach
+    if (scripts_->IsSeasons4() || phoneSize) {
+        if (!phoneSize || reportedW != screenWidth || reportedH != screenHeight) {
+            lua_pushstring(L, "g_updatedScreenWidth"); lua_pushnumber(L, screenWidth); lua_rawset(L, -3);    // raw: the globals may refuse new names
+            lua_pushstring(L, "g_updatedScreenHeight"); lua_pushnumber(L, screenHeight); lua_rawset(L, -3);
+            if (phoneSize) {
+                lua_getfield(L, -1, "abWindowResized");          // the pages built at the old size take the new one (friends2_natives.lua)
+                if (lua_isfunction(L, -1)) {
+                    lua_pushnumber(L, reportedW > 0 ? reportedW : oldW); lua_pushnumber(L, reportedH > 0 ? reportedH : oldH);
+                    if (lua_pcall(L, 2, 0, 0) != 0) { std::fprintf(stderr, "abWindowResized: %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+                } else lua_pop(L, 1);
+            }
+        }
+    }
     lua_pop(L, 1);
     // the exe tells the scripts when the window is resized: they lay the cameras and pages out again
     if (changed) scripts_->ResolutionChanged((float)screenWidth, (float)screenHeight);
@@ -1266,9 +1426,26 @@ void GamePlatform::EndFrame() {
         particles_.clear();
     }
     gameDrawnLast_ = gameDrawn_; gameDrawn_ = false;
+    const bool drawnAhead = menuDrawnAhead_;
     // 2.0.0 draws the menu list itself, in screen space, over everything (0x4161c0)
-    if (!menuParticlesByScript_ && !IsSeasonsScripts()) DrawParticlesOf(false, 1);
+    if (!menuParticlesByScript_ && !IsSeasonsScripts() && !drawnAhead) DrawParticlesOf(false, 1);
+    menuDrawnAhead_ = false;
     FlushZ();
+    // the ads stand-in (Classic 3.x pause menu promo) draws over the finished frame, below the cursor
+    if (scripts_ && backend_) {
+        lua_State* L = scripts_->State();
+        const int top = lua_gettop(L);
+        lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+        lua_getfield(L, -1, "abDrawAds");
+        if (lua_isfunction(L, -1)) {
+            RenderState keep = state_;
+            state_ = RenderState();
+            if (lua_pcall(L, 0, 0, 0) != 0) std::fprintf(stderr, "abDrawAds: %s\n", lua_tostring(L, -1));
+            FlushZ();
+            state_ = keep;
+        }
+        lua_settop(L, top);
+    }
     if (!cursors_.empty() && backend_) {
         backend_->SetClip(false, 0, 0, 0, 0);
         RenderState keep = state_;
@@ -1380,6 +1557,7 @@ void GamePlatform::FlushZ() {
 
 void GamePlatform::ResSetClipRect(float x, float y, float w, float h) {
     FlushZ();
+    clipX_ = x; clipY_ = y; clipW_ = w; clipH_ = h;
     if (backend_) backend_->SetClip(true, x, y, w, h);
 }
 
@@ -1399,6 +1577,24 @@ const GamePlatform::TextureInfo* GamePlatform::TextureFile(const std::string& pa
     if (!loaded && path.size() > 4 && path.compare(path.size() - 4, 4, ".png") == 0) {   // the Android builds keep their images as .pvr (a tiling texture is asked for as .png)
         std::string alt = path.substr(0, path.size() - 4) + ".pvr", altError;
         if (LoadPngFile(alt, image, &altError)) loaded = true; else if (altError.find("cannot open") == std::string::npos) error = altError;
+        if (!loaded) {   // v3.1: Rio HD 2.0.0 keeps some sheets as .webp
+            alt = path.substr(0, path.size() - 4) + ".webp"; altError.clear();
+            if (LoadPngFile(alt, image, &altError)) loaded = true; else if (altError.find("cannot open") == std::string::npos) error = altError;
+        }
+    }
+    if (!loaded && error.find("cannot open") != std::string::npos) {   // v3.1: Rio HD 2.0.0 asks for a theme texture next to the block sheets (ingame_assets) while it sits in a sibling folder (themes_ios)
+        size_t slash = path.find_last_of('/');
+        size_t up = slash == std::string::npos || slash == 0 ? std::string::npos : path.find_last_of('/', slash - 1);
+        if (up != std::string::npos) {
+            const std::string parent = path.substr(0, up), file = path.substr(slash + 1), stem = file.substr(0, file.size() > 4 ? file.size() - 4 : file.size());
+            for (const std::string& dir : ListFolder(parent)) {
+                for (const char* ext : {".png", ".pvr", ".webp"}) {
+                    std::string alt = parent + "/" + dir + "/" + stem + ext, altError;
+                    if (alt != path && LoadPngFile(alt, image, &altError)) { loaded = true; break; }
+                }
+                if (loaded) break;
+            }
+        }
     }
     if (loaded) {
         info.handle = backend_->CreateTexture(image, repeat);
@@ -1507,6 +1703,22 @@ void GamePlatform::ResDrawSprite(const std::string& name, float x, float y, int 
         const SpriteSheet* partSheet = nullptr;
         const Sprite* ps = sprites_.Find(part.sprite, &partSheet);
         if (!ps) continue;
+        if (part.exact) {
+            // a scaled, turned or mirrored part (Stella's theme composites stretch one strip of leaves 10 times across): its pivot lands on
+            // (x + part.x, y + part.y) and it is scaled, turned and mirrored about that point
+            const float ksx = part.scale, ksy = part.scaleY != 0 ? part.scaleY : part.scale;
+            if (ksx == 0 || ksy == 0) continue;
+            const float px = x + (float)part.x, py = y + (float)part.y;
+            const RenderState keep = state_;
+            state_.sx = keep.sx * ksx; state_.sy = keep.sy * ksy;
+            state_.tx = (px + keep.tx) / ksx - px; state_.ty = (py + keep.ty) / ksy - py;
+            state_.angle = keep.angle + part.angle;
+            state_.pivotX = (float)ps->pivotX; state_.pivotY = (float)ps->pivotY;
+            state_.flipX = keep.flipX != part.flipX;
+            DrawSpriteAt(*partSheet, *ps, px - (float)ps->pivotX, py - (float)ps->pivotY, 0, 0, false, 0, 0);
+            state_ = keep;
+            continue;
+        }
         // the pivot is measured from the composite's top left corner: a part turns about that same point, so its own pivot is moved by where it sits in the composite
         const float keepPX = state_.pivotX, keepPY = state_.pivotY;
         state_.pivotX = keepPX - ((float)(part.x - ps->pivotX) + (float)ox);
@@ -1519,14 +1731,17 @@ void GamePlatform::ResDrawSprite(const std::string& name, float x, float y, int 
 
 void GamePlatform::ResCreateCompoSpriteSet(const std::string& path) {
     std::string error;
-    if (!sprites_.LoadCompoSet(path, ResolveDataFile(path), &error)) Print("createCompoSpriteSet: " + error);
+    if (!sprites_.LoadCompoSet(path, ResolveDataFile(path), &error)) Print("createCompoSpriteSet: " + path + ": " + error);
 }
 
 // 0x4313d0: left, top, right, bottom of the composite relative to its origin
 void GamePlatform::ResGetCompoSpriteBounds(const std::string&, const std::string& name, float& x1, float& y1, float& x2, float& y2) {
     x1 = y1 = x2 = y2 = 0;
     const CompoSprite* compo = sprites_.FindCompo(name);
-    if (!compo) return;
+    if (!compo) {      // sprites and composites share one name table: a plain sprite's bounds are its own (Friends' power-up tutorial pictures)
+        if (const Sprite* s = sprites_.Find(name)) { x1 = (float)-s->pivotX; y1 = (float)-s->pivotY; x2 = (float)(s->w - s->pivotX); y2 = (float)(s->h - s->pivotY); }
+        return;
+    }
     int w, h, ox, oy;
     sprites_.CompoExtent(*compo, w, h, ox, oy);
     x1 = (float)-ox; y1 = (float)-oy; x2 = (float)(w - ox); y2 = (float)(h - oy);
@@ -1817,7 +2032,29 @@ void GamePlatform::DrawLine2D(float x1, float y1, float x2, float y2, float widt
     EmitQuad(q);
 }
 
+bool GamePlatform::ResPeekSprite(const std::string& file, const std::string& sprite, float& w, float& h, float& px, float& py) {
+    w = h = px = py = 0;
+    auto it = peekedSheets_.find(file);
+    if (it == peekedSheets_.end()) {
+        SpriteSheet sheet;
+        std::ifstream in(ResolveDataFile(file), std::ios::binary);
+        if (in) {
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            std::string error;
+            if (!ParseSpriteSheet(bytes, sheet, &error)) sheet.sprites.clear();
+        }
+        it = peekedSheets_.emplace(file, std::move(sheet)).first;
+    }
+    for (const Sprite& sp : it->second.sprites)
+        if (sp.name == sprite) { w = (float)sp.w; h = (float)sp.h; px = (float)sp.pivotX; py = (float)sp.pivotY; return true; }
+    return false;
+}
+
 void GamePlatform::ResCreateSpriteSheet(const std::string& path) {
+    {   // v3.1: the width of the picture set the sheets come from (images/480x320/...): Star Wars' iPhone backgrounds are drawn for it, not for 1024x768
+        size_t i = path.find("x320/"); if (i == std::string::npos) i = path.find("x640/"); if (i == std::string::npos) i = path.find("x768/");
+        if (i != std::string::npos) { size_t a = path.rfind('/', i); if (a != std::string::npos) { int w = std::atoi(path.c_str() + a + 1); if (w > 0) imageSetW_ = (float)w; } }
+    }
     std::string error;
     // debug build: the sheets of Angry Birds Island HD that 2.0.0's scripts ask for (the challenge list, the Hatchery and Challenges buttons of the
     // episode selection, the splash screen) are taken from the Hatchery's image folder when it has them
@@ -1973,6 +2210,33 @@ void GamePlatform::ResCreateBitmapFont(const std::string& path) {
     fonts_[BaseName(path)] = font;
 }
 
+// A font the scripts use without having made it (the exe made every font of the fonts folder): Seasons 4.1.0's achievement pop-up asks
+// for FONT_GAMECENTER_BASIC, which its iPad data has only in fonts/960x640 and fonts/480x320. It is read from the folder of the fonts
+// already made, or else from the nearest-sized sibling folder; until then the pop-up's text came out in the big basic font
+void GamePlatform::ResUseFont(const std::string& name) {
+    if (!fonts_.count(name) && !name.empty() && !missingFonts_.count(name) && !fonts_.empty()) {
+        missingFonts_.insert(name);
+        std::string dir = fonts_.begin()->second.directory;
+        std::vector<std::string> tries{dir + "/" + name + ".dat"};
+        size_t slash = dir.find_last_of("/\\");
+        if (slash != std::string::npos) {
+            std::string parent = dir.substr(0, slash);
+            for (const char* r : {"960x640", "1024x768", "2048x1536", "800x480", "480x320"}) tries.push_back(parent + "/" + r + "/" + name + ".dat");
+        }
+        for (const std::string& f : tries) {
+            std::vector<uint8_t> bytes;
+            BitmapFont font;
+            std::string error;
+            if (!ReadWholeFile(f, bytes) || !ParseBitmapFont(bytes, font, &error)) continue;
+            size_t s = f.find_last_of("/\\");
+            font.directory = f.substr(0, s);
+            fonts_[name] = font;
+            break;
+        }
+    }
+    if (fonts_.count(name)) current_ = name;
+}
+
 const BitmapFont* GamePlatform::CurrentFont() const {
     auto it = fonts_.find(current_);
     return it == fonts_.end() ? nullptr : &it->second;
@@ -1996,9 +2260,9 @@ std::string GamePlatform::ResGetString(const std::string& group, const std::stri
 
 float GamePlatform::ResGetStringWidth(const std::string& text) {
     const BitmapFont* f = CurrentFont();
-    return f ? f->StringWidth(text) : 0.0f;
+    return f ? f->StringWidth(text) * FontScale() : 0.0f;
 }
-float GamePlatform::ResGetFontHeight() { const BitmapFont* f = CurrentFont(); return f ? (float)(f->maxAscent + f->maxDescent) : 0.0f; }
+float GamePlatform::ResGetFontHeight() { const BitmapFont* f = CurrentFont(); return f ? (float)(f->maxAscent + f->maxDescent) * FontScale() : 0.0f; }
 float GamePlatform::ResGetFontLeading() { const BitmapFont* f = CurrentFont(); return f ? (float)f->leading : 0.0f; }
 float GamePlatform::ResGetFontTracking() { const BitmapFont* f = CurrentFont(); return f ? (float)f->tracking : 0.0f; }
 float GamePlatform::ResGetFontMaxAscending() { const BitmapFont* f = CurrentFont(); return f ? (float)f->maxAscent : 0.0f; }
@@ -2019,10 +2283,11 @@ void GamePlatform::ResDrawString(const std::string& group, const std::string& ke
         else if (*words[i] == "BASELINE" || *words[i] == "VPIVOT") v = 3;     // y is the baseline: no move
         else if (*words[i] == "LEFT") h = 0; else if (*words[i] == "HCENTER") h = 1; else if (*words[i] == "RIGHT") h = 2;
     }
-    float width = font->StringWidth(text);
-    if (v == 0) y += (float)font->maxAscent;
-    else if (v == 1) y += (float)(font->maxAscent - (font->maxAscent + font->maxDescent) / 2);
-    else if (v == 2) y -= (float)font->maxDescent;
+    const float k = FontScale();
+    float width = font->StringWidth(text) * k;
+    if (v == 0) y += (float)font->maxAscent * k;
+    else if (v == 1) y += (float)(font->maxAscent - (font->maxAscent + font->maxDescent) / 2) * k;
+    else if (v == 2) y -= (float)font->maxDescent * k;
     if (h == 1) x -= (float)((int)width / 2);
     else if (h == 2) x -= width;
 
@@ -2033,8 +2298,11 @@ void GamePlatform::ResDrawString(const std::string& group, const std::string& ke
     for (size_t i = 0; i < chars.size(); i++) {
         auto g = font->glyphs.find(chars[i]);
         if (g == font->glyphs.end()) continue;
-        DrawSpriteAt(sheet, g->second, x, y, 4, 3, false, 0, 0);
-        x += (float)(font->tracking + g->second.w);
+        if (k != 1.0f) {      // a scaled glyph: its pivot (the baseline) scales with it
+            Sprite sg = g->second;
+            DrawSpriteAt(sheet, sg, x, y + (float)sg.pivotY * (1.0f - k), 4, 3, true, (float)sg.w * k, (float)sg.h * k);
+        } else DrawSpriteAt(sheet, g->second, x, y, 4, 3, false, 0, 0);
+        x += (float)(font->tracking + g->second.w) * k;
     }
 }
 
@@ -2127,6 +2395,7 @@ void GamePlatform::SetTheme(const std::string& themeArg) {
                             bgLayers_.push_back(layer);
                         }
                         fgLayers_.push_back(prefix + "_LAYER_1"); fgSpeed_.push_back(1.0f); fgScale_.push_back(1.0f); fgAuto_.push_back(0.0f); fgOffset_.push_back(0.0f);
+                        fgLayers_.push_back(prefix + "_LAYER_GRASS"); fgSpeed_.push_back(1.0f); fgScale_.push_back(1.0f); fgAuto_.push_back(0.0f); fgOffset_.push_back(0.0f);      // the grass strip that lies over the ground in front of the birds
                     }
                 }
                 lua_pop(L, 1);
@@ -2135,7 +2404,9 @@ void GamePlatform::SetTheme(const std::string& themeArg) {
                 if (lua_isstring(L, -1)) themeTexture_ = lua_tostring(L, -1);
                 lua_pop(L, 1);
                 bool newThemeSystem = false;   // NEW_THEME_SYSTEM (0x166): the layers are Flash-style, a missing xMult is 0 and not 1 (0x43b8xx layer loader)
-                lua_getfield(L, t, "NEW_THEME_SYSTEM"); newThemeSystem = lua_toboolean(L, -1) != 0; lua_pop(L, 1); newTheme_ = newThemeSystem;
+                lua_getfield(L, t, "NEW_THEME_SYSTEM"); newThemeSystem = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
+                if (scripts_ && scripts_->IsStella()) newThemeSystem = true;   // Stella's themes are all in the new system (zDistance, flags, offsets), without the flag
+                newTheme_ = newThemeSystem;
                 lua_getfield(L, t, "bgLayers");
                 if (lua_istable(L, -1)) {
                     int n = (int)lua_objlen(L, -1);
@@ -2161,6 +2432,7 @@ void GamePlatform::SetTheme(const std::string& themeArg) {
                                 layer.scale = number(lt, "scale", 1);
                                 layer.posX = number(lt, "posX", 0); layer.posY = number(lt, "posY", 0);
                                 layer.offX = number(lt, "offsetX", 0); layer.offY = number(lt, "offsetY", 0); layer.baseOffY = layer.offY; layer.relY = number(lt, "relativeY", 3.4028235e38f);
+                                lua_getfield(L, lt, "offsetY"); if (lua_type(L, -1) == LUA_TSTRING) { std::string a = lua_tostring(L, -1); layer.anchorV = a == "top" ? 1 : a == "bottom" ? 2 : 0; } lua_pop(L, 1);
                                 layer.scaleSpeed = number(lt, "scaleSpeed", 1);
                                 layer.velX = number(lt, "velX", 0); layer.velY = number(lt, "velY", 0);
                                 layer.scaleX = number(lt, "scaleX", layer.scale); layer.scaleY = number(lt, "scaleY", layer.scale);
@@ -2244,13 +2516,42 @@ void GamePlatform::SetTheme(const std::string& themeArg) {
                             lua_rawgeti(L, -1, 6);
                             layer.hasFixedX = lua_isnumber(L, -1) != 0;         // the Seasons crane layers carry a position here; Piglantis' fixed layers (the islands) have none and start at the level's left edge
                             lua_pop(L, 1);
+                            if (scripts_ && scripts_->IsSpace()) {
+                                // Angry Birds Space 1.1.0 (iPhone): {sheet, sprite, zDistance, scale, elements, bgLayer = , offsetX = , offsetY = , scaleSpeed = }
+                                int lt = lua_gettop(L);
+                                layer.mobile = true; layer.empty = layer.sprite.empty();
+                                layer.zDist = layer.speed; layer.looping = true;
+                                lua_getfield(L, lt, "bgLayer"); layer.bgFill = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
+                                layer.fracX = number(lt, "offsetX", 0); layer.fracY = number(lt, "offsetY", 0);
+                                layer.scaleSpeed = number(lt, "scaleSpeed", 0);
+                                lua_rawgeti(L, lt, 5);
+                                if (lua_istable(L, -1)) {        // the scattered planets and clouds: amount copies of the listed sprites, drifting by velX
+                                    int et = lua_gettop(L);
+                                    int amount = (int)number(et, "amount", 0);
+                                    std::vector<std::string> names;
+                                    lua_getfield(L, et, "sprites");
+                                    if (lua_istable(L, -1)) for (int k = 1; k <= (int)lua_objlen(L, -1); k++) { lua_rawgeti(L, -1, k); if (lua_isstring(L, -1)) names.push_back(lua_tostring(L, -1)); lua_pop(L, 1); }
+                                    lua_pop(L, 1);
+                                    static std::mt19937 rng(4242);
+                                    auto rnd = [&]() { return std::uniform_real_distribution<float>(0.0f, 1.0f)(rng); };
+                                    float esc = number(et, "scale", 1), var = number(et, "variation", 0), evx = number(et, "velX", 0);
+                                    for (int k = 0; k < amount && !names.empty(); k++) {
+                                        float sc = esc + (0.5f - rnd()) * 2.0f * var;
+                                        const std::string& sn = names[(size_t)(rnd() * names.size()) % names.size()];
+                                        ThemeSprite ts{sn + std::to_string(k + 1), sn, rnd(), rnd(), sc, sc, 0.0f, 0, (int)bgLayers_.size()};
+                                        ts.velX = evx; ts.wrapW = -1;   // wrapW -1: x and y are screen fractions (drawn by DrawSpaceBackground)
+                                        themeSprites_.push_back(ts);
+                                    }
+                                }
+                                lua_pop(L, 1);
+                            }
                             bgLayers_.push_back(layer);
                         }
                         lua_pop(L, 1);
                     }
                 }
                 lua_pop(L, 1);
-                lua_getfield(L, t, "NEW_THEME_SYSTEM_FOREGROUND"); swTheme_ = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
+                lua_getfield(L, t, "NEW_THEME_SYSTEM_FOREGROUND"); swTheme_ = lua_toboolean(L, -1) != 0 || (scripts_ && scripts_->IsStella()); lua_pop(L, 1);
                 lua_getfield(L, t, "fgLayers");
                 if (lua_istable(L, -1)) {
                     int n = (int)lua_objlen(L, -1);
@@ -2265,6 +2566,7 @@ void GamePlatform::SetTheme(const std::string& themeArg) {
                                     fl.zDist = number(lt, "zDistance", 0); fl.xMult = number(lt, "xMult", 0); fl.yMult = number(lt, "yMult", 1);
                                     fl.scale = number(lt, "scale", 1); fl.scaleX = number(lt, "scaleX", fl.scale); fl.scaleY = number(lt, "scaleY", fl.scale);
                                     fl.posX = number(lt, "posX", 0); fl.posY = number(lt, "posY", 0); fl.offX = number(lt, "offsetX", 0); fl.offY = number(lt, "offsetY", 0); fl.baseOffY = fl.offY; fl.relY = number(lt, "relativeY", 3.4028235e38f);
+                                    lua_getfield(L, lt, "offsetY"); if (lua_type(L, -1) == LUA_TSTRING) { std::string a = lua_tostring(L, -1); fl.anchorV = a == "top" ? 1 : a == "bottom" ? 2 : 0; } lua_pop(L, 1);
                                     lua_getfield(L, lt, "flags");
                                     if (lua_istable(L, -1)) {
                                         fl.hasFlags = true;
@@ -2291,7 +2593,7 @@ void GamePlatform::SetTheme(const std::string& themeArg) {
                             }
                             // 0x44b9xx: with NEW_THEME_SYSTEM_FOREGROUND the foreground layers only go to the new-system vector (0x264) and the positional
                             // loop (sprite sheet, sprite, speed, scale, auto-scroll) is skipped; without it only the positional loop runs
-                            if (scripts_ && scripts_->IsStarWars() && swTheme_) { lua_pop(L, 1); continue; }
+                            if (scripts_ && (scripts_->IsStarWars() || scripts_->IsStella()) && swTheme_) { lua_pop(L, 1); continue; }
                             // Star Wars' newer themes (Cloud City) name the fields: sprite, scale, zDistance, velX, offsetY, downFillColor
                             lua_getfield(L, -1, "particles");
                             if (lua_isstring(L, -1)) { std::string pn = lua_tostring(L, -1); lua_pop(L, 1); float idf = 0; GetNumber(L, lua_gettop(L), "spawnerId", idf); fgParticles_[(int)idf] = pn; lua_getfield(L, -1, "sprite"); }
@@ -2489,6 +2791,8 @@ void GamePlatform::DrawNewThemeLayers(std::vector<BgLayer>& layers, int layerBas
     const float S = ntRef_.s88 > 0 ? ntRef_.s88 : 1.0f;
     // the level's limits (leftLimitWorld ...) widen the box the rocks are scattered over (0x44a0c0)
     float left = camX, right = camX + sw / ws, topW = camY, bottom = camY + sh / ws, lim;
+    float topLimitW = camY - sh / ws;
+    GetNumber(L, env, "topLimitWorld", topLimitW);
     if (GetNumber(L, env, "leftLimitWorld", lim) && lim < left) left = lim;
     if (GetNumber(L, env, "rightLimitWorld", lim) && lim > right) right = lim;
     if (GetNumber(L, env, "topLimitWorld", lim) && lim < topW) topW = lim;
@@ -2498,6 +2802,9 @@ void GamePlatform::DrawNewThemeLayers(std::vector<BgLayer>& layers, int layerBas
     // 0x44c1b0: the foreground (mode 0) takes the world y of the screen's top edge as its reference y every frame, so it does not move vertically with the camera
     const float refYuse = (&layers == &ntFg_) ? camY : ntRef_.refY;
     const float stx = camX - ntRef_.refX, sty = camY - refYuse;
+    // Stella's screen.x / screen.y (and the level cameras) are the middle of the screen, not its top left corner
+    const bool mid = scripts_->IsStella();
+    const float centreX = mid ? sw * 0.5f : 0.0f, centreY = mid ? sh * 0.5f : 0.0f;
     for (size_t i = 0; i < layers.size(); i++) {
         BgLayer& layer = layers[i];
         if (layer.hidden) continue;
@@ -2517,12 +2824,14 @@ void GamePlatform::DrawNewThemeLayers(std::vector<BgLayer>& layers, int layerBas
         // one instance of a sprite whose pivot sits at (posX, posY) in the layer's own coordinates (0x44a1a0)
         auto place = [&](float w, float h, float pivX, float pivY, float posX, float posY, int flags, float& cx, float& cy) {
             float p5 = ((w * 0.5f - pivX) + posX) / S, p6 = ((h * 0.5f - pivY) + posY) / S;
+            // Stella: a layer's offset and pivot are in its own scaled pixels (the sea band at half size lines up with the volcano island's sea)
+            if (mid) { p5 = ((w * 0.5f - pivX) + posX) * layer.scaleX / S; p6 = ((h * 0.5f - pivY) + posY) * layer.scaleY / S; }
             float shX = stx * z + layer.xMult * stx, shY = sty * z;
             if (flags & 0x40) shX = stx;
             if (flags & 0x20) shY = sty;
             float ox = shX + ntRef_.refX + z * (p5 / f4) + p5 * (1.0f - z);
             float oy = shY + refYuse + p6 * (1.0f - z) + z * (p6 / f4);
-            cx = (ox - camX) * ws; cy = (oy - camY) * ws;
+            cx = (ox - camX) * ws + centreX; cy = (oy - camY) * ws + centreY;
         };
         auto drawAt = [&](const std::string& name, float cx, float cy, float szx, float szy) {
             state_ = RenderState();
@@ -2537,9 +2846,51 @@ void GamePlatform::DrawNewThemeLayers(std::vector<BgLayer>& layers, int layerBas
         const float pivX = sp ? (float)sp->pivotX : (float)cox, pivY = sp ? (float)sp->pivotY : (float)coy;
         const float szx = f * layer.scaleX, szy = f * layer.scaleY;
         float cx = 0, cy = 0;
+        // Stella's offsetY "top" / "bottom" (ThemeSystem, 0x8ee3a / 0x8ef58 and 0x8f818): the exe places the layer with offset 0 under every camera of
+        // gameCamera.resolutionCorrectedCameras, takes the camera where it stands highest, and moves it so that it sits just above that camera's
+        // top edge ("top") or just below its bottom edge ("bottom"): the foreground leaves frame the level and come into view as the camera zooms out
+        if (layer.anchorV && !layer.anchorReady) {
+            layer.anchorReady = true;
+            struct Cam { float px, py, sx; };
+            std::vector<Cam> cams;
+            lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+            lua_getfield(L, -1, "gameCamera");
+            if (lua_istable(L, -1)) {
+                lua_getfield(L, -1, "resolutionCorrectedCameras");
+                if (lua_istable(L, -1)) {
+                    const int ct = lua_gettop(L);
+                    for (int k = 1;; k++) {
+                        lua_rawgeti(L, ct, k);
+                        if (!lua_istable(L, -1)) { lua_pop(L, 1); break; }
+                        Cam c{0, 0, 0};
+                        GetNumber(L, lua_gettop(L), "px", c.px); GetNumber(L, lua_gettop(L), "py", c.py); GetNumber(L, lua_gettop(L), "sx", c.sx);
+                        if (c.sx > 0) cams.push_back(c);
+                        lua_pop(L, 1);
+                    }
+                }
+                lua_pop(L, 1);
+            }
+            lua_pop(L, 2);
+            if (cams.empty()) cams.push_back({camX, camY, ws});
+            float bestY = 0, bestK = 0, bestSz = 0; bool have = false;
+            for (const Cam& c : cams) {
+                const float cf4 = c.sx / S, cf = z + cf4 * (1.0f - z);
+                const float refY = (&layers == &ntFg_) ? c.py : ntRef_.refY;
+                const float p6 = ((h * 0.5f - pivY) + layer.posY) * layer.scaleY / S;
+                const float oy = (c.py - refY) * z + refY + p6 * (1.0f - z) + z * (p6 / cf4);
+                const float y = (oy - c.py) * c.sx + centreY;
+                if (!have || y < bestY) { have = true; bestY = y; bestK = layer.scaleY / S * ((1.0f - z) + z / cf4) * c.sx; bestSz = cf * layer.scaleY; }
+            }
+            if (have && bestK != 0) {
+                // the shift in screen pixels at that camera; drawn below in this frame's scale
+                const float target = layer.anchorV == 1 ? -h * bestSz * 0.5f : sh + h * bestSz * 0.5f;
+                layer.anchorDY = target - bestY;
+                layer.anchorDY *= 1.0f / bestK;                                     // in the layer's own pixels (an offset)
+            }
+        }
         // 0x44b820 (first call): a layer with relativeY gets its y offset (+0x7c) set to (H * relativeY - H / 2) / ST4c, replacing its offsetY
         const float offYeff = layer.relY < 3.0e38f ? ((float)screenHeight_ * layer.relY - (float)screenHeight_ * 0.5f) : layer.offY;
-        place(w, h, pivX, pivY, layer.posX + layer.offX, layer.posY + offYeff, layer.flags, cx, cy);
+        place(w, h, pivX, pivY, layer.posX + layer.offX, layer.posY + offYeff + layer.anchorDY, layer.flags, cx, cy);
         layer.lastOutX = camX + cx / ws; layer.lastOutY = camY + cy / ws; layer.lastW = w; layer.lastH = h;
         if (std::getenv("AB_DRAWDBG")) { static int dn = 0; if (dn++ < 60) std::fprintf(stderr, "NTL %zu %s w=%g h=%g piv=%g,%g z=%g f=%g size=%g,%g pos=%g,%g flags=%x -> screen %g,%g cam=%g,%g ws=%g\n", i, layer.sprite.c_str(), w, h, pivX, pivY, z, f, szx, szy, layer.posX + layer.offX, layer.posY + layer.offY, layer.flags, cx, cy, camX, camY, ws); }
         if ((sp || compo) && szx > 0 && szy > 0 && w > 0 && h > 0) {   // 0x44c1b0: the colour above / below the layer's edge (0x449ea0)
@@ -2552,12 +2903,13 @@ void GamePlatform::DrawNewThemeLayers(std::vector<BgLayer>& layers, int layerBas
                 yy = y; for (int n = 0; n < 64 && yy - stepY * 0.5f < sh; n++) { yy += stepY; drawAt(layer.sprite, x, yy, szx, szy); }
             };
             drawAt(layer.sprite, cx, cy, szx, szy);
-            // 0x44bfa0: H_REPEAT, REPEAT_LEFT_ONLY / REPEAT_RIGHT_ONLY
+            // 0x44bfa0: H_REPEAT, REPEAT_LEFT_ONLY / REPEAT_RIGHT_ONLY, until the screen's edge (Stella's sea band is a strip 4 pixels wide:
+            // 64 copies a side covered only the middle 512 pixels)
             if ((layer.flags & 4) || (layer.flags & 0x300)) {
                 float x = cx;
-                if (!(layer.flags & 0x100)) for (int n = 0; n < 64 && x - stepX * 0.5f < sw; n++) { x += stepX; drawAt(layer.sprite, x, cy, szx, szy); drawVertical(x, cy); }
+                if (!(layer.flags & 0x100)) for (int n = 0; n < 4096 && x - stepX * 0.5f < sw; n++) { x += stepX; drawAt(layer.sprite, x, cy, szx, szy); drawVertical(x, cy); }
                 x = cx;
-                if (!(layer.flags & 0x200)) for (int n = 0; n < 64 && 0.0f < x + stepX * 0.5f; n++) { x -= stepX; drawAt(layer.sprite, x, cy, szx, szy); drawVertical(x, cy); }
+                if (!(layer.flags & 0x200)) for (int n = 0; n < 4096 && 0.0f < x + stepX * 0.5f; n++) { x -= stepX; drawAt(layer.sprite, x, cy, szx, szy); drawVertical(x, cy); }
             }
             drawVertical(cx, cy);
         }
@@ -2585,6 +2937,8 @@ void GamePlatform::DrawNewThemeBackground() { DrawNewThemeLayers(bgLayers_, 0); 
 void GamePlatform::DrawSpaceBackground() {
     if (newTheme_) { DrawNewThemeBackground(); return; }
     float sw = (float)screenWidth_, sh = (float)screenHeight_;
+    // Star Wars on the iPhone: its sprites come from the 480x320 set (the PC and iPad ones are drawn for 1024x768), so they are scaled up by the difference; the offsets stay in 1024x768 units
+    const float spriteK = ((swTheme_ || swBg_) && imageSetW_ > 0 && imageSetW_ < 1000.0f) ? 1024.0f / imageSetW_ : 1.0f;
     float nW = sw / 1024.0f, nH = sh / 768.0f;
     float camX = 0, camY = 0;
     if (scripts_) {
@@ -2601,12 +2955,58 @@ void GamePlatform::DrawSpaceBackground() {
     for (size_t i = 0; i < bgLayers_.size(); i++) {
         BgLayer& layer = bgLayers_[i];
         if (layer.hidden) continue;
+        if (layer.mobile) {
+            // Space 1.1.0 (iPhone): sizes are in 1024x768 screens (u), a layer moves with the camera by its zDistance and grows with the zoom by scaleSpeed;
+            // the bgLayer fills the screen, a sprite layer is a row of copies whose left end is offsetX screens from the middle and whose pivot
+            // sits offsetY screens below it; the elements drift sideways across the screen
+            const float u = std::max(sw / 1024.0f, sh / 768.0f);
+            const float zoom = 1.0f + dws * layer.scaleSpeed;
+            const float shX = -dx * worldScale_ * layer.zDist, shY = -dy * worldScale_ * layer.zDist;
+            const Sprite* sp = layer.empty ? nullptr : sprites_.Find(layer.sprite);
+            if (std::getenv("AB_DRAWDBG")) std::fprintf(stderr, "SPMOB %zu %s found=%d bg=%d frac=%g,%g scale=%g\n", i, layer.sprite.c_str(), sp ? 1 : 0, (int)layer.bgFill, layer.fracX, layer.fracY, layer.scale);
+            const CompoSprite* compo = (!sp && !layer.empty) ? sprites_.FindCompo(layer.sprite) : nullptr;
+            if (compo && layer.bgFill) {        // THEME_1_BG_1 is a composite (the sky and its stars): scaled to cover the screen
+                int cw = 0, ch = 0, cox = 0, coy = 0;
+                sprites_.CompoExtent(*compo, cw, ch, cox, coy);
+                if (cw > 0 && ch > 0) {
+                    float k = std::max(sw / cw, sh / ch) * std::max(1.0f, zoom);
+                    state_ = RenderState();
+                    state_.sx = state_.sy = k;
+                    ResDrawSprite(layer.sprite, ((sw - cw * k) * 0.5f + shX) / k, ((sh - ch * k) * 0.5f + shY) / k, 0, 0, false, 0, 0);
+                }
+            }
+            if (sp && sp->w > 0 && sp->h > 0) {
+                state_ = RenderState();
+                if (layer.bgFill) {
+                    float k = std::max(sw / sp->w, sh / sp->h) * std::max(1.0f, zoom);
+                    float W = sp->w * k, H = sp->h * k;
+                    ResDrawSprite(layer.sprite, (sw - W) * 0.5f + shX, (sh - H) * 0.5f + shY, 0, 0, true, W, H);
+                } else {
+                    float k = layer.scale * u * zoom;
+                    float W = sp->w * k, H = sp->h * k;
+                    float x0 = sw * (0.5f + layer.fracX) + shX + layer.dx, y0 = sh * (0.5f + layer.fracY) - sp->pivotY * k + shY + layer.dy;
+                    x0 = std::fmod(x0, W); if (x0 > 0) x0 -= W;
+                    for (int n = 0; n < 64 && x0 < sw; n++, x0 += W) ResDrawSprite(layer.sprite, x0, y0, 0, 0, true, W, H);
+                }
+            }
+            for (ThemeSprite& t : themeSprites_) {
+                if (t.layer != (int)i || t.wrapW != -1) continue;
+                const Sprite* ep = sprites_.Find(t.sprite);
+                if (!ep) continue;
+                float k = t.scaleX * layer.scale * u * zoom;
+                float W = ep->w * k, H = ep->h * k;
+                float x = std::fmod(t.x * sw + shX + sw * 4.0f, sw + W) - W, y = t.y * sh + shY;
+                state_ = RenderState();
+                ResDrawSprite(t.sprite, x, y - H * 0.5f, 0, 0, true, W, H);
+            }
+            continue;
+        }
         float dxz = dx * layer.zDist, dyz = dy * layer.zDist;
         layer.angle = dxz * 0.05f * layer.angleMult;
         float ext = layer.looping ? std::max(bgRef_.nH0, nH) : std::max(nH, nW);
         static const float swK = std::getenv("AB_BGK") ? (float)std::atof(std::getenv("AB_BGK")) : 0.7f;
         float kk = (swTheme_ || swBg_) ? swK : 1.0f;
-        float E = layer.scale * ext * kk;
+        float E = layer.scale * ext * kk * spriteK;
         float S = (layer.zDist + dws) * layer.scaleSpeed * kk;
         float At = S + E, X = 2 * S + E;
         const Sprite* sp = layer.empty ? nullptr : sprites_.Find(layer.sprite);
@@ -2642,7 +3042,36 @@ void GamePlatform::DrawSpaceBackground() {
                 }
             }
         }
-        // the elements scattered on this layer (createThemeSprite)
+        // the elements scattered on this layer (createThemeSprite). Before an element is drawn it is wrapped as in the exes (Space
+        // 0x468603 / 0x468aef, Star Wars 0x41428c): L is the camera limit the scripts give setCameraLimits, in physics units
+        // (limit * 20 / physicsToWorld); a non-looping layer sends an element moving right past +L back to where it was made
+        // minus L, one moving left past -L 4L further right (the exe's own rule, also for the other two cases); a looping layer
+        // takes (limit * 10 + width / 1024 * 10) / physicsToWorld off or on. An element more than 4 screen heights (in physics
+        // units) above or below where it was made goes back there, 10 units off.
+        float wrapLimit = 0, p2w = 20.0f;
+        if (scripts_) {
+            lua_State* L = scripts_->State();
+            int top = lua_gettop(L);
+            lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+            GetNumber(L, lua_gettop(L), "g_cameraLimitWidth", wrapLimit);
+            float p = 0;
+            if (GetNumber(L, lua_gettop(L), "physicsToWorld", p) && p > 0) p2w = p;
+            lua_settop(L, top);
+        }
+        for (ThemeSprite& t : themeSprites_) {
+            if (t.layer != (int)i || !t.spaceWrap || !t.frames.empty() || wrapLimit <= 0) continue;   // (no limit given yet: left alone)
+            if (!layer.looping) {
+                const float Lw = wrapLimit * 20.0f, Lp = Lw / p2w;
+                if (t.x > Lp) { if (t.velX > 0) t.x = t.x0 - Lp; else t.x += Lw * 4.0f / p2w; }
+                else if (t.x < -Lp) { if (t.velX > 0) t.x -= Lw * 4.0f / p2w; else t.x += Lw * 4.0f / p2w; }
+                if (std::fabs(t.y0 - t.y) > sh * 4.0f / p2w) t.y = t.velY > 100.0f ? t.y0 - 10.0f : t.y0 + 10.0f;
+            } else {
+                const float T = (wrapLimit * 10.0f + nW * 10.0f) / p2w;
+                if (t.x > T && t.velX > 0) t.x -= T;
+                else if (t.x < -T && t.velX < 0) t.x += T;
+                if (std::fabs(t.y0 - t.y) > sh * 4.0f / p2w) t.y = t.velY > 0 ? t.y0 - 10.0f : t.y0 + 10.0f;
+            }
+        }
         for (const ThemeSprite& t : themeSprites_) {
             if (t.layer != (int)i) continue;
             const Sprite* ep = sprites_.Find(t.sprite);
@@ -2679,6 +3108,7 @@ void GamePlatform::CreateThemeSpriteSpace(const std::string& name, const std::st
     ThemeSprite t{name, sprite, x, y, scaleX, scaleY, angle, 0, layer};
     t.angleVel = 0; t.flipped = flipped; t.velX = velX; t.velY = velY;
     t.scaleSpeed = scaleSpeed;
+    t.x0 = x; t.y0 = y; t.spaceWrap = true;
     themeSprites_.push_back(t);
 }
 
@@ -2730,6 +3160,7 @@ void GamePlatform::DrawBackground() {
     if (std::getenv("AB_DRAWDBG")) { static int n = 0; if (n++ < 3) std::fprintf(stderr, "DrawBackground layers=%d\n", (int)bgLayers_.size()); }
     if (!backend_) return;
     if (scripts_ && scripts_->IsSpace()) { DrawSpaceBackground(); return; }
+    if (scripts_ && scripts_->IsStella() && newTheme_) { DrawNewThemeBackground(); return; }
     // The non-looping layers (the cranes) are placed one after another: the first at episode4BGCranes.startX / 16
     // sprite widths, each next one half a sprite width further.
     float startX = 0;
@@ -2767,6 +3198,12 @@ void GamePlatform::DrawBackground() {
         float baseShift = layer.speed * camX_, shift = layer.speed * (camX_ + layer.offset);   // 0x41a6e7: (offset + camera) * parallax
         state_ = RenderState();
         state_.ty = -camY_ * inv + layer.dy / (s * worldScale_);
+        if (scripts_ && scripts_->IsSeasons4()) {
+            // Seasons 4.x: the far layers move up and down by their speed too. With the camera's bottom edge on the ground they sit on the
+            // screen's bottom edge; its level cameras look far above the ground (South Hamerica: bottom at -515), where the old rule put
+            // the mountains below the screen
+            state_.ty = (screenHeight_ * (1.0f - layer.speed) - camY_ * worldScale_ * layer.speed) / (s * worldScale_) + layer.dy / (s * worldScale_);
+        }
         state_.sx = state_.sy = s * worldScale_;
         if (layer.looping) {
             float m = std::fmod(shift, w * s);
@@ -2847,7 +3284,7 @@ void GamePlatform::DrawForeground() {
             }
             if (!haveLevel) continue;
             state_.ty += -level * 20.0f / c;
-            float wob = 1.0f + fgWater_[fgIndex].wobbleY * std::sin(waterTime_ * 6.2831853f * 0.3f + (float)fgIndex);
+            float wob = 1.0f + fgWater_[fgIndex].wobbleY * 3.0f * std::sin(waterTime_ * 6.2831853f * 0.45f + (float)fgIndex * 1.7f);
             state_.ty *= 1.0f / wob; state_.sy *= wob;
         }
         float right = screenWidth_ / (worldScale_ * c) + px;
@@ -2897,6 +3334,13 @@ void GamePlatform::DrawPhysObject(PhysObject& o) {
             state_.angle = o.interpAngle + part.angle;
             state_.alpha = o.alpha;
             state_.pivotX = (float)ps->pivotX; state_.pivotY = (float)ps->pivotY;
+            // v3.1: Stella's blocks are compound bodies whose sprites are drawn at a tenth of their size (setPhysicsScale 0.1): the
+            // object's scale applies to the part's sprite about its pivot (Space draws its compound parts unscaled)
+            if ((o.scaled || (scripts_ && scripts_->IsStella())) && !Physics().spaceRules && o.scaleX != 0 && o.scaleY != 0) {
+                state_.sx *= o.scaleX; state_.sy *= o.scaleY;
+                state_.tx = (px + keep.tx) / o.scaleX - px;
+                state_.ty = (py + keep.ty) / o.scaleY - py;
+            }
             DrawSpriteAt(*psheet, *ps, px - (float)ps->pivotX, py - (float)ps->pivotY, 0, 0, false, 0, 0);
             state_ = keep;
         }
@@ -2924,6 +3368,7 @@ void GamePlatform::DrawPhysObject(PhysObject& o) {
         }
     }
     if (o.hidden) return;                      // Space: setObjectParameter(n, 33, 0)
+    if (o.sprite == "RED_CROSS" && scripts_ && scripts_->IsStella()) return;   // Stella's editor markers (the Flash transition anchor), hidden in the game
     if (o.isSensor && o.sensorKind == 2 && Physics().spaceRules) return;   // the gravity area is invisible in retail (its sprite is the blue dot at the planet centre)
     // the other sensors (pig, killing, trigger boxes) carry the same editor-only marker sprites: the blue and green dots are never drawn in a level
     if (Physics().spaceRules && o.isSensor && o.sprite.compare(0, 15, "GRAVITY_SENSOR_") == 0) return;
@@ -2938,8 +3383,11 @@ void GamePlatform::DrawPhysObject(PhysObject& o) {
     RenderState saved = state_;
     if (o.disableRotation) state_.angle = 0;     // 0x41b2c0: setObjectParameter 10 draws the sprite upright
     // the draw scale is the object's own scale plus the wobble after a hit (0x40b2xx: x gets +sin, y gets -sin of the same phase)
-    bool useScale = o.scaled || Physics().spaceRules;       // Space always draws the scale (ids 5, 17, 18 and setScale)
+    // Space always draws the scale (ids 5, 17, 18 and setScale); so does Stella, whose blocks are drawn at a tenth of their sprites (id 5 = 0.1, no id 6)
+    const bool stella = scripts_ && scripts_->IsStella();
+    bool useScale = o.scaled || Physics().spaceRules || stella;
     float drawSX = (useScale ? o.scaleX : 1.0f) + o.wobDX, drawSY = (useScale ? o.scaleY : 1.0f) + o.wobDY;
+    if (stella && (drawSX == 0 || drawSY == 0)) { state_ = saved; return; }   // Stella shrinks things to nothing (the fireflies a bird scatters): drawn at full size before
     // v3.1: the Mighty Dragon (Seasons 2.3.0) and the Mighty Eagle are drawn larger than their sprites: the dragon's parts are fitted to the circle (its diameter over the
     // sprite's height, 1.65 for the head), the eagle is drawn 1.6 times as big (compared with recordings of the retail games)
     bool creatureScale = false;
@@ -3068,7 +3516,7 @@ std::vector<std::string> GamePlatform::GameDrawOrder() {
 bool GamePlatform::BodyCommand(const std::string& n, int cmd, float a, float& result) {
     if (cmd < 20 || cmd > 24) return Physics().BodyCommand(n, cmd, a, result);
     if (cmd == 20) aimEnabled_ = a != 0;
-    else if (cmd == 21) { aimSprite_ = n; aimScale_ = a > 0 ? a : 1; }
+    else if (cmd == 21) { aimSprite_ = n; aimScale_ = a > 0 ? a : (scripts_ && scripts_->IsStella()) ? 0.1f : 1; }   // Stella draws its sprites at a tenth (the scale of its blocks), the aiming dots too
     else if (cmd == 22) { if (scripts_ && scripts_->IsStarWars()) AimPopulate(); }   // Star Wars populateAimingAid (0x402770): the dots laid out along the stored path
     else if (cmd == 23) { aimDots_.clear(); aimPts_.clear(); aimOn_ = false; }   // 0x45e230
     else if (cmd == 24) {
@@ -3097,18 +3545,19 @@ bool GamePlatform::BodyCommand(const std::string& n, int cmd, float a, float& re
     return true;
 }
 
-// simulateAimingAid(bird, impulseX, impulseY [, points]): the aiming aid's arc for a launch with that impulse: the free flight of the bird, as in the retail trail (see PhysicsWorld::SimulateFlight).
+// simulateAimingAid(bird, impulseX, impulseY [, points, startX, startY, forceX, forceY]) (v3.1: forceX, forceY: a force applied every step, as a script's applyForce each frame; the Boomerang Bird's flyVerticalForce): the aiming aid's arc for a launch with that impulse: the free flight of the bird, as in the retail trail (see PhysicsWorld::SimulateFlight).
 // The points are 1/30 s apart like the retail trail's (simulationTimeStepMultiplier 3 times 1/90); the first one is the bird's own position.
-bool GamePlatform::AimSimulate(const std::string& bird, float vx, float vy, int points, const float* start) {
+bool GamePlatform::AimSimulate(const std::string& bird, float vx, float vy, int points, const float* start, const float* force) {
     PhysObject* o = Physics().Find(bird);
     if (!o || !o->pbody) return false;
     std::vector<std::pair<float, float>> pts;
     float mass = o->pbody->Mass();
     if (mass <= 0) return false;
-    if (!Physics().SimulateFlight(bird, vx / mass, vy / mass, points, 1, 1.0f / 30.0f, pts, start) || pts.empty()) return false;   // vx, vy are the impulse: the real launch is applyImpulse, and the world steps 1/30 s with 10 + 10 iterations
+    if (!Physics().SimulateFlight(bird, vx / mass, vy / mass, points, 1, 1.0f / 30.0f, pts, start, force) || pts.empty()) return false;   // vx, vy are the impulse: the real launch is applyImpulse, and the world steps 1/30 s with 10 + 10 iterations
     aimPts_.clear();
     aimPts_.push_back(start ? TrajectoryPoint{start[0], start[1]} : TrajectoryPoint{o->pbody->PosX(), o->pbody->PosY()});
     for (auto& p : pts) aimPts_.push_back({p.first, p.second});
+    if (std::getenv("AB_AIMDBG")) std::fprintf(stderr, "AIMSIM mass=%.3f v=%.3f,%.3f force=%.3f,%.3f\n", mass, vx / mass, vy / mass, force ? force[0] : 0.0f, force ? force[1] : 0.0f);
     if (std::getenv("AB_AIMDBG")) for (size_t i = 0; i < aimPts_.size() && i < 400; i++) std::fprintf(stderr, "AP %d %.3f %.3f\n", (int)i, aimPts_[i].x, aimPts_[i].y);
     return true;
 }
@@ -3203,6 +3652,12 @@ void GamePlatform::DrawGame() {
         }
     };
     const bool aimOverCharacters = !(scripts_ && (scripts_->IsSpace() || scripts_->IsStarWars()));   // Classic and the later games: the aiming aid is drawn over the birds and pigs
+    // Stella draws its sprites at a tenth (the scale of its blocks): the trail puffs too, about their pivot
+    const float trailK = (scripts_ && scripts_->IsStella()) ? 0.1f : 1.0f;
+    auto drawTrail = [&](const SpriteSheet& sheet, const Sprite& sp, float x, float y) {
+        if (trailK == 1.0f) DrawSpriteAt(sheet, sp, x, y, 4, 3, false, 0, 0);
+        else DrawSpriteAt(sheet, sp, x - sp.pivotX * trailK, y - sp.pivotY * trailK, 0, 0, true, sp.w * trailK, sp.h * trailK);
+    };
     auto drawTrajectory = [&]() {
         trajDone = true;
         state_.angle = 0; state_.pivotX = state_.pivotY = 0;
@@ -3214,13 +3669,13 @@ void GamePlatform::DrawGame() {
                 if (!sp) sp = sprites_.Find("TRAIL_WHITE_" + std::to_string(i % 3 + 1), &sheet);
                 if (!sp) sp = sprites_.Find("SMOKE_TRAIL_" + std::to_string(i % 3 + 1), &sheet);   // Angry Birds 1.0 (iPhone)
                 if (std::getenv("AB_DRAWDBG") && i == 0) std::fprintf(stderr, "TRAJ list %d dots %zu sprite %s\n", list, trajDots_[list].size(), sp ? "yes" : "NO");
-                if (sp) { TagScope t(this, "trajectory"); DrawSpriteAt(*sheet, *sp, trajDots_[list][i].x, trajDots_[list][i].y, 4, 3, false, 0, 0); }
+                if (sp) { TagScope t(this, "trajectory"); drawTrail(*sheet, *sp, trajDots_[list][i].x, trajDots_[list][i].y); }
             }
             for (const TrajectoryPoint& p : trajPuffs_[list]) {
                 const SpriteSheet* sheet = nullptr;
                 const Sprite* sp = custom[3].empty() ? nullptr : sprites_.Find(custom[3], &sheet);
                 if (!sp) sp = sprites_.Find("BIRD_SPECIAL", &sheet);
-                if (sp) { TagScope t(this, "trajectory"); DrawSpriteAt(*sheet, *sp, p.x, p.y, 4, 3, false, 0, 0); }
+                if (sp) { TagScope t(this, "trajectory"); drawTrail(*sheet, *sp, p.x, p.y); }
             }
         }
         if (!aimOverCharacters) drawAim();
@@ -3505,6 +3960,15 @@ void GamePlatform::DrawLevelParticles(int layer) {
     else DrawParticlesOf(true, -1, layer);
 }
 
+// drawMenuParticlesInAdvance (Friends' power-up effect): the menu particles (second list) are drawn now, under what the
+// script draws next (the power-up picture over its smoke), and not again later in this frame
+void GamePlatform::DrawMenuParticlesInAdvance() {
+    drawingAhead_ = true;
+    DrawParticlesOf(false, 1);
+    drawingAhead_ = false;
+    menuDrawnAhead_ = true;
+}
+
 void GamePlatform::DrawParticles(bool world) {
     if (!world) menuParticlesByScript_ = true;
     DrawParticlesOf(world, -1);
@@ -3516,6 +3980,7 @@ void GamePlatform::DrawParticlesOf(bool world, int second, int levelLayer) {
     for (const Particle& p : particles_) {
         if (levelLayer > 0 ? (!p.level || p.layer != levelLayer) : p.level) continue;
         if (second >= 0 && p.second != (second == 1)) continue;
+        if (p.second && menuDrawnAhead_ && !drawingAhead_) continue;      // drawMenuParticlesInAdvance drew the menu list already this frame
         if (particleFilter_ == 3 ? p.mode != 3 : particleFilter_ > 0 && (p.mode == 3 || (particleFilter_ == 1) != (p.def && p.def->background))) continue;
         const SpriteSheet* sheet = nullptr;
         const Sprite* sp = sprites_.Find(p.sprite, &sheet);
@@ -3752,6 +4217,8 @@ void GamePlatform::ConsoleCommand(const std::string& raw) {
             "  gamespeed [x]           gameSpeedFactor: the time step of everything (default 1)\n"
             "  physicsspeed [x]        physicsSpeedFactor: the time step of the physics only (default 1)\n"
             "  set <name> <value>      set any Lua global (set gameSpeedFactor 0.5); get <name> shows it\n"
+            "  drop <file>             as if the file was dropped on the window (a level loads, a script runs)\n"
+            "  rewind [frames]         the physics objects go back that many frames (default 1; Lua: rewind(frames))\n"
             "  audiospeed [x [track]]  audio playback speed (pitch follows); audiopause / audioresume [track]; mastervolume [v]\n"
             "  text <group> <key> <text>  set or add one text (res.getString / drawString read it at once); texts [group] lists the groups or one group's texts\n"
             "  gravity [x y]           show / set the world's gravity; maxtranslation [t] the longest move of a body in one step\n"
@@ -3815,6 +4282,12 @@ void GamePlatform::ConsoleCommand(const std::string& raw) {
             if (cmd == "blend") { if (w1 == "add") v = 1; else if (w1 == "multiply") v = 2; else if (w1 == "screen") v = 3; SetRenderOverride(name, 7, (float)v, 0, 0); }
             else { static const char* names[] = {"none", "grayscale", "sepia", "invert", "chromatic", "glow"}; for (int k = 0; k < 6; k++) if (w1 == names[k]) v = k; SetRenderOverride(name, 8, (float)v, 0, 0); }
         }
+    } else if (cmd == "drop") {        // drop <file>: as if the file was dropped on the window
+        FileDropped(arg);
+    } else if (cmd == "rewind") {      // rewind [frames]
+        int frames = 1; std::sscanf(arg.c_str(), "%d", &frames);
+        int back = Rewind(frames);
+        std::printf("console: went back %d frame(s)\n", back);
     } else if (cmd == "audiospeed" || cmd == "audiopause" || cmd == "audioresume" || cmd == "mastervolume") {
         // audiospeed [x [track]] (pitch follows the speed), audiopause [track], audioresume [track], mastervolume [v]
         float a = 0, b = -1; int n = std::sscanf(arg.c_str(), "%f %f", &a, &b);

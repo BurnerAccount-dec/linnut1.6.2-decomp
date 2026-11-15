@@ -2,7 +2,11 @@
 
 #include <cstdio>
 #include <algorithm>
+#include <cmath>
+#include <cstdlib>
 #include <cstring>
+
+#include "lua/aes.h"
 
 namespace ab {
 
@@ -18,12 +22,144 @@ struct Reader {
 };
 }  // namespace
 
+
+// ---- v3.1: the newer sheets (Seasons 4.1.0): ArtPacker's JSON, encrypted like the scripts (ReadLuaFile decrypts it)
+//   NAME.sheet.json  {"frames": [{"filename", "frame": {x, y, w, h}, "pivot": {x, y}, "rotated"}], "meta": {"image": "NAME.pvr"}}
+//   NAME.compo.json  {"compo": [{"name", "sprites": [{"name", "x", "y", "angle", "scale": [sx, sy]}]}]}
+namespace {
+struct JVal {
+    enum Kind { Null, Num, Str, Arr, Obj, Bool } kind = Null;
+    double num = 0;
+    std::string str;
+    std::vector<JVal> arr;
+    std::vector<std::pair<std::string, JVal>> obj;
+    const JVal* Get(const char* key) const { for (const auto& kv : obj) if (kv.first == key) return &kv.second; return nullptr; }
+    double Number(const char* key, double def) const { const JVal* v = Get(key); return v && v->kind == Num ? v->num : def; }
+    std::string String(const char* key) const { const JVal* v = Get(key); return v && v->kind == Str ? v->str : std::string(); }
+};
+struct JParser {
+    const std::string& t;
+    size_t i = 0;
+    bool ok = true;
+    void Space() { while (i < t.size() && (t[i] == ' ' || t[i] == '\t' || t[i] == '\n' || t[i] == '\r')) i++; }
+    std::string Text() {
+        std::string out;
+        i++;                                                   // the opening quote
+        while (i < t.size() && t[i] != '"') {
+            if (t[i] == '\\' && i + 1 < t.size()) { i++; char c = t[i]; out += c == 'n' ? '\n' : c == 't' ? '\t' : c; }
+            else out += t[i];
+            i++;
+        }
+        i++;
+        return out;
+    }
+    JVal Value() {
+        JVal v;
+        Space();
+        if (i >= t.size()) { ok = false; return v; }
+        char c = t[i];
+        if (c == '{') {
+            v.kind = JVal::Obj; i++;
+            for (;;) {
+                Space();
+                if (i < t.size() && t[i] == '}') { i++; break; }
+                if (i >= t.size() || t[i] != '"') { ok = false; break; }
+                std::string key = Text();
+                Space();
+                if (i >= t.size() || t[i] != ':') { ok = false; break; }
+                i++;
+                v.obj.push_back({key, Value()});
+                Space();
+                if (i < t.size() && t[i] == ',') i++;
+                if (!ok) break;
+            }
+        } else if (c == '[') {
+            v.kind = JVal::Arr; i++;
+            for (;;) {
+                Space();
+                if (i < t.size() && t[i] == ']') { i++; break; }
+                v.arr.push_back(Value());
+                Space();
+                if (i < t.size() && t[i] == ',') i++;
+                if (!ok || i >= t.size()) break;
+            }
+        } else if (c == '"') { v.kind = JVal::Str; v.str = Text(); }
+        else if (t.compare(i, 4, "true") == 0) { v.kind = JVal::Bool; v.num = 1; i += 4; }
+        else if (t.compare(i, 5, "false") == 0) { v.kind = JVal::Bool; i += 5; }
+        else if (t.compare(i, 4, "null") == 0) { i += 4; }
+        else { char* end = nullptr; v.kind = JVal::Num; v.num = std::strtod(t.c_str() + i, &end); if (end == t.c_str() + i) ok = false; i = end - t.c_str(); }
+        return v;
+    }
+};
+bool EndsWithJson(const std::string& f) { return f.size() > 5 && f.compare(f.size() - 5, 5, ".json") == 0; }
+bool ReadJson(const std::string& file, JVal& out, std::string* error) {
+    std::vector<uint8_t> bytes;
+    if (!ReadLuaFile(file, bytes) || bytes.empty()) { if (error) *error = "cannot open " + file; return false; }
+    std::string text(bytes.begin(), bytes.end());
+    JParser p{text};
+    out = p.Value();
+    if (!p.ok || out.kind != JVal::Obj) { if (error) *error = "not a JSON sheet: " + file; return false; }
+    return true;
+}
+int Round(double v) { return (int)std::floor(v + 0.5); }
+}  // namespace
+
+bool ParseSheetJson(const std::string& file, SpriteSheet& out, std::string* error) {
+    JVal root;
+    if (!ReadJson(file, root, error)) return false;
+    const JVal* meta = root.Get("meta");
+    out.image = meta ? meta->String("image") : std::string();
+    const JVal* frames = root.Get("frames");
+    if (!frames || frames->kind != JVal::Arr) { if (error) *error = "no frames in " + file; return false; }
+    for (const JVal& f : frames->arr) {
+        Sprite s;
+        s.name = f.String("filename");
+        if (const JVal* r = f.Get("frame")) { s.x = Round(r->Number("x", 0)); s.y = Round(r->Number("y", 0)); s.w = Round(r->Number("w", 0)); s.h = Round(r->Number("h", 0)); }
+        if (const JVal* pv = f.Get("pivot")) { s.pivotX = Round(pv->Number("x", 0)); s.pivotY = Round(pv->Number("y", 0)); }
+        if (!s.name.empty()) out.sprites.push_back(s);
+    }
+    return true;
+}
+
+bool ParseCompoJson(const std::string& file, std::vector<CompoSprite>& out, std::string* error) {
+    JVal root;
+    if (!ReadJson(file, root, error)) return false;
+    const JVal* list = root.Get("compo");
+    if (!list || list->kind != JVal::Arr) { if (error) *error = "no compo list in " + file; return false; }
+    for (const JVal& c : list->arr) {
+        CompoSprite cs;
+        cs.name = c.String("name");
+        if (const JVal* parts = c.Get("sprites")) {
+            for (const JVal& sp : parts->arr) {
+                CompoPart p;
+                p.sprite = sp.String("name");
+                p.fx = (float)sp.Number("x", 0); p.fy = (float)sp.Number("y", 0);
+                p.x = Round(p.fx); p.y = Round(p.fy);
+                p.angle = (float)sp.Number("angle", 0);
+                const JVal* sc = sp.Get("scale");
+                float sx = 1, sy = 1;
+                if (sc && sc->kind == JVal::Arr && sc->arr.size() >= 2) { sx = (float)sc->arr[0].num; sy = (float)sc->arr[1].num; }
+                else if (sc && sc->kind == JVal::Num) sx = sy = (float)sc->num;
+                p.scale = sx;
+                p.exact = std::fabs(sx - 1) > 1e-4f || std::fabs(sy - 1) > 1e-4f || p.angle != 0;   // a scaled or turned part is placed with its own scale and angle
+                cs.parts.push_back(p);
+            }
+        }
+        out.push_back(cs);
+    }
+    return true;
+}
+
 // KA3D, total size, then chunks (tag, size); the COMP chunk: version 1, count, and per composite its
 // name, its part count and per part the sprite name and x, y (loader at 0x43b7d0).
 bool ParseCompoSpriteSet(const std::vector<uint8_t>& bytes, std::vector<CompoSprite>& out, std::string* error) {
     auto fail = [&](const char* m) { if (error) *error = m; return false; };
     Reader r{bytes};
-    if (r.Str(4) != "KA3D") return fail("not a KA3D file");
+    const std::string magic = r.Str(4);
+    if (magic != "KA3D" && magic != "RVIO") return fail("not a KA3D file");
+    // v3.1: Seasons 4.1.0's BUTTONS_COMPOSPRITES.dat starts with RVIO and gives each part 20 bytes after its name:
+    // s16 (0), s16 x, s16 y, float scaleX, float scaleY, float angle, s16 (0)
+    const bool rvio = magic == "RVIO";
     uint32_t total = r.U32();
     size_t end = r.pos + total;
     if (end > bytes.size()) return fail("file ends early");
@@ -42,8 +178,23 @@ bool ParseCompoSpriteSet(const std::vector<uint8_t>& bytes, std::vector<CompoSpr
                 for (int j = 0; j < parts && r.ok; j++) {
                     CompoPart p;
                     p.sprite = r.Str(r.U16());
-                    p.x = r.S16();
-                    p.y = r.S16();
+                    if (rvio) {
+                        r.S16();
+                        p.x = r.S16(); p.y = r.S16();
+                        auto f32 = [&]() { uint32_t u = r.U32(); float v; std::memcpy(&v, &u, 4); return v; };
+                        float sx = f32(), sy = f32();
+                        p.angle = f32();
+                        const int partFlags = r.S16();
+                        p.fx = (float)p.x; p.fy = (float)p.y; p.scale = sx; p.scaleY = sy;
+                        p.exact = std::fabs(sx - 1) > 1e-4f || std::fabs(sy - 1) > 1e-4f || p.angle != 0;
+                        // Stella's theme composites: the angle is in degrees (5.6, 348.3 ...) and 0x100 mirrors the part (the parts are drawn about their pivot)
+                        p.angle = p.angle * 3.14159265f / 180.0f;
+                        p.flipX = (partFlags & 0x100) != 0;
+                        if (p.flipX) p.exact = true;
+                    } else {
+                        p.x = r.S16();
+                        p.y = r.S16();
+                    }
                     c.parts.push_back(p);
                 }
                 if (ver == 2) r.S16();                 // v2 adds one 16-bit value per composite (0 in the shipped files)
@@ -57,6 +208,14 @@ bool ParseCompoSpriteSet(const std::vector<uint8_t>& bytes, std::vector<CompoSpr
 }
 
 bool SpriteLibrary::LoadCompoSet(const std::string& key, const std::string& file, std::string* error) {
+    if (EndsWithJson(file)) {
+        std::vector<CompoSprite> set;
+        if (!ParseCompoJson(file, set, error)) return false;
+        compoCache_.clear();
+        compoSets_[key] = std::move(set);
+        compoOrder_[key] = ++loaded_;
+        return true;
+    }
     FILE* f = fopen(file.c_str(), "rb");
     if (!f) { if (error) *error = "cannot open " + file; return false; }
     std::vector<uint8_t> bytes;
@@ -109,7 +268,7 @@ bool ParseSpriteSheet(const std::vector<uint8_t>& bytes, SpriteSheet& out, std::
                       bytes[0] == 0 && bytes[1] > 4 && bytes.size() >= (size_t)(2 + bytes[1]) &&
                       bytes[2 + bytes[1] - 4] == '.' && bytes[2 + bytes[1] - 3] == 'p';
     if (!headerless) {
-        if (r.Str(4) != "KA3D") return fail("not a KA3D file");
+        { const std::string magic = r.Str(4); if (magic != "KA3D" && magic != "RVIO") return fail("not a KA3D file"); }   // v3.1: Seasons 4.1.0 writes RVIO, the same layout
         r.U32();                               // total length
         if (r.Str(4) != "SPRT") return fail("no SPRT chunk");
         r.U32();                               // chunk size
@@ -131,6 +290,16 @@ bool ParseSpriteSheet(const std::vector<uint8_t>& bytes, SpriteSheet& out, std::
 }
 
 bool SpriteLibrary::Load(const std::string& key, const std::string& file, std::string* error) {
+    if (EndsWithJson(file)) {
+        SpriteSheet sheet;
+        if (!ParseSheetJson(file, sheet, error)) return false;
+        size_t slash = file.find_last_of("/\\");
+        sheet.directory = slash == std::string::npos ? std::string(".") : file.substr(0, slash);
+        sheet.order = ++loaded_;
+        cache_.clear();
+        sheets_[key] = std::move(sheet);
+        return true;
+    }
     FILE* f = fopen(file.c_str(), "rb");
     if (!f) { if (error) *error = "cannot open " + file; return false; }
     std::vector<uint8_t> bytes;

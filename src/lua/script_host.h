@@ -49,6 +49,10 @@ public:
     bool IsStarWars() const { return starWars_; }   // Angry Birds Star Wars: the common script path holds gamelogic.lua
     bool IsSpace() const { return space_; }    // Angry Birds Space: the scripts load their own block files; the exe calls draw() after update()
     bool IsRio() const { return rio_; }        // Angry Birds Rio: data in many files, and the exe calls draw() after update()
+    bool IsSeasons4() const { return config_.seasons4; }
+    const std::string& ScriptPath() const { return config_.scriptPath; }   // Seasons 4.x (scripts_common/gamelogic.lua, JSON sheets)
+    bool IsMobileData() const { return mobileData_; }
+    bool IsStella() const { return stella_; }   // an .ipa / .apk game: its scripts move many things by a fixed step per update
     bool IsFirstGame() const { return first_; }   // Angry Birds 1.0: no loadlist.lua, blocks start asleep
     bool Draw() { return Call("draw"); }
     void RunString(const char* code);             // test hook: runs a snippet among the scripts' globals
@@ -76,8 +80,12 @@ private:
     bool rio_ = false;
     bool first_ = false;
     bool pausePops_ = false;
+    bool iapOff_ = false;
+    bool mobileData_ = false;      // an .ipa / .apk game (deviceModel iphone, ipad or android)
     bool nativeDots_ = false;
     bool space_ = false;
+    bool friends2_ = false;   // Angry Birds Friends 2.0.0 (scripts/TutorialMode.lua)
+    bool stella_ = false;     // Angry Birds Stella 1.0.0 (scripts/PolaroidMode.lua)
     bool starWars_ = false;
     bool Call(const char* name);
     bool DrawEditorOverlay();

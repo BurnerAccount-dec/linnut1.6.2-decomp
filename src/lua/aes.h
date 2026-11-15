@@ -21,6 +21,8 @@ extern const char kSeasonsSaveKey[33];
 // Script keys of Angry Birds Star Wars and Star Wars II (the decrypted file is a 7z archive).
 extern const char kStarWarsKey[33];
 extern const char kStarWars2Key[33];
+// Script key of Angry Birds Friends (same container: AES, then 7z).
+extern const char kFriendsKey[33];
 // Save key of Angry Birds Space (settings.lua, highscores.lua, bi_data.lua, ...): built by the exe at 0x496180 next to the script key at 0x4960a0.
 extern const char kSpaceSaveKey[33];
 extern const char kStarWarsSaveKey[33];

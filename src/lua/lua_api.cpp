@@ -7,6 +7,7 @@
 #endif
 #include <algorithm>
 #include <ctime>
+#include <chrono>
 #include <fstream>
 #include <iterator>
 #include <vector>
@@ -19,6 +20,7 @@
 #include <cstdio>
 #include <fstream>
 #include <sstream>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -31,6 +33,14 @@ extern "C" {
 namespace ab {
 extern const unsigned char kCompoImageLua[];
 extern const unsigned int kCompoImageLuaSize;
+extern const unsigned char kEditorJointPageLua[];
+extern const unsigned int kEditorJointPageLuaSize;
+extern const unsigned char kOverlayPageLua[];
+extern const unsigned int kOverlayPageLuaSize;
+extern const unsigned char kPageLua[];
+extern const unsigned int kPageLuaSize;
+extern const unsigned char kItemLua[];
+extern const unsigned int kItemLuaSize;
 extern const unsigned char kInvisibleButtonLua[];
 extern const unsigned int kInvisibleButtonLuaSize;
 bool LoadTableFile(lua_State* L, const char* name, const std::string& path, std::string* error, bool append);
@@ -199,9 +209,153 @@ int l_requireFile(lua_State* L) {
     }
     if (bytes.empty()) return luaL_error(L, "requireFile: cannot find %s", name.c_str());
     if (luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), ("@" + path).c_str()) != 0) return lua_error(L);
+    // v3.1: on the phone the game's globals are Lua's own, and Seasons 4.1.0 reads what these files make as _G.name (`Scaling = _G.Scaling`,
+    // _G.platform.Profiles): every global a required file adds is put in the real global table too
     lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
-    lua_setfenv(L, -2);
+    int env = lua_gettop(L);
+    lua_newtable(L);                                   // the names there were before
+    int before = lua_gettop(L);
+    lua_pushnil(L);
+    while (lua_next(L, env)) { lua_pop(L, 1); lua_pushvalue(L, -1); lua_pushboolean(L, 1); lua_rawset(L, before); }
+    lua_pushvalue(L, env);
+    lua_setfenv(L, before - 2);                        // the chunk is below the two tables
+    lua_pushvalue(L, before - 2);
     lua_call(L, 0, 0);
+    lua_pushnil(L);
+    while (lua_next(L, env)) {
+        lua_pushvalue(L, -2); lua_rawget(L, before);
+        bool old = !lua_isnil(L, -1);
+        lua_pop(L, 1);
+        if (!old && lua_type(L, -2) == LUA_TSTRING) {
+            lua_pushvalue(L, -2); lua_rawget(L, LUA_GLOBALSINDEX);
+            bool taken = !lua_isnil(L, -1);
+            lua_pop(L, 1);
+            if (!taken) { lua_pushvalue(L, -2); lua_pushvalue(L, -2); lua_rawset(L, LUA_GLOBALSINDEX); }
+        }
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 3);
+    return 0;
+}
+
+// v3.1: Angry Birds Friends 2.0.0 (the newer Rovio framework) loads its files through the `native` table:
+// native.loadLuaTable(path [, ...]) runs a data file (an asset load list, a level) in a fresh table and returns that table,
+// or nil and the error; native.loadLuaScript(name) runs a script from the script folder like requireFile and returns nil,
+// or the error as a string (the game's own requireFile asserts on it).
+int l_nativeLoadLuaTable(lua_State* L) {
+    const std::string path = S(L, 1);
+    std::vector<uint8_t> bytes;
+    bool found = ab::ReadLuaFile(path, bytes) && !bytes.empty();
+    std::string used = path;
+    if (!found) { used = P(L)->ResolveDataFile(path); if (used != path) found = ab::ReadLuaFile(used, bytes) && !bytes.empty(); }
+    if (!found) { lua_pushnil(L); lua_pushstring(L, ("cannot open " + path).c_str()); return 2; }
+    if (luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), ("@" + used).c_str()) != 0) { lua_pushnil(L); lua_insert(L, -2); return 2; }
+    lua_newtable(L);                       // the file's globals land here; it can still read the game's (math, string ...)
+    lua_newtable(L);
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    lua_setfield(L, -2, "__index");
+    lua_setmetatable(L, -2);
+    lua_pushvalue(L, -1);
+    lua_setfenv(L, -3);
+    lua_insert(L, -2);                     // table below the function
+    if (lua_pcall(L, 0, 0, 0) != 0) { lua_pushnil(L); lua_insert(L, -2); return 2; }
+    lua_pushnil(L);                        // a plain table for the game (pairs over it skips nothing)
+    lua_setmetatable(L, -2);
+    return 1;
+}
+int l_requireFile(lua_State* L);
+// abListFolder(path) -> the names in a folder (folders end in "/"), for the Friends 2.0.0 stand-in server's tournament levels
+// v3.1: abReadJson(path): a JSON file of the game's data (encrypted like the scripts or plain) as a Lua table, nil when it cannot be read.
+// Angry Birds Stella keeps its Flash animations (.anim.json) and their skins (.skins.json) this way.
+namespace {
+struct JsonToLua {
+    lua_State* L; const char* p; const char* e;
+    void ws() { while (p < e && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) p++; }
+    bool str() {
+        if (p >= e || *p != '"') return false;
+        p++;
+        std::string out;
+        while (p < e && *p != '"') {
+            if (*p == '\\' && p + 1 < e) {
+                p++;
+                char c = *p++;
+                if (c == 'n') out += '\n'; else if (c == 't') out += '\t'; else if (c == 'r') out += '\r'; else if (c == 'b') out += '\b'; else if (c == 'f') out += '\f';
+                else if (c == 'u' && p + 4 <= e) {
+                    unsigned v = (unsigned)std::strtoul(std::string(p, 4).c_str(), nullptr, 16); p += 4;
+                    if (v < 0x80) out += (char)v; else if (v < 0x800) { out += (char)(0xC0 | (v >> 6)); out += (char)(0x80 | (v & 0x3F)); }
+                    else { out += (char)(0xE0 | (v >> 12)); out += (char)(0x80 | ((v >> 6) & 0x3F)); out += (char)(0x80 | (v & 0x3F)); }
+                } else out += c;
+            } else out += *p++;
+        }
+        if (p < e) p++;
+        lua_pushlstring(L, out.data(), out.size());
+        return true;
+    }
+    bool value(int depth) {
+        ws();
+        if (p >= e || depth > 200) return false;
+        lua_checkstack(L, 4);
+        if (*p == '{') {
+            p++; lua_newtable(L); ws();
+            if (p < e && *p == '}') { p++; return true; }
+            while (p < e) {
+                ws(); if (!str()) return false;
+                ws(); if (p >= e || *p != ':') return false; p++;
+                if (!value(depth + 1)) return false;
+                lua_rawset(L, -3);
+                ws(); if (p < e && *p == ',') { p++; continue; }
+                if (p < e && *p == '}') { p++; return true; }
+                return false;
+            }
+            return false;
+        }
+        if (*p == '[') {
+            p++; lua_newtable(L); ws();
+            int i = 1;
+            if (p < e && *p == ']') { p++; return true; }
+            while (p < e) {
+                if (!value(depth + 1)) return false;
+                lua_rawseti(L, -2, i++);
+                ws(); if (p < e && *p == ',') { p++; continue; }
+                if (p < e && *p == ']') { p++; return true; }
+                return false;
+            }
+            return false;
+        }
+        if (*p == '"') return str();
+        if (e - p >= 4 && std::strncmp(p, "true", 4) == 0) { p += 4; lua_pushboolean(L, 1); return true; }
+        if (e - p >= 5 && std::strncmp(p, "false", 5) == 0) { p += 5; lua_pushboolean(L, 0); return true; }
+        if (e - p >= 4 && std::strncmp(p, "null", 4) == 0) { p += 4; lua_pushboolean(L, 0); return true; }   // (a nil cannot be a table value)
+        char* end = nullptr;
+        double d = std::strtod(p, &end);
+        if (end == p) return false;
+        p = end; lua_pushnumber(L, d);
+        return true;
+    }
+};
+}  // namespace
+
+int l_abReadJson(lua_State* L) {
+    std::string file = S(L, 1);
+    std::vector<uint8_t> bytes;
+    ab::ReadLuaFile(P(L)->ResolveDataFile(file), bytes);
+    if (bytes.empty()) { lua_pushnil(L); return 1; }
+    int top = lua_gettop(L);
+    JsonToLua j{L, (const char*)bytes.data(), (const char*)bytes.data() + bytes.size()};
+    if (!j.value(0)) { lua_settop(L, top); P(L)->Print("abReadJson: could not read " + file); lua_pushnil(L); return 1; }
+    return 1;
+}
+
+int l_abListFolder(lua_State* L) {
+    std::vector<std::string> names = ab::ListFolder(S(L, 1));
+    lua_newtable(L);
+    for (size_t i = 0; i < names.size(); i++) { lua_pushstring(L, names[i].c_str()); lua_rawseti(L, -2, (int)i + 1); }
+    return 1;
+}
+int l_nativeLoadLuaScript(lua_State* L) {
+    lua_pushcfunction(L, l_requireFile);
+    lua_pushvalue(L, 1);
+    if (lua_pcall(L, 1, 0, 0) != 0) return 1;      // the error message
     return 0;
 }
 
@@ -209,6 +363,19 @@ int l_loadLuaFileToObject(lua_State* L) {
     // loadLuaFileToObject(path, object, name): runs the file in a table of its own that falls back to
     // `object` for names it does not define, then stores that table as object[name]
     std::string path = S(L, 1);
+    {   // v3.1: Seasons 4.1.0's dynamic assets need the phone's asset handler (createDynamicHandler): without it the game loads its images the usual way
+        const char* dyn = "/dynamicassets.lua";
+        size_t n = std::strlen(dyn);
+        if (path.size() >= n && path.compare(path.size() - n, n, dyn) == 0) {
+            PushEnv(L);
+            lua_getfield(L, -1, "createDynamicHandler");
+            bool none = lua_isnil(L, -1);
+            lua_pop(L, 1);
+            if (none) { lua_pushboolean(L, 0); lua_setfield(L, -2, "useDynamicAssets"); }
+            lua_pop(L, 1);
+            if (none) return 0;
+        }
+    }
     bool toObject = lua_istable(L, 2) && lua_isstring(L, 3);
     bool spaceBlocks = false;
     std::vector<uint8_t> bytes;
@@ -220,6 +387,10 @@ int l_loadLuaFileToObject(lua_State* L) {
     if (!found) {
         const struct { const char* file; const unsigned char* data; unsigned size; } builtIn[] = {
             {"ui_components/CompoImage.lua", kCompoImageLua, kCompoImageLuaSize},
+            {"menus/editorjointPage.lua", kEditorJointPageLua, kEditorJointPageLuaSize},   // v3.1: Seasons 2.3.0's joint window, for the 1.6.x editors without one (joint_page.lua)
+            {"menus/overlayPage.lua", kOverlayPageLua, kOverlayPageLuaSize},
+            {"menus/page.lua", kPageLua, kPageLuaSize},
+            {"menus/item.lua", kItemLua, kItemLuaSize},
             {"ui_components/InvisibleButton.lua", kInvisibleButtonLua, kInvisibleButtonLuaSize}};
         for (const auto& b : builtIn) {
             size_t n = std::strlen(b.file);
@@ -237,6 +408,14 @@ int l_loadLuaFileToObject(lua_State* L) {
                 lua_newtable(L);                        // its metatable { __index = object }
                 lua_pushvalue(L, 2);
                 lua_setfield(L, -2, "__index");
+                {   // v3.1: in Seasons 4.1.0 `this` is the object a file is loaded into (BlockScriptManager.lua loads BlockEvents.lua "into this" as
+                    // `events`: falling back to the game's `this` replaced the game's own events table, and every level stopped at its first event)
+                    PushEnv(L);
+                    lua_getfield(L, -1, "abObjectThis");
+                    const bool own = lua_toboolean(L, -1) != 0;
+                    lua_pop(L, 2);
+                    if (own) { lua_pushvalue(L, -2); lua_setfield(L, -3, "this"); }
+                }
                 if (std::strcmp(lua_tostring(L, 3), "Hatchery") == 0) {
                     // hatchery.lua loads the rest of the Hatchery (its UI files, ui components, events) "into this": for this file `this` is the
                     // file's own table, so everything it defines (hatchery, hatcheryEventManager, ui ...) is shared by those files and stays
@@ -283,7 +462,7 @@ int l_loadLuaFileToObject(lua_State* L) {
             if (!isBlocks) {
                 lua_pushvalue(L, -1);
                 lua_setfield(L, -3, lua_tostring(L, 2));    // globals[name] = the file's table
-                static const char* kNested[] = {"materials", "damageFactors", "themes", "groups"};
+                static const char* kNested[] = {"materials", "damageFactors", "themes", "groups", "staticGroundCollisionSounds"};   // (the last: Stella reads blockTable.staticGroundCollisionSounds)
                 for (const char* nn : kNested) if (std::strcmp(lua_tostring(L, 2), nn) == 0) {
                     lua_getfield(L, -2, "blockTable");
                     if (!lua_istable(L, -1)) {
@@ -319,6 +498,14 @@ int l_loadLuaFileToObject(lua_State* L) {
             lua_setfenv(L, -2);
         }
         rc = lua_pcall(L, 0, 0, 0);
+        if (rc == 0 && toObject && *lua_tostring(L, 3) == 0 && path.size() >= 10 && path.compare(path.size() - 10, 10, "themes.lua") == 0) {
+            // v3.1: Star Wars 1.0 (iPhone) writes filename = "themes.lua" into the themes table, and its editor start (createAssets with showEditor)
+            // walks every entry as a theme; the plain string is not a theme
+            lua_getfield(L, 2, "filename");
+            bool str = lua_type(L, -1) == LUA_TSTRING;
+            lua_pop(L, 1);
+            if (str) { lua_pushnil(L); lua_setfield(L, 2, "filename"); }
+        }
         if (rc == 0 && spaceBlocks) {
             const char* filer =
                 "local T, bt, env = ...\nlocal pairs, ipairs, type = _G.pairs, _G.ipairs, _G.type\n"
@@ -578,7 +765,9 @@ int l_loadLuaFileToObject(lua_State* L) {
         }
     }
     if (rc != 0) {
-        P(L)->Print("loadLuaFileToObject failed: " + path + ": " + std::string(lua_tostring(L, -1)));
+        static std::set<std::string> told;      // v3.1: a file the game asks for again and again (the QA page of Space on the iPhone, which the retail game does not ship) is reported once; QAPage.lua only on request
+        if (told.insert(path).second && path.find("QAPage.lua") == std::string::npos)
+            P(L)->Print("loadLuaFileToObject failed: " + path + ": " + std::string(lua_tostring(L, -1)));
         lua_pop(L, 1);
     }
     return 0;
@@ -618,6 +807,14 @@ bool IsSpaceData(lua_State* L) {
 
 void ReloadAllTables(lua_State* L) {
     if (IsSpaceData(L)) return;
+    {   // v3.1: Angry Birds Stella loads its own block, material and theme files (scripts/definitions/, game_init.lua)
+        PushEnv(L);
+        lua_getfield(L, -1, "scriptPath");
+        std::string path = std::string(lua_isstring(L, -1) ? lua_tostring(L, -1) : "scripts") + "/definitions/worldAttributes.lua";
+        lua_pop(L, 2);
+        std::vector<uint8_t> bytes;
+        if (ab::ReadLuaFile(path, bytes) && !bytes.empty()) return;
+    }
     if (HasSingleBlocksFile(L)) {
         ReloadTable(L, "blockTable", "/blocks.lua");
         ReloadTable(L, "particleTable", "/particles.lua");
@@ -800,7 +997,11 @@ int l_checkForLuaFile(lua_State* L) { lua_pushboolean(L, P(L)->CheckForLuaFile(S
 // Writes `value` (on top of the stack) as Lua source.
 void Serialize(lua_State* L, std::string& out, int depth) {
     switch (lua_type(L, -1)) {
-        case LUA_TNUMBER: { char b[64]; std::snprintf(b, sizeof b, "%.9g", (double)lua_tonumber(L, -1)); out += b; break; }
+        case LUA_TNUMBER: {   // NaN is saved as nil (Windows prints it as -nan(ind), which made the whole file unreadable: Friends 2.0.0 lost its progress); infinity as 1e999
+            double v = (double)lua_tonumber(L, -1);
+            if (v != v) { out += "nil"; break; }
+            if (v > 1e308 || v < -1e308) { out += v > 0 ? "1e999" : "-1e999"; break; }
+            char b[64]; std::snprintf(b, sizeof b, "%.9g", v); out += b; break; }
         case LUA_TBOOLEAN: out += lua_toboolean(L, -1) ? "true" : "false"; break;
         case LUA_TSTRING: {
             size_t len; const char* s = lua_tolstring(L, -1, &len);
@@ -822,7 +1023,7 @@ void Serialize(lua_State* L, std::string& out, int depth) {
             lua_pushnil(L);
             while (lua_next(L, -2) != 0) {
                 int kt = lua_type(L, -2), vt = lua_type(L, -1);
-                if ((kt == LUA_TSTRING || kt == LUA_TNUMBER) &&
+                if ((kt == LUA_TSTRING || (kt == LUA_TNUMBER && lua_tonumber(L, -2) == lua_tonumber(L, -2))) &&
                     (vt == LUA_TNUMBER || vt == LUA_TBOOLEAN || vt == LUA_TSTRING || vt == LUA_TTABLE)) {
                     out += "[";
                     lua_pushvalue(L, -2);          // copy the key so lua_next keeps working
@@ -1053,6 +1254,8 @@ void WriteWorldEntry(lua_State* L, const BodyDef& d, const char* type, float mas
     SetNum(L, "xVel", 0);
     SetNum(L, "yVel", 0);
     SetNum(L, "z_order", d.zOrder);
+    // whether the body collides (Stella's raycast() keeps only the objects with collisionEnabled: its bubble jump and the blocks it lights up)
+    SetBool(L, "collisionEnabled", d.collision);
     // Angry Birds Rio's entries also carry the animation counters (the scripts count them down)
     SetNum(L, "animTimer", 0);
     SetNum(L, "animFrame", 0);
@@ -1074,7 +1277,10 @@ BodyDef ReadBody(lua_State* L, bool circle) {
     d.friction = N(L, i++);
     d.restitution = N(L, i++);
     // Angry Birds Rio's circles take the collision flag as well (a boolean followed by the controllable boolean)
-    if (!circle || lua_gettop(L) >= i + 2 || (lua_type(L, i) == LUA_TBOOLEAN && lua_type(L, i + 1) == LUA_TBOOLEAN)) d.collision = B(L, i++);   // Space's createCircle always has 11 arguments (the collision flag may be a sprite name: any non-nil value is true)
+    // Angry Birds Friends 2.0.0: createCircle(name, sprite, x, y, radius, density, friction, restitution, controllable, zOrder, 0) has no collision flag (abCircleNoCollision)
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env"); lua_getfield(L, -1, "abCircleNoCollision"); const bool noCollisionFlag = circle && lua_toboolean(L, -1) != 0; lua_pop(L, 2);
+    if (noCollisionFlag) d.collision = true;
+    else if (!circle || lua_gettop(L) >= i + 2 || (lua_type(L, i) == LUA_TBOOLEAN && lua_type(L, i + 1) == LUA_TBOOLEAN)) d.collision = B(L, i++);   // Space's createCircle always has 11 arguments (the collision flag may be a sprite name: any non-nil value is true)
     d.controllable = B(L, i++);
     d.zOrder = lua_gettop(L) >= i ? N(L, i++) : 0;   // Angry Birds 1.0: createCircle / createBox have no z order argument
     return d;
@@ -1554,12 +1760,12 @@ int BodyCmd(lua_State* L, int cmd, bool boolArg = false) {
     return 0;
 }
 int l_enableAimingAid(lua_State* L) { float r = 0; P(L)->BodyCommand("", 20, lua_toboolean(L, 1) ? 1.0f : 0.0f, r); return 0; }
-int l_setAimingAidSprite(lua_State* L) { float r = 0; P(L)->BodyCommand(lua_isstring(L, 1) ? lua_tostring(L, 1) : "", 21, lua_isnumber(L, 2) ? (float)lua_tonumber(L, 2) : 1.0f, r); return 0; }
+int l_setAimingAidSprite(lua_State* L) { float r = 0; P(L)->BodyCommand(lua_isstring(L, 1) ? lua_tostring(L, 1) : "", 21, lua_isnumber(L, 2) ? (float)lua_tonumber(L, 2) : 0.0f, r); return 0; }
 int l_populateAimingAid(lua_State* L) { float r = 0; P(L)->BodyCommand("", 22, 0, r); return 0; }
 int l_clearAimingAid(lua_State* L) { float r = 0; P(L)->BodyCommand("", 23, 0, r); return 0; }
 int l_updateBirdTrajectoryTable(lua_State* L) { float r = 0; P(L)->BodyCommand(lua_isstring(L, 1) ? lua_tostring(L, 1) : "BirdSimulation", 24, 0, r); return 0; }
 int l_spriteExists(lua_State* L) { lua_pushboolean(L, P(L)->SpriteExists(S(L, 1))); return 1; }
-int l_simulateAimingAid(lua_State* L) { float st[2] = {N(L, 5), N(L, 6)}; lua_pushboolean(L, P(L)->AimSimulate(lua_isstring(L, 1) ? lua_tostring(L, 1) : "", N(L, 2), N(L, 3), lua_isnumber(L, 4) ? (int)lua_tonumber(L, 4) : 120, lua_isnumber(L, 5) && lua_isnumber(L, 6) ? st : nullptr)); return 1; }
+int l_simulateAimingAid(lua_State* L) { float st[2] = {(float)luaL_optnumber(L, 5, 0), (float)luaL_optnumber(L, 6, 0)}, fo[2] = {(float)luaL_optnumber(L, 7, 0), (float)luaL_optnumber(L, 8, 0)}; lua_pushboolean(L, P(L)->AimSimulate(lua_isstring(L, 1) ? lua_tostring(L, 1) : "", N(L, 2), N(L, 3), lua_isnumber(L, 4) ? (int)lua_tonumber(L, 4) : 120, lua_isnumber(L, 5) && lua_isnumber(L, 6) ? st : nullptr, lua_isnumber(L, 7) || lua_isnumber(L, 8) ? fo : nullptr)); return 1; }
 int l_setSensorGravityMask(lua_State* L) { return BodyCmd(L, 10); }
 int l_setFilterMask(lua_State* L) { return BodyCmd(L, 30); }
 int l_setFilterCategory(lua_State* L) { return BodyCmd(L, 31); }
@@ -1636,7 +1842,15 @@ int l_getLocalPoint(lua_State* L) {
     lua_pushnumber(L, ly);
     return 2;
 }
-int l_setCollisionEnabled(lua_State* L) { P(L)->SetCollisionEnabled(S(L, 1), B(L, 2)); return 0; }
+int l_setCollisionEnabled(lua_State* L) {
+    P(L)->SetCollisionEnabled(S(L, 1), B(L, 2));
+    if (PushObjectsTable(L, "world")) {          // objects.world[name].collisionEnabled follows it
+        lua_getfield(L, -1, S(L, 1).c_str());
+        if (lua_istable(L, -1)) SetBool(L, "collisionEnabled", B(L, 2));
+        lua_pop(L, 2);
+    }
+    return 0;
+}
 // setColliderType(name, type) / getColliderType(name) -> type (-1: no such object); setColliderRule(typeA, typeB, collides) / getColliderRule(typeA, typeB)
 int l_setColliderType(lua_State* L) { P(L)->SetColliderType(S(L, 1), (int)N(L, 2)); return 0; }
 int l_getColliderType(lua_State* L) { lua_pushnumber(L, P(L)->ColliderType(S(L, 1))); return 1; }
@@ -1783,6 +1997,14 @@ int l_getIntersectingObjects(lua_State* L) {
     if (haveWorld) lua_pop(L, 1);
     return 1;
 }
+// setBodyType(name, "static" | "dynamic" | "kinematic") (Friends 2.0.0: the Christmas slingshot and the Halloween pigs move objects that
+// forces do not push, then let them fall again)
+int l_setBodyType(lua_State* L) {
+    std::string t = lua_isstring(L, 2) ? lua_tostring(L, 2) : "dynamic";
+    P(L)->SetObjectParameter(S(L, 1), 9000, t == "static" ? 0.0f : t == "kinematic" ? 2.0f : 1.0f);
+    return 0;
+}
+
 int l_setObjectParameter(lua_State* L) {
     int id = (int)N(L, 2);
     float value = N(L, 3);
@@ -2017,35 +2239,66 @@ int l_drawBoxNative(lua_State* L) {
     std::string tl = comp("topLeft"), tm = comp("topMiddle"), tr = comp("topRight");
     std::string l = comp("left"), c = comp("center"), r = comp("right");
     std::string bl = comp("bottomLeft"), bm = comp("bottomMiddle"), br = comp("bottomRight");
-    float lw, lh, rw, rh, th = 0, bh2 = 0, tw, bw2, unused;
+    float lw, rw, unused;
     bounds(l, lw, unused); bounds(r, rw, unused);
     if (tl.empty() && tm.empty() && tr.empty() && bl.empty() && bm.empty() && br.empty()) {
         // three pieces in a row
+        // a bar with only a right end (Friends 2.0.0's power-up bar: center + right) is as wide as the middle, and its end comes after it; the
+        // slider's width ends at the last icon's slot, so the end piece inside that width left the last icon sticking out of the bar
+        if (l.empty() && !r.empty() && !c.empty()) { draw(c, left, top, w, h); draw(r, left + w, top, rw, h); return 0; }
         float cw = w - lw - rw;
         draw(l, left, top, lw, h);
         draw(c, left + lw, top, cw, h);
         draw(r, left + w - rw, top, rw, h);
         return 0;
     }
-    float tlw, tlh, trw, trh, blw, blh, brw, brh;
-    bounds(tl, tlw, tlh); bounds(tr, trw, trh); bounds(bl, blw, blh); bounds(br, brw, brh);
-    bounds(tm, tw, th); bounds(bm, bw2, bh2);
-    float topH = std::max(tlh, std::max(trh, th)), botH = std::max(blh, std::max(brh, bh2));
-    float leftW = std::max(tlw, std::max(lw, blw)), rightW = std::max(trw, std::max(rw, brw));
-    float midW = w - leftW - rightW, midH = h - topH - botH;
-    draw(tl, left, top, leftW, topH);
-    draw(tm, left + leftW, top, midW, topH);
-    draw(tr, left + w - rightW, top, rightW, topH);
-    draw(l, left, top + topH, leftW, midH);
-    draw(c, left + leftW, top + topH, midW, midH);
-    draw(r, left + w - rightW, top + topH, rightW, midH);
-    draw(bl, left, top + h - botH, leftW, botH);
-    draw(bm, left + leftW, top + h - botH, midW, botH);
-    draw(br, left + w - rightW, top + h - botH, rightW, botH);
+    // nine pieces round an inner rectangle (x, y, width, height): every piece's pivot is the point of that rectangle it joins (a top-left
+    // corner's pivot is its bottom-right corner, SLINGSHOT_TAB_TOP_LEFT 90x131 with its pivot at (89, 130), so the slingshot menu's tab
+    // reaches up to its button); the edges and the middle stretch along the rectangle, the corners keep their size. The script passes the
+    // inner size (BackgroundBox: width - 2 * borderWidth), so the frame lies outside it
+    // where a piece lies when it keeps its size: its pivot on the point (ax, ay); false when it is missing
+    auto place = [&](const std::string& n, float ax, float ay, float& x0, float& y0, float& x1, float& y1) {
+        if (n.empty()) return false;
+        float pw, ph, px = 0, py = 0;
+        bounds(n, pw, ph);
+        if (pw <= 0 || ph <= 0) return false;
+        P(L)->ResGetSpritePivot("", n, px, py);
+        x0 = ax - px; y0 = ay - py; x1 = x0 + pw; y1 = y0 + ph;
+        return true;
+    };
+    float right = left + w, bottom = top + h;
+    float a0, b0, a1, b1, c0, d0, c1, d1;
+    // the stretched pieces reach from one neighbour to the next (TUTORIAL_RIGHT's pivot is (-2, 0), so it starts two pixels past the
+    // rectangle and the middle has to reach it, or the background shows through a thin line)
+    float cx0 = place(l, left, top, a0, b0, a1, b1) ? a1 : left, cx1 = place(r, right, top, a0, b0, a1, b1) ? a0 : right;
+    float cy0 = place(tm, left, top, a0, b0, a1, b1) ? b1 : top, cy1 = place(bm, left, bottom, a0, b0, a1, b1) ? b0 : bottom;
+    draw(c, cx0, cy0, cx1 - cx0, cy1 - cy0);
+    auto hEdge = [&](const std::string& n, const std::string& cl, const std::string& cr, float ay) {
+        if (!place(n, left, ay, a0, b0, a1, b1)) return;
+        float x0 = place(cl, left, ay, c0, d0, c1, d1) ? c1 : left, x1 = place(cr, right, ay, c0, d0, c1, d1) ? c0 : right;
+        draw(n, x0, b0, x1 - x0, b1 - b0);
+    };
+    auto vEdge = [&](const std::string& n, const std::string& ct, const std::string& cb, float ax) {
+        if (!place(n, ax, top, a0, b0, a1, b1)) return;
+        float y0 = place(ct, ax, top, c0, d0, c1, d1) ? d1 : top, y1 = place(cb, ax, bottom, c0, d0, c1, d1) ? d0 : bottom;
+        draw(n, a0, y0, a1 - a0, y1 - y0);
+    };
+    hEdge(tm, tl, tr, top);
+    hEdge(bm, bl, br, bottom);
+    vEdge(l, tl, bl, left);
+    vEdge(r, tr, br, right);
+    auto corner = [&](const std::string& n, float ax, float ay) { if (place(n, ax, ay, a0, b0, a1, b1)) draw(n, a0, b0, a1 - a0, b1 - b0); };
+    corner(tl, left, top);
+    corner(tr, right, top);
+    corner(bl, left, bottom);
+    corner(br, right, bottom);
     return 0;
 }
 // getCurrentTime() -> {year, month, day, hour, min, sec}; getTimeDifference(a, b) -> {days, hours, minutes, seconds}
 // where a is the later time
+// v3.1: rewind([frames]) puts the physics objects back that many frames (1 when left out or nil); returns the frames gone back
+int l_rewind(lua_State* L) { int n = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : 1; lua_pushinteger(L, P(L)->Rewind(n)); return 1; }
+
 int l_getCurrentTime(lua_State* L) {
     time_t t = time(nullptr);
     struct tm* m = localtime(&t);
@@ -2268,12 +2521,48 @@ int l_getTimeDifferenceInSeconds(lua_State* L) {
 int l_drawLevelParticlesNative(lua_State* L) { P(L)->DrawLevelParticles((int)N(L, 1)); return 0; }
 int l_noop(lua_State*) { return 0; }   // setAlpha, drawLevelParticlesNative (the game view already draws its particles)
 int l_setWorldGravity(lua_State* L) { P(L)->SetWorldGravity(N(L, 1), N(L, 2)); return 0; }
+// v3.1: Rio HD 2.0.0: loadDATFileToTable(path, name) reads a sprite sheet (.dat) and makes the global `name` a table of its sprites:
+// [sprite] = {x, y, width, height, pivotX, pivotY} (the game builds its block sizes from these)
+int l_loadParticleFile(lua_State* L) {      // v3.1: Angry Birds Friends: loadParticleFile() reads the game's particles.lua into particleTable (the older games' exe does it at start)
+    PushEnv(L); lua_getfield(L, -1, "scriptPath"); std::string base = lua_isstring(L, -1) ? lua_tostring(L, -1) : "scripts"; lua_pop(L, 2);
+    std::string path = luaL_optstring(L, 1, (base + "/particles.lua").c_str()), err;
+    if (!LoadTableFile(L, "particleTable", path, &err)) P(L)->Print("loadParticleFile: " + err);
+    return 0;
+}
+int l_getGameTimerMillis(lua_State* L) {      // v3.1: Rio HD 2.0.0: milliseconds since the game started
+    static const auto start = std::chrono::steady_clock::now();
+    lua_pushnumber(L, (lua_Number)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
+    return 1;
+}
+int l_loadDATFileToTable(lua_State* L) {
+    std::string path = S(L, 1), name = luaL_optstring(L, 2, "temp");
+    std::vector<Platform::DatSprite> sprites;
+    std::string err;
+    lua_newtable(L);
+    if (P(L)->ReadDatSprites(path, sprites, &err)) {
+        for (const Platform::DatSprite& sp : sprites) {
+            lua_newtable(L);
+            SetNum(L, "x", (float)sp.x); SetNum(L, "y", (float)sp.y); SetNum(L, "width", (float)sp.w); SetNum(L, "height", (float)sp.h);
+            SetNum(L, "pivotX", (float)sp.pivotX); SetNum(L, "pivotY", (float)sp.pivotY);
+            lua_setfield(L, -2, sp.name.c_str());
+        }
+    } else P(L)->Print("loadDATFileToTable: cannot read " + path + (err.empty() ? std::string() : ": " + err));
+    PushEnv(L);
+    lua_pushvalue(L, -2);
+    lua_setfield(L, -2, name.c_str());
+    lua_pop(L, 2);
+    return 0;
+}
+// v3.1: Angry Birds Star Wars 1.0 (and later): setDeltaTimeMultiplier(m) / getDeltaTimeMultiplier(), the speed of the game's clock (bullet time of the lightsabre / Force powers); the script's update gets dt * m
+int l_setDeltaTimeMultiplier(lua_State* L) { lua_getfield(L, LUA_REGISTRYINDEX, "ab.env"); lua_pushnumber(L, luaL_optnumber(L, 1, 1.0)); lua_setfield(L, -2, "g_deltaTimeMultiplier"); lua_pop(L, 1); return 0; }      // the frame loop scales the time step by g_deltaTimeMultiplier
+int l_getDeltaTimeMultiplier(lua_State* L) { lua_getfield(L, LUA_REGISTRYINDEX, "ab.env"); lua_getfield(L, -1, "g_deltaTimeMultiplier"); lua_remove(L, -2); if (!lua_isnumber(L, -1)) { lua_pop(L, 1); lua_pushnumber(L, 1.0); } return 1; }
 int l_getWorldGravity(lua_State* L) { float x = 0, y = 0; P(L)->GetWorldGravity(x, y); lua_pushnumber(L, x); lua_pushnumber(L, y); return 2; }
 int l_clearParticlesNative(lua_State* L) { P(L)->ClearParticles(); return 0; }
 int l_drawGameNative(lua_State* L) { P(L)->DrawGame(); return 0; }
 int l_drawBackgroundNative(lua_State* L) { P(L)->DrawBackground(); return 0; }
 int l_drawForegroundNative(lua_State* L) { P(L)->DrawForeground(); return 0; }
 int l_drawParticlesNative(lua_State* L) { P(L)->DrawParticles(false); return 0; }
+int l_drawMenuParticlesInAdvance(lua_State* L) { P(L)->DrawMenuParticlesInAdvance(); (void)L; return 0; }
 int l_setSprite(lua_State* L) { P(L)->SetSprite(S(L, 1), S(L, 2)); return 0; }
 int l_setMaterial(lua_State* L) { P(L)->SetMaterial(S(L, 1), S(L, 2)); return 0; }
 int l_setTexture(lua_State* L) { P(L)->SetTexture(S(L, 1), S(L, 2)); return 0; }
@@ -2376,6 +2665,13 @@ int l_verifyDeviceID(lua_State* L) {
 // ---- res.*
 int r_setPath(lua_State* L) { P(L)->ResSetPath(S(L, 1)); return 0; }
 int r_createSpriteSheet(lua_State* L) { P(L)->ResCreateSpriteSheet(S(L, 1)); return 0; }
+// abPeekSprite(sheetFile, sprite): w, h, pivotX, pivotY from a sheet file that is not loaded (nothing when the sheet has no such sprite)
+int r_abPeekSprite(lua_State* L) {
+    float w, h, px, py;
+    if (!P(L)->ResPeekSprite(S(L, 1), S(L, 2), w, h, px, py)) return 0;
+    lua_pushnumber(L, w); lua_pushnumber(L, h); lua_pushnumber(L, px); lua_pushnumber(L, py);
+    return 4;
+}
 int r_releaseSpriteSheet(lua_State* L) { P(L)->ResReleaseSpriteSheet(S(L, 1)); return 0; }
 int r_createCompoSpriteSet(lua_State* L) { P(L)->ResCreateCompoSpriteSet(S(L, 1)); return 0; }
 int r_releaseCompoSpriteSet(lua_State* L) { P(L)->ResReleaseCompoSpriteSet(S(L, 1)); return 0; }
@@ -2422,6 +2718,7 @@ int r_drawString(lua_State* L) {
     P(L)->ResDrawString(S(L, 1), S(L, 2), N(L, 3), N(L, 4), S(L, 5), S(L, 6));
     return 0;
 }
+int r_getClipRect(lua_State* L) { float x, y, w, h; P(L)->ResGetClipRect(x, y, w, h); lua_pushnumber(L, x); lua_pushnumber(L, y); lua_pushnumber(L, w); lua_pushnumber(L, h); return 4; }
 int r_setClipRect(lua_State* L) { P(L)->ResSetClipRect(N(L, 1), N(L, 2), N(L, 3), N(L, 4)); return 0; }
 // getSpriteBounds(sheet, sprite) or getSpriteBounds(sprite): "" as the sheet means any sheet
 int r_getSpriteBounds(lua_State* L) {
@@ -2454,6 +2751,13 @@ int r_getCompoSpriteBounds(lua_State* L) {
     return 4;
 }
 int r_getStringWidth(lua_State* L) { lua_pushnumber(L, P(L)->ResGetStringWidth(S(L, 1))); return 1; }
+int r_createSystemFont(lua_State* L) { P(L)->ResAliasFont(S(L, 1), (float)luaL_optnumber(L, 3, 16)); return 0; }      // v3.1: Angry Birds Friends' TrueType fonts are drawn with the game's closest bitmap font
+int r_getAvailableSystemFonts(lua_State* L) {
+    const char* names[] = {"Arial", "Arial Rounded MT Bold", "ArialRoundedMTBold", "Helvetica", "Helvetica-Bold", "AngryBirdsText-Regular", "OpenSans-Regular", "OpenSans-CondBold"};
+    lua_newtable(L);
+    for (int i = 0; i < 8; i++) { lua_pushstring(L, names[i]); lua_rawseti(L, -2, i + 1); }
+    return 1;
+}
 int r_getFontHeight(lua_State* L) { lua_pushnumber(L, P(L)->ResGetFontHeight()); return 1; }
 int r_getFontTracking(lua_State* L) { lua_pushnumber(L, P(L)->ResGetFontTracking()); return 1; }
 int r_getFontLeading(lua_State* L) { lua_pushnumber(L, P(L)->ResGetFontLeading()); return 1; }
@@ -2589,6 +2893,8 @@ int l_retailNoop(lua_State*) { return 0; }   // clearScreen, refreshCurrentLocal
 int l_setFriction(lua_State* L) { P(L)->SetObjectFriction(S(L, 1), N(L, 2)); return 0; }
 int l_resizeCircle(lua_State* L) { P(L)->ResizeObjectCircle(S(L, 1), N(L, 2)); return 0; }
 int l_setVisible(lua_State* L) { P(L)->SetObjectAlpha(S(L, 1), lua_toboolean(L, 2) ? 1.0f : 0.0f); return 0; }
+// isVisible(name): Friends 2.0.0 asks whether an object is drawn (setVisible keeps it as the object's alpha); an object without one is visible
+int l_isVisible(lua_State* L) { float a = P(L)->ObjectAlpha(S(L, 1)); lua_pushboolean(L, a != 0.0f); return 1; }
 int l_setObjectDensity(lua_State* L) { P(L)->SetObjectDensity(S(L, 1), N(L, 2)); return 0; }
 int r_keepLastFrame(lua_State* L) { P(L)->ResKeepLastFrame(lua_toboolean(L, 1) != 0); return 0; }
 int r_spawnFGLayerParticles(lua_State* L) { P(L)->SpawnFGLayerParticles((int)lua_tonumber(L, 1)); return 0; }
@@ -2642,6 +2948,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"setIsMultitouchMouseWheelSimulationEnabled", l_setIsMultitouchMouseWheelSimulationEnabled},
         {"doesMouseClickSetsTouchCount", l_doesMouseClickSetsTouchCount},
         {"setEditing", l_setEditing}, {"setGameOn", l_setGameOn},
+        {"abNativeLoadLuaTable", l_nativeLoadLuaTable}, {"abNativeLoadLuaScript", l_nativeLoadLuaScript}, {"abListFolder", l_abListFolder}, {"abReadJson", l_abReadJson},   // native.loadLuaTable / loadLuaScript (Friends 2.0.0), put in place by script_host.cpp
         {"requireFile", l_requireFile}, {"loadLuaFileToObject", l_loadLuaFileToObject}, {"loadLuaFile", l_loadLuaFileToObject},   // 2.0.0: the same without an object
         {"loadLevel", l_loadLevel}, {"loadLevelEditor", l_loadLevelEditor}, {"saveLevel", l_saveLevel}, {"saveLevelForReload", l_saveLevelForReload}, {"saveLuaFile", l_saveLuaFile}, {"checkForPersistentFile", l_checkForPersistentFile}, {"loadPersistentFileWrapper", l_loadPersistentFileWrapper},
         {"initializePainter", l_initializePainter}, {"clearCanvas", l_clearCanvas}, {"paintToCanvas", l_paintToCanvas}, {"drawCanvasWithMask", l_drawCanvasWithMask},
@@ -2669,7 +2976,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"getGravityForceMultiplier", l_getGravityForceMultiplier}, {"setAngularDamping", l_setAngularDamping},
         {"setFixedRotation", l_setFixedRotation}, {"setActive", l_setActive}, {"multiplyVelocity", l_multiplyVelocity}, {"setAsSensor", l_setAsSensor}, {"setSensor", l_setAsSensor}, {"setFilterMask", l_setFilterMask}, {"setFilterCategory", l_setFilterCategory},
         {"getAngularVelocity", l_getAngularVelocity}, {"setSleeping", l_setSleeping},
-        {"getAngle", l_getAngle}, {"getWorldPoint", l_getWorldPoint}, {"setObjectParameter", l_setObjectParameter}, {"setScale", l_setScale}, {"getScale", l_getScale}, {"setSpeedCap", l_setSpeedCap}, {"getSpeedCap", l_getSpeedCap}, {"clearSpeedCap", l_clearSpeedCap}, {"getTouchingObjects", l_getTouchingObjects}, {"rayCast", l_rayCast}, {"fileExists", l_fileExists},
+        {"getAngle", l_getAngle}, {"getWorldPoint", l_getWorldPoint}, {"setObjectParameter", l_setObjectParameter}, {"setBodyType", l_setBodyType}, {"setScale", l_setScale}, {"getScale", l_getScale}, {"setSpeedCap", l_setSpeedCap}, {"getSpeedCap", l_getSpeedCap}, {"clearSpeedCap", l_clearSpeedCap}, {"getTouchingObjects", l_getTouchingObjects}, {"rayCast", l_rayCast}, {"fileExists", l_fileExists},
         {"setPhysicsSimulationScale", l_setPhysicsSimulationScale}, {"setPhysicsEnabled", l_setPhysicsEnabled}, {"setThemeOffsetY", l_setThemeOffsetY}, {"setStartingCameraValue", l_setStartingCameraValue},
         {"isPhysicsEnabled", l_isPhysicsEnabled}, {"setLevelLimits", l_setLevelLimits},
         {"setTopLeft", l_setTopLeft}, {"getCamera", l_getCamera}, {"getThemeLayers", l_getThemeLayers}, {"setThemeLayer", l_setThemeLayer}, {"setWorldScale", l_setWorldScale}, {"setMaxWorldScale", l_setMaxWorldScale}, {"resetMouseWheelScale", l_resetMouseWheelScale},
@@ -2677,7 +2984,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"setRenderState", l_setRenderState}, {"drawRect", l_drawRect}, {"drawLine2D", l_drawLine2D},
         {"drawTexturedRect", l_nothing}, {"drawSome", l_nothing},
         {"drawGameNative", l_drawGameNative}, {"drawBackgroundNative", l_drawBackgroundNative},
-        {"drawForegroundNative", l_drawForegroundNative}, {"drawParticlesFiltered", l_drawParticlesFiltered}, {"readDataFile", l_readDataFile}, {"setObjectDensity", l_setObjectDensity}, {"setDensity", l_setObjectDensity}, {"setFriction", l_setFriction}, {"resizeCircle", l_resizeCircle}, {"setVisible", l_setVisible}, {"inheritTeleportation", l_retailNoop}, {"setRestitution", l_setRestitution}, {"handleJointLimits", l_handleJointLimits}, {"getFullScreenWidth", l_getFullScreenWidth}, {"getFullScreenHeight", l_getFullScreenHeight}, {"performBitwiseOr", l_performBitwiseOr}, {"setWaterForceMultiplier", l_setWaterForceMultiplier}, {"getWaterForceMultiplier", l_getWaterForceMultiplier}, {"setBirdWaterDrag", l_setBirdWaterDrag}, {"setObjectWaterDrag", l_setObjectWaterDrag}, {"fileExistsInAppData", l_fileExistsInAppData}, {"loadTextFileToString", l_loadTextFileToString}, {"isGameOverlayActive", l_isGameOverlayActive}, {"clearScreen", l_retailNoop}, {"isEditing", l_false}, {"setRollingSound", l_retailNoop}, {"setRovioShelfAllowed", l_retailNoop}, {"setChannelCountLimit", l_retailNoop}, {"setOffsetedViewport", l_retailNoop}, {"refreshCurrentLocale", l_retailNoop}, {"recoverRenderObjects", l_retailNoop}, {"drawParticlesNative", l_drawParticlesNative},
+        {"drawForegroundNative", l_drawForegroundNative}, {"drawParticlesFiltered", l_drawParticlesFiltered}, {"readDataFile", l_readDataFile}, {"setObjectDensity", l_setObjectDensity}, {"setDensity", l_setObjectDensity}, {"setFriction", l_setFriction}, {"resizeCircle", l_resizeCircle}, {"setVisible", l_setVisible}, {"isVisible", l_isVisible}, {"inheritTeleportation", l_retailNoop}, {"setRestitution", l_setRestitution}, {"handleJointLimits", l_handleJointLimits}, {"getFullScreenWidth", l_getFullScreenWidth}, {"getFullScreenHeight", l_getFullScreenHeight}, {"performBitwiseOr", l_performBitwiseOr}, {"setWaterForceMultiplier", l_setWaterForceMultiplier}, {"getWaterForceMultiplier", l_getWaterForceMultiplier}, {"setBirdWaterDrag", l_setBirdWaterDrag}, {"setObjectWaterDrag", l_setObjectWaterDrag}, {"fileExistsInAppData", l_fileExistsInAppData}, {"loadTextFileToString", l_loadTextFileToString}, {"isGameOverlayActive", l_isGameOverlayActive}, {"clearScreen", l_retailNoop}, {"isEditing", l_false}, {"setRollingSound", l_retailNoop}, {"setRovioShelfAllowed", l_retailNoop}, {"setChannelCountLimit", l_retailNoop}, {"setOffsetedViewport", l_retailNoop}, {"refreshCurrentLocale", l_retailNoop}, {"recoverRenderObjects", l_retailNoop}, {"drawParticlesNative", l_drawParticlesNative}, {"drawMenuParticlesInAdvance", l_drawMenuParticlesInAdvance},
         {"setSprite", l_setSprite}, {"setMaterial", l_setMaterial}, {"setTexture", l_setTexture}, {"setTheme", l_setTheme},
         {"clipText", l_clipText},
         {"startNewTrajectory", l_startNewTrajectory}, {"addToTrajectory", l_addToTrajectory},
@@ -2700,11 +3007,11 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"removeThemeSprite", l_removeThemeSprite},
         {"updateThemeSprite", l_updateThemeSprite},
         {"drawLayer", l_nothing},
-        {"drawRectLines", l_drawRectLines}, {"drawBoxNative", l_drawBoxNative}, {"getCurrentTime", l_getCurrentTime},
+        {"drawRectLines", l_drawRectLines}, {"drawBoxNative", l_drawBoxNative}, {"getCurrentTime", l_getCurrentTime}, {"rewind", l_rewind},
         {"getTimeDifference", l_getTimeDifference}, {"setAlpha", l_setAlpha}, {"setBlendMode", l_setBlendMode}, {"setShader", l_setShader}, {"setTintChannel", l_setTintChannel}, {"setVisualRotation", l_setVisualRotation}, {"resetRenderOverrides", l_resetRenderOverrides}, {"setTint", l_setTint}, {"getTint", l_getTint}, {"resetTint", l_resetTint}, {"setSkew", l_setSkew}, {"setBend", l_setBend}, {"setRenderZ", l_setRenderZ}, {"setBlur", l_setBlur}, {"setPixelate", l_setPixelate}, {"resetBlur", l_resetBlur}, {"resetPixelate", l_resetPixelate}, {"drawUITextNative", l_drawUITextNative},
         {"getTImeDifferenceInSeconds", l_getTimeDifferenceInSeconds}, {"getTimeDifferenceInSeconds", l_getTimeDifferenceInSeconds}, {"checkRegistrationResult", l_false}, {"getClipboardText", l_emptyString},
         {"canOpenProgram", l_false}, {"openProgram", l_nothing}, {"hasLocationCapability", l_false}, {"drawLevelParticlesNative", l_drawLevelParticlesNative},
-        {"setWorldGravity", l_setWorldGravity}, {"getWorldGravity", l_getWorldGravity},
+        {"loadDATFileToTable", l_loadDATFileToTable}, {"getGameTimerMillis", l_getGameTimerMillis}, {"loadParticleFile", l_loadParticleFile}, {"setDeltaTimeMultiplier", l_setDeltaTimeMultiplier}, {"getDeltaTimeMultiplier", l_getDeltaTimeMultiplier}, {"setWorldGravity", l_setWorldGravity}, {"getWorldGravity", l_getWorldGravity},
         {"getOSName", l_osName}, {"getOSVersion", l_osVersion}, {"getModel", l_deviceModel},
         {"getManufacturer", l_deviceManufacturer}, {"getCurrentLocale", l_currentLocale},
         {"initLocales", l_nothing}, {"setRetinaResolution", l_nothing},
@@ -2742,15 +3049,15 @@ void RegisterApi(lua_State* L, Platform* p) {
     lua_getfield(L, LUA_REGISTRYINDEX, "ab.env"); lua_getfield(L, -1, "requireFile"); lua_setfield(L, LUA_GLOBALSINDEX, "requireFile"); lua_pop(L, 1);
 
     static const Entry res[] = {
-        {"setPath", r_setPath}, {"createSpriteSheet", r_createSpriteSheet}, {"releaseSpriteSheet", r_releaseSpriteSheet},
+        {"setPath", r_setPath}, {"createSpriteSheet", r_createSpriteSheet}, {"abPeekSprite", r_abPeekSprite}, {"releaseSpriteSheet", r_releaseSpriteSheet},
         {"createCompoSpriteSet", r_createCompoSpriteSet}, {"releaseCompoSpriteSet", r_releaseCompoSpriteSet},
         {"createBitmapFont", r_createBitmapFont}, {"useFont", r_useFont},
         {"createTextGroupSet", r_createTextGroupSet}, {"loadLocale", r_loadLocale}, {"useLocale", r_useLocale}, {"getLocale", r_getLocale}, {"releaseFont", r_nothing3}, {"releaseAudio", r_nothing3},
         {"getString", r_getString}, {"drawSprite", r_drawSprite}, {"drawCompoSprite", r_drawCompoSprite}, {"drawTexturedLine2D", r_drawTexturedLine2D},
-        {"drawString", r_drawString}, {"setClipRect", r_setClipRect},
+        {"drawString", r_drawString}, {"setClipRect", r_setClipRect}, {"getClipRect", r_getClipRect},
         {"getSpriteBounds", r_getSpriteBounds}, {"getSpritePivot", r_getSpritePivot},
         {"getCompoSpriteBounds", r_getCompoSpriteBounds}, {"getSpritePixel", r_getSpritePixel}, {"getCompoSprites", r_getCompoSprites},
-        {"getStringWidth", r_getStringWidth}, {"getFontHeight", r_getFontHeight}, {"getFontLeading", r_getFontLeading}, {"getFontTracking", r_getFontTracking},
+        {"getStringWidth", r_getStringWidth}, {"getFontHeight", r_getFontHeight}, {"createSystemFont", r_createSystemFont}, {"getAvailableSystemFonts", r_getAvailableSystemFonts}, {"getFontLeading", r_getFontLeading}, {"getFontTracking", r_getFontTracking},
         {"getFontMaxAscending", r_getFontMaxAscending}, {"getFontMaxDescending", r_getFontMaxDescending},
         {"createAudioOutput", r_createAudioOutput}, {"startAudioOutput", r_startAudioOutput},
         {"stopAudioOutput", r_stopAudioOutput}, {"createAudio", r_createAudio}, {"captureSprite", r_captureSprite}, {"keepLastFrame", r_keepLastFrame}, {"playAudio", r_playAudio},
@@ -2770,6 +3077,7 @@ void RegisterApi(lua_State* L, Platform* p) {
     static const Entry particles[] = {
         {"clear", p_clear}, {"addParticles", p_addParticles}, {"addLevelParticles", p_addLevelParticles}, {"setSoftLimit", p_setSoftLimit}, {"setHardLimit", p_setHardLimit},
         {"native_addParticlesWithMode", p_addParticlesWithMode}, {"addParticlesWithScale", p_addParticlesWithScale}, {"addParticlesWithProperties", p_addParticlesWithProperties},
+        {"clearMenuParticlesNative", p_clear}, {"clearGameParticlesNative", p_clear}, {"clearParticleCache", l_clearParticleCache},      // v3.1: Rio HD 2.0.0 calls these through _G.particles
     };
     lua_newtable(L);
     Register(L, p, lua_gettop(L), particles, sizeof(particles) / sizeof(particles[0]));
@@ -2824,6 +3132,15 @@ bool LoadTableFile(lua_State* L, const char* name, const std::string& path, std:
         if (loaded != 0) { loadError = lua_tostring(L, -1); lua_pop(L, 1); }
     }
     if (loaded == 0) {
+        // v3.1: the newer Seasons builds (PC, and 4.1.0 on the iPhone) run code in blocks.lua that reads gamelua and _G: the data table answers those two names
+        // through a metatable (so they never show up when the game walks the table); 4.1.0's `this` is the table itself (its blocks/*.lua files are loaded into it)
+        if (!lua_getmetatable(L, -2)) {
+            luaL_loadstring(L, "local env, G = ...; return {__index = function(t, k) if k == 'gamelua' then return env.gamelua or env elseif k == '_G' then return G elseif k == 'this' then return t end end}");
+            lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+            lua_pushvalue(L, LUA_GLOBALSINDEX);
+            lua_call(L, 2, 1);
+            lua_setmetatable(L, -3);
+        } else lua_pop(L, 1);
         lua_pushvalue(L, -2);
         lua_setfenv(L, -2);
         if (lua_pcall(L, 0, 0, 0) == 0) ok = true;
@@ -2871,7 +3188,13 @@ bool LoadRioTables(lua_State* L) {
     const char* blockFiles[] = {"/pigs.lua", "/levelgoals.lua", "/scoreobjects.lua", "/birds.lua", "/blocks_hazard.lua",
                                 "/blocks_wood.lua", "/blocks_stone.lua", "/blocks_glass.lua", "/blocks_misc.lua",
                                 "/blocks_static.lua", "/blocks_staticfragile.lua", "/blocks_decorations.lua"};
-    for (const char* f : blockFiles) {
+    // v3.1: Rio HD 2.0.0 has more block files (blocks_misc2.lua, blocks_misc3.lua, blocks_rocks.lua, blocks_pyrotechnics.lua ...): every other blocks_*.lua of the folder is read too
+    std::vector<std::string> files(std::begin(blockFiles), std::end(blockFiles));
+    for (const std::string& n : ab::ListFolder(base)) {
+        if (n.size() > 11 && n.compare(0, 7, "blocks_") == 0 && n.compare(n.size() - 4, 4, ".lua") == 0 && std::find(files.begin(), files.end(), "/" + n) == files.end()) files.push_back("/" + n);
+    }
+    for (const std::string& fs : files) {
+        const char* f = fs.c_str();
         std::vector<uint8_t> bytes;
         ab::ReadLuaFile(base + f, bytes);
         if (bytes.empty() || luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), f) != 0) {

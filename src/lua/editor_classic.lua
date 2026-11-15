@@ -9,6 +9,7 @@ function updateEditor(dt, time)
 
 	-- the joint page of the Seasons / 1.6.x editors (menus/editorjointPage.lua), when the game ships it: J and F1 to F5 open it with a new joint
 	if EditorJointPage and not editorJointPage then
+		if editor == nil then editor = { drawOneLayer = false, currentLayer = 0 } end   -- the window reads it while it is made
 		editorJointPage = EditorJointPage:new()
 		editorJointPage:onEntry()
 	end

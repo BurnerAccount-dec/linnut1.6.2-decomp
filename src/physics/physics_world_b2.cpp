@@ -63,6 +63,7 @@ public:
     float Angle() const override { return b_->GetAngle(); }
     void SetAngularVelocity(float w) override { Wake("SetAngularVelocity"); b_->SetAngularVelocity(w); }
     void SetAwake(bool awake) override { if (awake && !b_->IsAwake() && std::getenv("AB_WAKEDBG")) std::fprintf(stderr, "WAKE SetAwake\n"); b_->SetAwake(awake); }
+    void SetKinematic() override { b_->SetType(b2_kinematicBody); }
     void SetStatic(bool isStatic) override { if (!isStatic && !b_->IsAwake() && std::getenv("AB_WAKEDBG")) std::fprintf(stderr, "WAKE SetStatic\n"); b_->SetType(isStatic ? b2_staticBody : b2_dynamicBody); }
     void SetTransform(float x, float y, float angle) override { b_->SetTransform(b2Vec2(x, y), angle); }
     void WorldPoint(float lx, float ly, float& wx, float& wy) const override {
@@ -270,7 +271,7 @@ public:
     }
     // The aiming aid's arc (extension of the retail trail, which is the bird's free flight): the bird alone in a world with the same gravity, launched with
     // the given velocity and stepped like the real world (1/30 s, 10 + 10 iterations, the speed caps after every step). No blocks, no ground.
-    bool SimulateFlight(const std::string& bird, float vx, float vy, int steps, int every, float h, std::vector<std::pair<float, float>>& out, const float* start = nullptr) override {
+    bool SimulateFlight(const std::string& bird, float vx, float vy, int steps, int every, float h, std::vector<std::pair<float, float>>& out, const float* start = nullptr, const float* force = nullptr) override {   // force: a push applied before every step, like a script's applyForce each frame (the Boomerang Bird's lift)
         PhysObject* o = Find(bird);
         if (!o || !o->pbody) return false;
         b2Body* src = BodyOf(o);
@@ -283,9 +284,12 @@ public:
             b2FixtureDef fd; fd.shape = f->GetShape(); fd.friction = f->GetFriction(); fd.restitution = f->GetRestitution(); fd.density = f->GetDensity(); fd.filter = f->GetFilterData();
             bb->CreateFixture(&fd);
         }
+        { b2MassData md; src->GetMassData(&md); bb->SetMassData(&md); }      // v3.1: the copy weighs what the real bird weighs (a pushed bird, like the Boomerang, flew with the wrong mass)
         bb->SetLinearVelocity(b2Vec2(vx, vy));
         for (int i = 0; i < steps; i++) {
+            if (force) bb->ApplyForce(b2Vec2(force[0], force[1]), bb->GetWorldCenter());
             scratch.Step(h, 10, 10);
+            scratch.ClearForces();      // forces are not cleared by the step here (as in the exe): the frame loop clears them, so the copy does too
             if (o->capVx > 0 || o->capVy > 0 || o->capSpeed > 0) {
                 b2Vec2 n0 = bb->GetLinearVelocity();
                 if (o->capVx > 0) n0.x = std::max(-o->capVx, std::min(o->capVx, n0.x));
@@ -404,9 +408,31 @@ public:
         PhysObject* o = MakeObject(d, -1.0f, false);
         std::vector<b2Vec2> pts;
         for (size_t i = 0; i + 1 < verts.size(); i += 2) pts.push_back(b2Vec2(verts[i], verts[i + 1]));
-        b2PolygonShape shape;
-        shape.Set(pts.data(), (int)pts.size());
-        MakeFixture(BodyOf(o), o, shape, d);
+        float area2 = 0;     // twice the signed area: Box2D wants the points counter-clockwise, and Stella has shapes drawn the other way round
+        for (size_t i = 0; i < pts.size(); i++) { const b2Vec2& p = pts[i]; const b2Vec2& q = pts[(i + 1) % pts.size()]; area2 += p.x * q.y - q.x * p.y; }
+        if (area2 < 0) std::reverse(pts.begin(), pts.end());
+        if (pts.size() >= 3 && std::fabs(area2) < 2e-5f) pts.resize(2);    // no area: made as the small box below
+        if (pts.size() >= 3 && (int)pts.size() <= b2_maxPolygonVertices) {
+            b2PolygonShape shape;
+            shape.Set(pts.data(), (int)pts.size());
+            MakeFixture(BodyOf(o), o, shape, d);
+        } else if (pts.size() > (size_t)b2_maxPolygonVertices) {
+            // Stella's levels have shapes with more points than Box2D takes (8): a fan of triangles from the first point (Box2D asserts, or writes
+            // past its array in a release build, on a polygon this large). Triangles too thin to be a shape are left out.
+            for (size_t i = 1; i + 1 < pts.size(); i++) {
+                b2Vec2 tri[3] = {pts[0], pts[i], pts[i + 1]};
+                float area = 0.5f * ((tri[1].x - tri[0].x) * (tri[2].y - tri[0].y) - (tri[2].x - tri[0].x) * (tri[1].y - tri[0].y));
+                if (std::fabs(area) < 1e-5f) continue;
+                if (area < 0) std::swap(tri[1], tri[2]);   // counter-clockwise, as Box2D wants
+                b2PolygonShape shape;
+                shape.Set(tri, 3);
+                MakeFixture(BodyOf(o), o, shape, d);
+            }
+        } else {
+            b2PolygonShape shape;      // fewer than three points: a small box, so the object still has a body
+            shape.SetAsBox(0.05f, 0.05f);
+            MakeFixture(BodyOf(o), o, shape, d);
+        }
         if (d.controllable) o->pbody->SetAngularDamping(2.0f);
         AddObject(o, false);
         return o->pbody->Mass();

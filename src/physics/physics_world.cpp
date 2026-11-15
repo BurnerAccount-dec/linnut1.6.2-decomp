@@ -1,3 +1,5 @@
+#include <cstdio>
+#include <cstdlib>
 // The part of the physics world that does not depend on the Box2D version. See physics_world.h.
 #include "physics/physics_world.h"
 
@@ -223,6 +225,11 @@ void PhysicsWorld::SetRolling(const std::string& n, int material, bool rolls, fl
 void PhysicsWorld::SetObjectParameter(const std::string& n, int id, float value) {
     PhysObject* o = Find(n);
     if (!o) return;
+    if (id == 9000) {   // the body type (setBodyType): 0 static, 1 dynamic, 2 kinematic
+        if (!o->pbody) return;
+        if ((int)value == 2) o->pbody->SetKinematic(); else o->pbody->SetStatic((int)value == 0);
+        return;
+    }
     if (spaceRules) {
         // 0x47ac60 (jump table at 0x47afe0). Scale is always drawn in Space (ids 5, 17, 18); 6/7 are floats the draw code does not read here,
         // 16 is ignoreClassicGravity (the world has no gravity) and 33 is isVisible
@@ -339,7 +346,13 @@ bool PhysicsWorld::GravityPull(const PhysObject& s, const PhysObject& t, float t
         F = s.gravExt > 0 ? s.gravMax - d / s.gravExt * (s.gravMax - s.gravMin) : s.gravMax;
     }
     float mag = F * mass * 0.1f;
-    if (t.isBird) mag *= BirdGravityFactor(timer);
+    if (const char* gd = std::getenv("AB_GRAVDBG")) { static int gn = 0; if ((gd[0] == '1' || s.name == gd) && gn++ < 40) std::fprintf(stderr, "GRAV %s -> %s min=%g max=%g rad=%g ext=%g F=%g dir=%g,%g mass=%g\n", s.name.c_str(), t.name.c_str(), s.gravMin, s.gravMax, s.gravRadius, s.gravExt, F, ux, uy, mass); }
+    // Space 1.1.0 for iPhone (0x37522): the bird factor is not used by box sensors, and it fades by 2 a second (the PC's 1.3); a
+    // gravity box (Bonus191) pulled birds gravityForceMultiplier (3.28) times too hard
+    if (t.isBird && !(phoneSpaceGravity && s.gravRadius <= -1)) {
+        if (phoneSpaceGravity && timer >= 0) { float m = gravityForceMultiplier - timer * 2.0f; if (m > 1) mag *= m; }
+        else mag *= BirdGravityFactor(timer);
+    }
     else if (t.revertGravity) mag *= Tn("gravity.revertFactor", -0.1f);
     else if (t.revertMulti) {
         if (std::sqrt(tvx * tvx + tvy * tvy) >= t.revertMaxSpeed) return false;
@@ -418,6 +431,7 @@ void PhysicsWorld::ApplyGravitySensors(float dt) {
     // an object of kind 5 or 7 is skipped. 0x46f720 only tests the sensor kind (+0x15c == 2): the flag set by parameter 22 (+0x19f) is stored but never read.
     for (size_t i = sensorPairs_.size(); i-- > 0;) {
         PhysObject& s = *sensorPairs_[i].first; PhysObject& t = *sensorPairs_[i].second;
+        if (const char* gd = std::getenv("AB_GRAVDBG")) { static int pn = 0; if (s.name == gd && pn++ < 30) std::fprintf(stderr, "GPAIR %s -> %s kind=%d tkind=%d awake=%d static=%d\n", s.name.c_str(), t.name.c_str(), s.sensorKind, t.sensorKind, t.pbody ? (int)t.pbody->IsAwake() : -1, t.pbody ? (int)t.pbody->IsStatic() : -1); }
         if (!s.pbody || !t.pbody || s.sensorKind != 2 || t.sensorKind == 5 || t.sensorKind == 7 || !t.pbody->IsAwake()) continue;
         if (t.pbody->IsStatic()) continue;
         if (starWarsRules && !s.gravOn) continue;                       // 0x423270 only acts for a sensor with parameter 22 set

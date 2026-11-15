@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdlib>
 #include <cstdio>
 #include "engine/font.h"
@@ -93,6 +94,14 @@ bool ParseBitmapFont(const std::vector<uint8_t>& bytes, BitmapFont& out, std::st
         if (ascent > out.maxAscent) out.maxAscent = ascent;
         if (s.h - ascent > out.maxDescent) out.maxDescent = s.h - ascent;
         out.glyphs[code] = s;
+    }
+    if (r.ok && out.glyphs.size() > 300) {
+        // v3.1: the international fonts (500+ glyphs: Angry Birds HD, 1.3.5, 2.0.0, 3.3.0) carry accented capitals and hooked letters that reach far
+        // above and below the text, which made getFontHeight (and the gap between two lines placed with it, such as Highscore and Score) too big:
+        // their height comes from the basic Latin letters
+        int a = 0, d = 0;
+        for (const auto& g : out.glyphs) if (g.first < 128) { a = std::max(a, g.second.pivotY); d = std::max(d, g.second.h - g.second.pivotY); }
+        if (a + d > 0) { out.maxAscent = a; out.maxDescent = d; }
     }
     return r.ok ? true : Fail(error, "font file is cut short");
 }

@@ -149,7 +149,7 @@ end)
 -- keeps for a gravitation sensor. A circle entry's sprite is drawn eight times round the sensor (four turns of a quarter, then four more shifted by an eighth),
 -- scaled by entry.scale * radius * 3 * zoom * 0.019; a box entry's sprite is drawn along the sensor's length at entry.pos (0..1), turned a quarter past the sensor's angle.
 -- (The game's own script passes no zoom, which reads as 0 in the exe, so the retail game draws nothing; a mod that passes the zoom gets the rings.)
--- Every sprite is turned about its own bottom corner (the pivot is the sprite size) and drawn with the pivot anchors (VPIVOT, HPIVOT).
+-- Every circle sprite is turned about its own pivot (which lies outside the slice, at the field's centre) and drawn with the pivot anchors (VPIVOT, HPIVOT).
 ifMissing("renderGravityVisualsNative", function(sen, sx, sy, zoom)
     zoom = zoom or 0   -- the retail script passes only three arguments, and the exe's number reader gives 0 for the missing fourth: scaled to nothing, so nothing is drawn
     if type(sen) ~= "table" or sen.sensorType == nil or sen.addVisualTimer == nil or not sen.active or sen.definition == nil then return end
@@ -162,7 +162,7 @@ ifMissing("renderGravityVisualsNative", function(sen, sx, sy, zoom)
         for _, e in _G.ipairs(vis) do
             local s = (e.scale or 1) * unit
             if s ~= 0 then
-                local w, h = env.res.getSpriteBounds(e.sprite)
+                local w, h = env.res.getSpritePivot(e.sprite)   -- 1.1.0 0xe5de / 0xe5f0 read the sprite's pivot (+0x14 / +0x16): the slice's pivot is the field's centre
                 for pass = 0, 1 do
                     for i = 1, 4 do
                         env.setRenderState(sx / s, sy / s, s, s, (i - 1) * pi * 0.5 + pass * pi * 0.25, w, h)

@@ -31,6 +31,8 @@ std::string Quote(const std::string& s) {
 }
 
 std::string Number(double v) {
+    if (v != v) return "0";                                    // NaN / infinity would not read back
+    if (v > 1e308 || v < -1e308) return v > 0 ? "1e999" : "-1e999";
     char buf[40];
     std::snprintf(buf, sizeof buf, "%.9g", v);
     return buf;

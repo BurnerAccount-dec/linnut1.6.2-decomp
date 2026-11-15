@@ -1,5 +1,16 @@
 #include "engine/png_decoder.h"
 #include "engine/apk_extract.h"
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX      // windows.h would otherwise turn std::min / std::max into macros (MSVC error C2589)
+#endif
+#include <windows.h>
+#include <wincodec.h>
+#pragma comment(lib, "windowscodecs.lib")
+#pragma comment(lib, "ole32.lib")
+#else
+#include <dlfcn.h>
+#endif
 
 #include <algorithm>
 #include <cstdio>
@@ -259,14 +270,14 @@ bool DecodePng(const std::vector<uint8_t>& f, Image& out, std::string* error) {
 
 // PVRTC 4 bits per pixel (iPhone builds, format 0x19; 0x18 is the 2 bit variant, not read). The blocks of 4x4 pixels sit in Morton order;
 // every block holds two colours (A and B) and 2 bit weights per pixel; the colours of the neighbouring blocks are blended across the block.
-bool DecodePvrtc4(const std::vector<uint8_t>& file, uint32_t width, uint32_t height, Image& out, std::string* error) {
+bool DecodePvrtc4(const std::vector<uint8_t>& file, uint32_t width, uint32_t height, Image& out, std::string* error, size_t dataAt = 52) {
     const uint32_t bw = std::max<uint32_t>(2, width / 4), bh = std::max<uint32_t>(2, height / 4);
-    if ((bw & (bw - 1)) || (bh & (bh - 1)) || file.size() < 52 + (size_t)bw * bh * 8) { if (error) *error = ".pvr: PVRTC texture is not a power of two or truncated"; return false; }
+    if ((bw & (bw - 1)) || (bh & (bh - 1)) || file.size() < dataAt + (size_t)bw * bh * 8) { if (error) *error = ".pvr: PVRTC texture is not a power of two or truncated"; return false; }
     auto word = [&](uint32_t bx, uint32_t by) -> const uint8_t* {
-        uint32_t minD = std::min(bw, bh), idx = 0, dst = 1;
+        uint32_t minD = (std::min)(bw, bh), idx = 0, dst = 1;
         for (uint32_t src = 1; src < minD; src <<= 1) { if (by & src) idx |= dst; dst <<= 1; if (bx & src) idx |= dst; dst <<= 1; }
-        idx += (std::max(bx, by) / minD) * minD * minD;
-        return &file[52 + (size_t)idx * 8];
+        idx += ((std::max)(bx, by) / minD) * minD * minD;
+        return &file[dataAt + (size_t)idx * 8];
     };
     struct Col { int r, g, b, a; };
     auto colors = [&](const uint8_t* w, Col& A, Col& B) {
@@ -359,17 +370,20 @@ static bool DecodePvr3(const std::vector<uint8_t>& file, Image& out, std::string
     if (width == 0 || height == 0 || width > 8192 || height > 8192) { if (error) *error = "bad .pvr size"; return false; }
     if (file[12] == 0 && file[13] == 0 && file[14] == 0 && file[15] == 0) {          // compressed: the format number is in the first four bytes
         if (u32(8) == 6) return DecodeEtc1At(file, at, width, height, out, error);
+        if (u32(8) == 2 || u32(8) == 3) return DecodePvrtc4(file, width, height, out, error, at);   // v3.1: PVRTC 4 bits per pixel, RGB (2) and RGBA (3): Rio HD 2.0.0
         if (error) *error = ".pvr: compressed format " + std::to_string(u32(8)) + " is not supported";
         return false;
     }
     const uint8_t r = file[12], g = file[13], b = file[14], a = file[15];
     const size_t bytes = (r + g + b + a) / 8;
+    const bool alphaOnly = file[8] == 'a' && file[9] == 0 && r == 8;      // v3.1: one 8 bit alpha channel (Rio HD 2.0.0's shadows and glows): white with that alpha
     if (file.size() < at + (size_t)width * height * bytes) { if (error) *error = "truncated .pvr"; return false; }
     out.width = (int)width; out.height = (int)height;
     out.rgba.assign((size_t)width * height * 4, 255);
     const uint8_t* src = &file[at];
     for (size_t i = 0; i < (size_t)width * height; i++) {
         uint8_t* d = &out.rgba[i * 4];
+        if (alphaOnly) { d[3] = src[i]; continue; }
         if (r == 8 && g == 8 && b == 8 && a == 8) { d[0] = src[i * 4]; d[1] = src[i * 4 + 1]; d[2] = src[i * 4 + 2]; d[3] = src[i * 4 + 3]; }
         else if (r == 8 && g == 8 && b == 8 && a == 0) { d[0] = src[i * 3]; d[1] = src[i * 3 + 1]; d[2] = src[i * 3 + 2]; }
         else if (r == 4 && g == 4 && b == 4 && a == 4) {
@@ -424,6 +438,70 @@ bool DecodePvr(const std::vector<uint8_t>& file, Image& out, std::string* error)
     return true;
 }
 
+// v3.1: WebP pictures (Rio HD 2.0.0 keeps a third of its sheets as .webp). Windows decodes them with its own WebP codec (WIC, part of
+// Windows 10 and 11 through "WebP Image Extensions"); elsewhere the system's libwebp is used when it is there.
+bool DecodeWebp(const std::vector<uint8_t>& file, Image& out, std::string* error) {
+#ifdef _WIN32
+    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    IWICImagingFactory* factory = nullptr;
+    IWICStream* stream = nullptr;
+    IWICBitmapDecoder* decoder = nullptr;
+    IWICBitmapFrameDecode* frame = nullptr;
+    IWICBitmapSource* rgba = nullptr;
+    bool ok = false;
+    UINT w = 0, h = 0;
+    if (SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) &&
+        SUCCEEDED(factory->CreateStream(&stream)) &&
+        SUCCEEDED(stream->InitializeFromMemory(const_cast<BYTE*>(file.data()), (DWORD)file.size())) &&
+        SUCCEEDED(factory->CreateDecoderFromStream(stream, nullptr, WICDecodeMetadataCacheOnDemand, &decoder)) &&
+        SUCCEEDED(decoder->GetFrame(0, &frame)) &&
+        SUCCEEDED(WICConvertBitmapSource(GUID_WICPixelFormat32bppRGBA, frame, &rgba)) &&
+        SUCCEEDED(rgba->GetSize(&w, &h))) {
+        out.width = (int)w; out.height = (int)h;
+        out.rgba.resize((size_t)w * h * 4);
+        ok = SUCCEEDED(rgba->CopyPixels(nullptr, w * 4, (UINT)out.rgba.size(), out.rgba.data()));
+    }
+    if (rgba) rgba->Release();
+    if (frame) frame->Release();
+    if (decoder) decoder->Release();
+    if (stream) stream->Release();
+    if (factory) factory->Release();
+    if (!ok && error) *error = "cannot decode a WebP picture: install \"WebP Image Extensions\" from the Microsoft Store";
+    return ok;
+#else
+    typedef uint8_t* (*DecodeFn)(const uint8_t*, size_t, int*, int*);
+    static void* lib = dlopen("libwebp.so.7", RTLD_NOW);
+    if (!lib) lib = dlopen("libwebp.so", RTLD_NOW);
+    DecodeFn decode = lib ? (DecodeFn)dlsym(lib, "WebPDecodeRGBA") : nullptr;
+    int w = 0, h = 0;
+    uint8_t* px = decode ? decode(file.data(), file.size(), &w, &h) : nullptr;
+    if (!px) { if (error) *error = "cannot decode a WebP picture (no libwebp)"; return false; }
+    out.width = w; out.height = h;
+    out.rgba.assign(px, px + (size_t)w * h * 4);
+    typedef void (*FreeFn)(void*);
+    FreeFn freeFn = (FreeFn)dlsym(lib, "WebPFree");
+    if (freeFn) freeFn(px); else std::free(px);
+    return true;
+#endif
+}
+
+// v3.1: JPEG pictures (Seasons 4.1.0's splash sheets): stb_image (public domain, third_party/stb), its JPEG decoder only
+}  // namespace ab
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_JPEG
+#define STBI_NO_STDIO
+#include "stb_image.h"
+namespace ab {
+bool DecodeJpeg(const std::vector<uint8_t>& file, Image& out, std::string* error) {
+    int w = 0, h = 0, n = 0;
+    unsigned char* px = stbi_load_from_memory(file.data(), (int)file.size(), &w, &h, &n, 4);
+    if (!px) { if (error) *error = std::string("cannot decode a JPEG picture: ") + stbi_failure_reason(); return false; }
+    out.width = w; out.height = h;
+    out.rgba.assign(px, px + (size_t)w * h * 4);
+    stbi_image_free(px);
+    return true;
+}
+
 bool LoadPngFile(const std::string& path, Image& out, std::string* error) {
     FILE* f = fopen(path.c_str(), "rb");
     if (!f) { if (error) *error = "cannot open " + path; return false; }
@@ -434,6 +512,8 @@ bool LoadPngFile(const std::string& path, Image& out, std::string* error) {
     fclose(f);
     if (bytes.size() > 52 && std::memcmp(&bytes[44], "PVR!", 4) == 0) return DecodePvr(bytes, out, error);
     if (bytes.size() > 52 && bytes[0] == 'P' && bytes[1] == 'V' && bytes[2] == 'R' && bytes[3] == 3) return DecodePvr(bytes, out, error);      // PowerVR v3 (3.3.0 Android)
+    if (bytes.size() > 12 && std::memcmp(&bytes[0], "RIFF", 4) == 0 && std::memcmp(&bytes[8], "WEBP", 4) == 0) return DecodeWebp(bytes, out, error);
+    if (bytes.size() > 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) return DecodeJpeg(bytes, out, error);
     return DecodePng(bytes, out, error);
 }
 

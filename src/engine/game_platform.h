@@ -9,6 +9,7 @@
 //   each frame:  platform.RunFrame(dt);      // = the exe's Game::update (0x408980)
 #pragma once
 #include <list>
+#include <deque>
 #include <array>
 #include <memory>
 #include <functional>
@@ -21,6 +22,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <map>
+#include <set>
 
 #include "audio/audio_mixer.h"
 #include "engine/render_backend.h"
@@ -40,6 +42,7 @@ public:
 
     void Attach(ScriptHost& scripts);
     void RunFrame(float dt);
+    void FileDropped(const std::string& path);   // v3.1: a file dropped on the window
     // Speed: the time step of every frame is multiplied by the speed (Ctrl+minus / Ctrl+plus change it
     // until the game is closed) and by 2 while Shift is held.
     void SetSpeedBoost(bool on) { speedBoost_ = on; }
@@ -101,7 +104,18 @@ public:
     // fonts and text
     void ResCreateBitmapFont(const std::string& path) override;
     // 0x430320: a font name that was never created leaves the current font as it is
-    void ResUseFont(const std::string& name) override { if (fonts_.count(name)) current_ = name; }
+    void ResAliasFont(const std::string& name, float size) override {
+        const BitmapFont* best = nullptr; float bestD = 1e9f;
+        for (const auto& f : fonts_) {
+            if (f.first == name || f.second.glyphs.empty()) continue;
+            if (!f.second.glyphs.count('e') || !f.second.glyphs.count('R')) continue;      // a font of digits only (the score fonts) cannot stand for a text font
+            float d = std::fabs((float)(f.second.maxAscent + f.second.maxDescent) - size * 1.25f);
+            if (f.first.find("BASIC") != std::string::npos) d -= 4.0f;      // the plain text font is preferred over the score and title ones
+            if (d < bestD) { bestD = d; best = &f.second; }
+        }
+        if (best) { BitmapFont copy = *best; fonts_[name] = copy; const float h = (float)(best->maxAscent + best->maxDescent); fontScale_[name] = h > 0 ? std::min(1.0f, size * 1.25f / h) : 1.0f; }   // drawn at the size asked for
+    }
+    void ResUseFont(const std::string& name) override;
     void ResCreateTextGroupSet(const std::string& path) override;
     std::string ResGetString(const std::string& group, const std::string& key) override;
     void ResSetString(const std::string& group, const std::string& key, const std::string& text) override { textGroups_[group].strings[key] = text; }
@@ -150,6 +164,9 @@ public:
     // Sprite sheets: the sprite is looked up by name across every loaded sheet (the sheet argument of
     // getSpriteBounds / getSpritePivot is ignored by the exe); sizes are the raw integers from the file.
     void ResCreateSpriteSheet(const std::string& path) override;
+    bool ResPeekSprite(const std::string& file, const std::string& sprite, float& w, float& h, float& px, float& py) override;
+    std::map<std::string, SpriteSheet> peekedSheets_;   // ResPeekSprite: sheet files read for their sprite list only
+    std::set<std::string> missingFonts_;                // fonts looked for once (ResUseFont)
     void ResCreateCompoSpriteSet(const std::string& path) override;
     void ResReleaseCompoSpriteSet(const std::string& path) override { sprites_.ReleaseCompoSet(path); }
     void ResGetCompoSpriteBounds(const std::string& sheet, const std::string& sprite, float& x1, float& y1, float& x2, float& y2) override;
@@ -225,7 +242,7 @@ public:
     void SetAngularVelocity(const std::string& n, float w) override { Physics().SetAngularVelocity(n, w); }
     bool BodyCommand(const std::string& n, int cmd, float a, float& result) override;   // cmds 20..24: the Space aiming aid
     bool SpriteExists(const std::string& name) override { return sprites_.Find(name) != nullptr; }
-    bool AimSimulate(const std::string& bird, float vx, float vy, int points, const float* start = nullptr) override;
+    bool AimSimulate(const std::string& bird, float vx, float vy, int points, const float* start = nullptr, const float* force = nullptr) override;
     void SetSleeping(const std::string& n, bool s) override { Physics().SetSleeping(n, s); }
     float GetAngle(const std::string& n) override { return Physics().GetAngle(n); }
     void GetWorldPoint(const std::string& n, float lx, float ly, float& wx, float& wy) override { Physics().GetWorldPoint(n, lx, ly, wx, wy); }
@@ -237,9 +254,11 @@ public:
     void GetRenderTranslation(float& tx, float& ty) override { tx = state_.tx; ty = state_.ty; }
     bool levelParticlesByScript_ = false;
     bool pauseGuard_ = false;
+
     bool editing_ = false;
     bool cursorDrawn_ = false;
     bool gameDrawn_ = false, gameDrawnLast_ = false;   // Rio: drawGameNative ran this / the last frame (the particles of a level end with it)
+    bool menuDrawnAhead_ = false, drawingAhead_ = false;   // drawMenuParticlesInAdvance this frame
     bool menuParticlesByScript_ = false;      // 2.0.0 draws the level's particles itself, in two layers (drawLevelParticlesNative)
     void SetScalePivot(bool on, float x, float y) override { state_.hasScalePivot = on; state_.spX = x; state_.spY = y; }
     void SetAlpha(float a) override { state_.alpha = a < 0 ? 0 : (a > 1 ? 1 : a); }
@@ -264,11 +283,46 @@ public:
     void RotateThemeSprites(float dt) override;
     void StepThemeAnimations(float dt);
     void ScrollThemeLayers(float dt, bool force) override;
+    bool ReadDatSprites(const std::string& path, std::vector<DatSprite>& out, std::string* error) override {
+        std::FILE* f = std::fopen(ResolveDataFile(path).c_str(), "rb");
+        if (!f) f = std::fopen(path.c_str(), "rb");
+        if (!f) { if (error) *error = "cannot open"; return false; }
+        std::vector<uint8_t> bytes; uint8_t buf[65536]; size_t n;
+        while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) bytes.insert(bytes.end(), buf, buf + n);
+        std::fclose(f);
+        SpriteSheet sheet;
+        std::string sheetError;
+        if (ParseSpriteSheet(bytes, sheet, &sheetError)) {
+            for (const Sprite& sp : sheet.sprites) { DatSprite d; d.name = sp.name; d.x = sp.x; d.y = sp.y; d.w = sp.w; d.h = sp.h; d.pivotX = sp.pivotX; d.pivotY = sp.pivotY; out.push_back(d); datSprites_[sp.name] = sp; }
+            return true;
+        }
+        // a *_COMPOSPRITES.dat: each composite's size is the union of its parts (the sprites read so far, or the loaded sheets), its pivot is its origin
+        std::vector<CompoSprite> compos;
+        if (!ParseCompoSpriteSet(bytes, compos, error)) return false;
+        for (const CompoSprite& c : compos) {
+            int minX = 0x7fffffff, minY = 0x7fffffff, maxX = -0x7fffffff - 1, maxY = -0x7fffffff - 1;
+            for (const CompoPart& p : c.parts) {
+                auto it = datSprites_.find(p.sprite);
+                const Sprite* s = it != datSprites_.end() ? &it->second : sprites_.Find(p.sprite);
+                if (!s) continue;
+                minX = std::min(minX, p.x - s->pivotX); minY = std::min(minY, p.y - s->pivotY);
+                maxX = std::max(maxX, p.x + s->w - s->pivotX); maxY = std::max(maxY, p.y + s->h - s->pivotY);
+            }
+            if (maxX < minX) continue;
+            DatSprite d; d.name = c.name; d.w = maxX - minX; d.h = maxY - minY; d.pivotX = -minX; d.pivotY = -minY;
+            out.push_back(d);
+        }
+        return true;
+    }
+    std::map<std::string, Sprite> datSprites_;      // every sprite loadDATFileToTable has read (the parts of the composites read later)
     void ScrollWaterLayers(float dt) override { for (size_t i = 0; i < fgWater_.size() && i < fgOffset_.size() && i < fgAuto_.size(); i++) if (fgWater_[i].water) fgOffset_[i] += fgAuto_[i] * dt * 60.0f; waterTime_ += dt; }
     float waterTime_ = 0;
     bool IsSeasonsScripts();
     std::vector<std::string> extraScriptFiles;     // .lua files from the command line (drag and drop), loaded once the game scripts are up
     void ResSetClipRect(float x, float y, float w, float h) override;
+    void ResGetClipRect(float& x, float& y, float& w, float& h) override { if (clipW_ > 0) { x = clipX_; y = clipY_; w = clipW_; h = clipH_; } else { x = 0; y = 0; w = (float)screenWidth_; h = (float)screenHeight_; } }
+    float clipX_ = 0, clipY_ = 0, clipW_ = 0, clipH_ = 0;
+    float imageSetW_ = 0;                          // the width of the picture set the sprite sheets were loaded from (480 for images/480x320), 0 if unknown
     void CanvasInit(int w, int h) override;
     void CanvasClear(float r, float g, float b, float a) override;
     void CanvasPaint(const std::string& brush, float x, float y, float w, float h) override;
@@ -318,6 +372,7 @@ public:
     void SetParticleSoftLimit(float limit, float factor) override { softLimit_ = (int)limit; softFactor_ = factor; }
     void SetParticleHardLimit(float limit) override { hardLimit_ = (int)limit; }
     void DrawParticles(bool world = true) override;
+    void DrawMenuParticlesInAdvance() override;
     void DrawLevelParticles(int layer) override;
     void AddLevelParticles(const std::string& type, float amount, float x, float y, float w, float h, float angle, bool ignoreLimits) override;
     void AddParticlesOverride(const std::string& type, float amount, float x, float y, float w, float h, float angle, const ParticleOverride& ov) override;
@@ -421,7 +476,11 @@ private:
                      bool empty = false; float zDist = 0, xMult = 1, yMult = 1, angleMult = 0, posX = 0, posY = 0, scaleSpeed = 1, angle = 0;
                      // NEW_THEME_SYSTEM (0x44c1b0): scaleX / scaleY (0xbc / 0xc0), the flag bits (0xa4: 1 OVERSTRETCH_ANCHOR_V, 2 V_REPEAT, 4 H_REPEAT, 0x20 ANCHOR_V, 0x40, 0x100 / 0x200 REPEAT_LEFT_ONLY / REPEAT_RIGHT_ONLY) and the rocks spawnParameters scatters
                      float scaleX = 1, scaleY = 1; int flags = 0; bool hasFlags = false; float relY = 3.4028235e38f; bool elemTable = false; float velX = 0, velY = 0, lastOutX = 0, lastOutY = 0, lastW = 0, lastH = 0; bool upFill = false, downFill = false; float upR = 0, upG = 0, upB = 0, downR = 0, downG = 0, downB = 0;
-                     std::vector<std::string> spawnList; int spawnAmount = 0; float spawnVelX = 0, spawnVelY = 0, spawnXVar = 0, spawnSX = 0, spawnSY = 0, spawnSW = 0, spawnSH = 0, spawnWW = 0, spawnWH = 0; bool spawned = false; std::vector<std::array<float,3>> inst; };
+                     std::vector<std::string> spawnList; int spawnAmount = 0; float spawnVelX = 0, spawnVelY = 0, spawnXVar = 0, spawnSX = 0, spawnSY = 0, spawnSW = 0, spawnSH = 0, spawnWW = 0, spawnWH = 0; bool spawned = false; std::vector<std::array<float,3>> inst;
+                     // Space 1.1.0 (iPhone): the older layer list {sheet, sprite, zDistance, scale, elements, bgLayer, offsetX, offsetY, scaleSpeed}, offsets in screen fractions
+                     bool mobile = false, bgFill = false; float fracX = 0, fracY = 0;
+                     // Stella: offsetY "top" / "bottom" (the foreground leaves): the sprite's top edge on the screen's top, its bottom edge on the screen's bottom
+                     int anchorV = 0; bool anchorReady = false; float anchorDY = 0; };
     struct { bool have = false; float camX = 0, camY = 0, ws = 1, nH0 = 0; } bgRef_;   // 0x467f70: the camera and screen the parallax is measured from
     void DrawSpaceBackground();
     void UpdateNewThemeLayers(std::vector<BgLayer>& layers, float dt);
@@ -432,6 +491,12 @@ private:
     struct { bool have = false, fromLevel = false; int tries = 0; float refX = 0, refY = 0, s88 = 1; } ntRef_;   // ThemeSystem +0x1c / +0x20 (reference camera) and +0x88 (its scale), read once (0x44b820)
     void SetThemeOffsetY(float v) override;
     void SetStartingCameraValue(bool b) override { bgRef_.have = b; }
+    // v3.1: rewind. Every frame the position, angle and speed of each physics object is kept (the last 600 frames); Rewind puts them back
+    struct RewindBody { std::string name; float x, y, a, vx, vy, w; bool awake; };
+    std::deque<std::vector<RewindBody>> rewind_;
+    void RecordRewind();
+    bool rewindBlock_ = false;
+    int Rewind(int frames) override;
     std::string bgTheme_;                          // 0x1a4: the theme the reference belongs to (0x435f70 clears it only when the theme changes)
     struct TrajectoryPoint { float x, y; };
     void CallCollisionPair(const char* fn, const std::string& a, const std::string& b);
@@ -496,8 +561,10 @@ private:
     std::vector<BgLayer> bgLayers_;
     std::vector<float> fgDx_, fgDy_; std::vector<char> fgHidden_;   // Lua: per-layer offset (pixels) and visibility of the old-style foreground strip (which = 2)
     struct ThemeSprite { std::string name, sprite; float x, y, scaleX, scaleY, angle, speedX; int layer; float angleVel = 0; bool flipped = false; float velX = 0, velY = 0, scaleSpeed = 0;
-                        std::vector<std::string> frames; int frame = 0; float animTimer = 0, animDelay = 0, startDelay = 0; bool loop = false, finished = false; float wrapW = 0, wrapH = 0; };   // frames: createThemeAnimation
+                        std::vector<std::string> frames; int frame = 0; float animTimer = 0, animDelay = 0, startDelay = 0; bool loop = false, finished = false; float wrapW = 0, wrapH = 0;
+                        float x0 = 0, y0 = 0; bool spaceWrap = false; };   // frames: createThemeAnimation; x0 / y0: where createThemeSprite put it (Space / Star Wars wrap back from there)
     std::vector<ThemeSprite> themeSprites_;
+    float stellaTimeMult_ = 1.0f;                   // Stella: setDeltaTimeMultiplier slows only the physics and particles (its scripts scale their own time)
     std::map<std::string, std::string> savedLevels_;   // v2.2: levels saved by the editor this session, by path (see FindSavedLevel)
     void DrawThemeSprites(int layer);
     float themeShift_ = 0;
@@ -553,6 +620,8 @@ private:
     std::map<std::string, BitmapFont> fonts_;          // by file name without folder and extension
     std::map<std::string, TextGroup> textGroups_;
     std::string current_;                               // useFont
+    std::map<std::string, float> fontScale_;            // v3.1: createSystemFont aliases are a bitmap font drawn smaller (Friends)
+    float FontScale() const { auto it = fontScale_.find(current_); return it == fontScale_.end() ? 1.0f : it->second; }
     std::unique_ptr<Host> host_;
     std::vector<std::string> log_;
     std::string userDir_;

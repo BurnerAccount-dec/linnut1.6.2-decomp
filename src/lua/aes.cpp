@@ -14,6 +14,10 @@ const char kSaveKey[33] = "44iUY5aTrlaYoet9lapRlaK1Ehlec5i0";
 const char kSpaceSaveKey[33] = "TpeczKQL07HVdPbVUhAr6FjUsmRctyc5";     // Space save files (the exe builds it byte by byte at 0x496180)
 const char kStarWarsKey[33] = "An8t3mn8U6spiQ0zHHr3a1loDrRa3mtE";   // Angry Birds Star Wars scripts: AES, then a 7z archive (LZMA) holding the compiled script
 const char kStarWars2Key[33] = "B0pm3TAlzkN9ghzoe2NizEllPdN0hQni";  // Angry Birds Star Wars II scripts, same container
+const char kFriendsKey[33] = "EJRbcWh81YG4YzjfLAPMssAnnzxQaDn1";   // Angry Birds Friends scripts: AES, then a 7z archive (found in the AB360 LUA Manager's key list)
+const char kStellaKey1[33] = "4FzZOae60yAmxTClzdgfcr4BAbPIgj7X";   // Angry Birds Stella: three keys (which one belongs to the scripts was not known; all three are tried)
+const char kStellaKey2[33] = "0xMizJJUh7BbwmYhqxpJ038x8YGvk6aU";
+const char kStellaKey3[33] = "Bll3qkcy5fKrNVxZqtkFH19Ojn2sdJFu";
 const char kStarWarsSaveKey[33] = "e83Tph0R3aZ2jGK6eS91uLvQpL33vzNi";   // Star Wars save files (built byte by byte in the exe, like Space's)
 const char kSeasonsSaveKey[33] = "brU4u=EbR4s_A3APu6U#7B!axAm*We#5";   // Seasons settings.lua / highscores.lua
 
@@ -219,8 +223,8 @@ bool ReadLuaFile(const std::string& path, std::vector<uint8_t>& bytes) {
     if (!f) return false;
     bytes.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
     std::vector<uint8_t> plain;
-    const char* keys[] = {kLevelKey, kSeasonsKey, kSpaceKey, kStarWarsKey, kStarWars2Key};
-    const size_t kKeys = 5;
+    const char* keys[] = {kLevelKey, kSeasonsKey, kSpaceKey, kStarWarsKey, kStarWars2Key, kFriendsKey, kStellaKey1, kStellaKey2, kStellaKey3};
+    const size_t kKeys = 9;
     static size_t firstKey = 0;                  // the key that worked last time goes first: a wrong key costs a whole file
     for (size_t n = 0; n < kKeys; n++) {
         size_t k = (n + firstKey) % kKeys;

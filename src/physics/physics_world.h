@@ -44,6 +44,7 @@ public:
     virtual void SetAngularVelocity(float w) = 0;
     virtual void SetAwake(bool awake) = 0;               // false also zeroes the velocities
     virtual void SetStatic(bool isStatic) = 0;           // b2_staticBody or b2_dynamicBody
+    virtual void SetKinematic() = 0;                     // b2_kinematicBody (Friends 2.0.0's setBodyType)
     virtual void SetTransform(float x, float y, float angle) = 0;
     virtual void WorldPoint(float lx, float ly, float& wx, float& wy) const = 0;
     virtual void LocalPoint(float wx, float wy, float& lx, float& ly) const = 0;
@@ -171,6 +172,7 @@ public:
     // Lua tuning (the global `tuning` table, copied in before every step): Tn("water.band", 1.5f) is the script's value or the built-in one
     std::map<std::string, float> tuning;
     float Tn(const char* key, float def) const { auto it = tuning.find(key); return it == tuning.end() ? def : it->second; }
+    bool phoneSpaceGravity = false;                  // Space for iPhone / iPad (1.1.0): birds keep their gravity factor off box sensors, and it fades by 2 a second
     bool starWarsRules = false;                      // Star Wars: the contact filter at 0x410e70 (spaceRules is set too)
     std::function<std::vector<std::string>(const PhysObject&)> collisionMaterialsOf;   // objects.world[name].collisionMaterials, read by the filter for an object with blockCollision false
 
@@ -228,7 +230,7 @@ public:
     // the aiming aid (updateBirdTrajectoryTable): the object flown on from its position and velocity under the gravitation sensors and its damping, one point every `every` steps
     void SimulateTrajectory(const std::string& n, int steps, int every, float h, std::vector<std::pair<float, float>>& out);
     // extension of the retail trail (which is the bird's free flight): the bird alone in a world with the world's gravity, launched with this velocity and stepped like the real world; no blocks, no ground
-    virtual bool SimulateFlight(const std::string& bird, float vx, float vy, int steps, int every, float h, std::vector<std::pair<float, float>>& out, const float* start = nullptr) { (void)bird; (void)vx; (void)vy; (void)steps; (void)every; (void)h; (void)out; (void)start; return false; }
+    virtual bool SimulateFlight(const std::string& bird, float vx, float vy, int steps, int every, float h, std::vector<std::pair<float, float>>& out, const float* start = nullptr, const float* force = nullptr) { (void)bird; (void)vx; (void)vy; (void)steps; (void)every; (void)h; (void)out; (void)start; (void)force; return false; }
     float gravityForceMultiplier = 4;        // setGravityForceMultiplier (game +0x368)
     bool BodyCommand(const std::string& n, int cmd, float a, float& result);
     void SetSleeping(const std::string& n, bool sleeping);

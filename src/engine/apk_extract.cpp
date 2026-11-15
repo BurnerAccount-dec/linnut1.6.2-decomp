@@ -83,7 +83,7 @@ bool EndsWith(const std::string& s, const char* t) {
 }  // namespace
 
 bool ExtractApk(const std::string& apkPath, const std::string& outDir, std::string* error) {
-    const std::string marker = outDir + "/.extracted4";   // 4: music kept as .mp3.zip is unpacked; 3: the .ipa data folder is chosen (data_iphone first) and config.lua rebuilt
+    const std::string marker = outDir + "/.extracted5";   // 5: an .ipa whose data folder holds scripts_common (Friends, Seasons 4.1.0) is unpacked again (older builds took the wrong folder); 4: music kept as .mp3.zip is unpacked; 3: the .ipa data folder is chosen (data_iphone first) and config.lua rebuilt
     { std::vector<uint8_t> m; if (ReadAll(marker, m)) return true; }
     std::vector<uint8_t> zip;
     if (!ReadAll(apkPath, zip)) { if (error) *error = "cannot open " + apkPath; return false; }
@@ -105,6 +105,11 @@ bool ExtractApk(const std::string& apkPath, const std::string& outDir, std::stri
         if (firstData.empty()) firstData = p;
     }
     if (!firstData.empty()) prefix = firstData;
+    if (firstData.empty() && prefix == "assets/data/") {     // v3.1: an .ipa whose data folder is plain "data" and has scripts_common (Friends, Stella): that data folder is the data
+        const std::string sc = "/data/scripts_common/gamelogic.lua";
+        for (const Entry& e : entries)
+            if (e.name.compare(0, 8, "Payload/") == 0 && e.name.size() > sc.size() && e.name.compare(e.name.size() - sc.size(), sc.size(), sc) == 0) { prefix = e.name.substr(0, e.name.size() - sc.size()) + "/data/"; break; }
+    }
     if (firstData.empty() && prefix == "assets/data/") {     // an .ipa without a data_* folder (the first Angry Birds): the folder that holds scripts/gamelogic.lua is the data
         std::string tail = "scripts/gamelogic.lua";
         bool flat = false;
@@ -117,6 +122,7 @@ bool ExtractApk(const std::string& apkPath, const std::string& outDir, std::stri
         }
     }
     if (prefix != "assets/data/") std::remove((outDir + "/config.lua").c_str());   // an .ipa: the generated config follows the data folder found now
+    if (prefix.find("/data_ipad/") != std::string::npos) WriteFile(outDir + "/data_ipad.txt", std::vector<uint8_t>{'1'});   // v3.1: the iPad data (Angry Birds HD): its pictures are made for 1024x768
     int files = 0;
     for (const Entry& e : entries) {
         if (e.name.compare(0, prefix.size(), prefix) != 0 || e.name.back() == '/') continue;

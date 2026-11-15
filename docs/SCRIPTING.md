@@ -347,6 +347,19 @@ Technically Box2D 2.2 applies the world's gravity to every body and has no per-b
 
 See "Extra script commands (new in 1.8)" above for worked examples of the last three groups.
 
+### `rewind([frames])`
+
+Puts every physics object back `frames` frames (1 when left out or nil): position, angle, speed and spin, as they were before that frame's update. The engine keeps the last 600 frames; a new level starts with no history. Objects made since then stay where they are, destroyed ones do not come back, and the scripts' own tables (score, birds left) are not touched. Returns the number of frames it went back (0 when there is no history). The console has the same: `rewind [frames]`.
+
+```lua
+-- go back half a second (30 frames at 60 updates a second) when R is pressed
+if keyPressed["R"] then rewind(30) end
+```
+
+### `onFileDropped(path)` and the `fileDropped` event
+
+A file dropped on the window calls `engine.on("fileDropped", fn)` handlers with its path, then the script function `onFileDropped(path)` if there is one; returning `true` from it ends there. Without it a level file (a `.lua` with a `world` table) loads as the current level through the game's `loadLevelInternal`, and any other `.lua` runs among the game's scripts. The console command `drop <file>` does the same as dropping the file.
+
 ### How the Space physics now follows the retail exe
 
 - The gravitation sensors use one function for the real physics and for the aiming aid, so the two cannot disagree. Like the exe, a sensor's pull ignores the "gravity on" parameter (22), wakes a sleeping body inside the field every step, and is skipped only while the sensor's own body sleeps.
@@ -539,7 +552,9 @@ All drawing functions use the **render state** that `setRenderState` set last. `
 | `drawString3D(group, text, x, y, z, tilt, turn, depth, alpha)` (SW) | One line of the credits crawl, drawn on a tilted plane. |
 | `renderGravityVisualsNative(sensor, x, y, zoom)` (SW) | See the note below. |
 | `startNewTrajectory()`, `addToTrajectory(index, x, y)`, `addPuffToTrajectory(index, x, y)`, `setCustomTrajectorySprites(dot, ...)`, `setNormalTrailSprite(sprite)`, `setSpecialTrailSprite(sprite)` | The dots drawn behind a flying bird. |
-| `enableAimingAid(on)`, `setAimingAidSprite(sprite, scale)`, `populateAimingAid()`, `clearAimingAid()`, `updateBirdTrajectoryTable([name])`, `simulateAimingAid(...)` (Space, SW, Classic with `extras`) | The aiming aid: `updateBirdTrajectoryTable` fills the path from the simulation, `populateAimingAid` lays out the dots, `clearAimingAid` removes them. The speed and spacing of the dots are the globals `simulationAimSpeed` and `simulationAimSpawnTime`. |
+| `enableAimingAid(on)`, `setAimingAidSprite(sprite, scale)`, `populateAimingAid()`, `clearAimingAid()`, `updateBirdTrajectoryTable([name])`, `simulateAimingAid(bird, impulseX, impulseY [, points, startX, startY, forceX, forceY])` (Space, SW, Classic with `extras`; `forceX, forceY`: a force applied before every simulated step, like a script's `applyForce` each frame) | The aiming aid: `updateBirdTrajectoryTable` fills the path from the simulation, `populateAimingAid` lays out the dots, `clearAimingAid` removes them. The speed and spacing of the dots are the globals `simulationAimSpeed` and `simulationAimSpawnTime`. |
+| `drawSlingScopeNative(vx, vy, flyVerticalForce)` | The Sling Scope power-up's path: the aiming aid's simulation of the current bird launched from the band with that velocity and lift; shown while the game keeps calling it every frame. |
+| `res.getClipRect()` | The clip rectangle set by `res.setClipRect` (x, y, w, h), or the whole screen. |
 | `setAlpha(a [, target])`, `setBlendMode(mode [, target])`, `setShader(effect [, target])`, `setTint(r [, g, b] [, target])`, `getTint([target])`, `resetTint([target])`, `setTintChannel(channel, value [, target])`, `setSkew(x, y [, target])`, `setBend(x, y [, target])`, `setRenderZ(z [, target])`, `setBlur(amount [, target])`, `setPixelate(size [, target])`, `resetBlur`, `resetPixelate`, `setVisualRotation(angle [, target])`, `resetRenderOverrides(target)` (2.2 / 2.4) | Single values of the render state with their own functions; with a `target` (an object, sprite or sprite group name) the setting is kept for that target and every later draw of it uses it. See "Graphics settings for one target" above. |
 
 **Pivot arguments (3.1).** `drawRect`, `drawLine2D`, `res.drawSprite`, `res.drawTexturedLine2D` (after its colour) and `res.drawString` accept two optional last arguments, `pivotX, pivotY`, a point in the same coordinates as the drawing. When both are numbers the scale (`sx, sy`) of the render state grows from that point: the point stays where it is and the rest of the picture spreads from it. If either one is `nil` or missing the call works as before (the scale grows from the origin of the render state). Without a scale other than 1 it changes nothing. Example: `setRenderState(0, 0, 2, 2, 0); drawRect(0, 200, 0, 150, 300, 300, 400, 400, true, 300, 300)` fills 300..500 on both axes, where without the pivot it would fill 600..800.

@@ -37,6 +37,33 @@
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\invisible_button_lua.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\editor_joint_page_lua.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\overlay_page_lua.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\joint_page_lua.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\friends_server_lua.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\friends2_natives_lua.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\stella_natives_lua.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\achievements_page_lua.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\page_lua.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\item_lua.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\CMakeLists.txt" />

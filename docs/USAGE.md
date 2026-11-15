@@ -20,6 +20,10 @@ You can also put the exe next to the game's `data` folder, where the original ex
 Drag an `.apk` (Android) or `.ipa` (iPhone) file onto `AngryBirdsEngine.exe`, choose the exe in "Open with", or run `AngryBirdsEngine.exe C:\path\AngryBirds_1.3.5.apk`. The first time, the engine unpacks the game's data (an .apk's `assets/data`, an .ipa's `Payload/<name>.app/data_iphone`) into `%LOCALAPPDATA%\AngryBirdsEngine\apk\<file name>\data` (a few seconds; the next start reuses it, delete the folder to unpack again) and starts the game from there. The `config.lua` it writes next to that data (window size, `deviceModel = "android"` or `"iphone"`, `isLiteVersion` for the Lite iPhone game, folder names, `product` for the save folder) can be edited. Only the game's data is used; the native code is not run. iPhone textures in PVRTC format are decoded when loaded. Checked with Angry Birds 1.3.5 and 2.1.0 (.apk) and Angry Birds Free 1.0.0 (.ipa): menus, level select and a level.
 Drop `.lua` files onto the exe together with it (select the `.apk`/`.ipa` and the scripts, then drag them all onto the exe): each script is loaded once the game is up. Try `extras/extra_scripts.lua` with 1.3.5 or the Angry Birds Free `.ipa`.
 
+### Angry Birds Friends 2.0.0: the Weekly Tournament's levels
+
+"Play Tournament" logs in as a guest on a stand-in server inside the engine. The `.apk` has no tournament levels (the server sent them). If you have opened Friends 1.0.0's `.ipa` with this engine, or that `.ipa` is in the same folder as the `.apk`, its 30 tournament levels are copied to `data\levels\friends_1.0.0` and used. To play other levels instead, put level files in `%LOCALAPPDATA%\AngryBirdsEngine\apk\Angry Birds Friends 2.0.0\data\levels\tournament` (make the `tournament` folder); while that folder has levels, they replace Friends 1.0.0's. Each file is a level in the game's format named `Level<code>.lua`; the 30 `Level2000-*.lua` files from Friends 1.0.0's `levels\pack57` folder work as they are. With up to six files, all of them are the tournament; with more, six are played each week, in turn, the week ending on Monday at midnight. Star scores: a `starLimits.lua` in the same folder (`Level2000-1 = {silverScore = 96000, goldScore = 110000}`) if there is one, else the level file's own scores (Friends 1.0.0's levels have them), else 40000 / 60000. Coins, bought power-ups and slingshots, the week's scores, trophies and the daily wheel are kept in `settings.lua`.
+
 ### Options
 
 - `--scripts <folder>`, `--data <folder>`: where the scripts and data are.
@@ -33,6 +37,7 @@ Drop `.lua` files onto the exe together with it (select the `.apk`/`.ipa` and th
 - Hold Alt: the game runs at twice the speed.
 - Hold Shift while turning the mouse wheel: the zoom moves in much smaller steps.
 - Ctrl+minus / Ctrl+plus: slow down / speed up in 0.25x steps (0.25x to 8x) until the game closes.
+- F7 (in the games that list achievements): the achievement page. A drag (it carries on after a flick), the wheel or the arrow / Page Up / Page Down / Home / End keys scroll it; Esc, F7, Backspace or the back arrow close it; T or the "Test pop-up" button shows the pop-up of a made-up achievement (nothing is saved).
 
 Set the environment variable `AB_SLOWFRAMES=1` to print a line for every frame that took over 25 ms (a debugging aid for stutter).
 
@@ -66,7 +71,7 @@ Two editors exist. The **classic editor** is Rovio's own (the 1.6.2 editor, whic
 | R | Rotate the selected objects |
 | Ctrl + C, then click | Copy the selection and place the copy |
 | Delete | Remove the selection (and its joints) |
-| J, or F1 .. F5 (two objects selected; Shift + J in some games) | Open the joint window (F1 distance, F2 weld, F3 revolute, F4 prismatic, F5 "destroy attached") |
+| J, or F1 .. F5 (two objects selected; Shift + J in 1.6.x, where J is a block key) | Open the joint window (F1 distance, F2 weld, F3 revolute, F4 prismatic, F5 "destroy attached"); 1.6.x games without one get the window of Seasons 2.3.0 |
 | Tab | Physics on / off (the level is restored when it is switched off) |
 | Shift + P | Play the level, Escape (also on the clear / failed page) comes back to the editor |
 | Ctrl + S | Save the level |

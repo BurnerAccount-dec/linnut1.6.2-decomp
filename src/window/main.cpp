@@ -258,6 +258,8 @@ static int GameMain(int argc, char** argv) {
     std::vector<std::string> extraLua;            // v3.0: .lua files named on the command line (dragged onto the exe with an .apk / .ipa / the game): loaded like extra_scripts.lua
     std::vector<std::string> startupCmds;          // v2.2: --cmd "<command>" (repeatable), --startup <file> (one command per line), --prompt (type them before the game starts)
     std::vector<std::pair<int, std::string>> timedCmds;
+    struct TimedResize { int frame, w, h; };
+    std::vector<TimedResize> resizes;                   // --resize-at <frame> <w> <h>: the window changes size then (for testing)
     bool promptFirst = std::getenv("AB_PROMPT") != nullptr;
     int startFps = -1, startVsync = -1;
     for (int i = 1; i < argc; i++) {
@@ -285,6 +287,7 @@ static int GameMain(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--vsync")) startVsync = 1;
         else if (!std::strcmp(argv[i], "--audio-out") && i + 1 < argc) audioOut = argv[++i];
         else if (!std::strcmp(argv[i], "--screenshot") && i + 2 < argc) { shot = argv[++i]; shotFrames = std::atoi(argv[++i]); }
+        else if (!std::strcmp(argv[i], "--resize-at") && i + 3 < argc) { resizes.push_back({std::atoi(argv[i + 1]), std::atoi(argv[i + 2]), std::atoi(argv[i + 3])}); i += 3; }
         else if (!std::strcmp(argv[i], "--size") && i + 2 < argc) { testW = std::atoi(argv[++i]); testH = std::atoi(argv[++i]); }
     }
     if (promptFirst && !shotFrames) {        // v2.2: the commands are typed before the game starts; they run on the first frame, when the scripts are loaded
@@ -318,9 +321,55 @@ static int GameMain(int argc, char** argv) {
             return 2;
         }
         std::printf("%s: data is in %s\\data\n", isIpa ? "ipa" : "apk", dir.c_str());
+        // Friends 2.0.0 (the .apk ships no tournament levels): Friends 1.0.0's tournament levels (its levels/pack57) are copied to
+        // data/levels/friends_1.0.0, from a Friends 1.0.0 .ipa this engine has unpacked or one lying beside the .apk. The game uses
+        // them while data/levels/tournament holds no Level<code>.lua of its own (files put there replace them)
+        {
+            auto has = [](const std::string& path) { FILE* f = std::fopen(path.c_str(), "rb"); if (f) std::fclose(f); return f != nullptr; };
+            const std::string own = dir + "/data/levels/friends_1.0.0";
+            if (has(dir + "/data/levels/practice/LevelPractice1.lua") && has(dir + "/data/scripts/TutorialMode.lua") && ab::ListFolder(own).empty()) {
+                std::string from;
+                auto pick = [&](const std::string& root) {
+                    if (!from.empty()) return;
+                    for (const std::string& n : ab::ListFolder(root + "/data/levels/pack57"))
+                        if (n.size() > 9 && n.compare(0, 9, "Level2000") == 0) { from = root + "/data/levels/pack57"; return; }
+                };
+                for (const std::string& sub : ab::ListFolder(base)) if (!sub.empty() && sub.back() == '/' && sub != stem + "/") pick(base + "/" + sub.substr(0, sub.size() - 1));
+                if (from.empty()) {                                  // an .ipa of Friends 1.0.0 beside the .apk: unpacked like any other
+                    std::string folder = apkPath.substr(0, apkPath.size() - stem.size() - 4);
+                    for (const std::string& n : ab::ListFolder(folder.empty() ? "." : folder)) {
+                        if (n.size() < 5 || strcasecmp_ab(n.c_str() + n.size() - 4, ".ipa") || n.find("Friends") == std::string::npos) continue;
+                        const std::string other = base + "/" + n.substr(0, n.size() - 4);
+                        std::string e2;
+                        if (ab::ExtractApk(folder + n, other, &e2)) pick(other);
+                        if (!from.empty()) break;
+                    }
+                }
+                if (!from.empty()) {
+                    int copied = 0;
+                    for (const std::string& n : ab::ListFolder(from)) {
+                        if (n.empty() || n.back() == '/') continue;
+                        FILE* in = std::fopen((from + "/" + n).c_str(), "rb");
+                        if (!in) continue;
+                        std::vector<char> bytes;
+                        char buf[65536]; size_t got;
+                        while ((got = std::fread(buf, 1, sizeof buf, in)) > 0) bytes.insert(bytes.end(), buf, buf + got);
+                        std::fclose(in);
+                        ab::MakeDirectory(own);
+                        FILE* out = std::fopen((own + "/" + n).c_str(), "wb");
+                        if (out) { if (!bytes.empty()) std::fwrite(bytes.data(), 1, bytes.size(), out); std::fclose(out); copied++; }
+                    }
+                    std::printf("apk: %d Friends 1.0.0 tournament levels copied from %s\n", copied, from.c_str());
+                }
+            }
+        }
         if (data.empty()) data = dir + "/data";
         bool flatData = false;      // the first Angry Birds (1.0): scripts, pictures, fonts, levels and sounds all lie in one data folder
-        { FILE* g1 = std::fopen((data + "/scripts/gamelogic.lua").c_str(), "rb"); if (g1) std::fclose(g1); else if ((g1 = std::fopen((data + "/gamelogic.lua").c_str(), "rb"))) { std::fclose(g1); flatData = true; } }
+        {   // (v3.1: a data folder with scripts_common, Friends and Seasons 4.1.0, is not flat either, even if an older build left a gamelogic.lua beside it)
+            FILE* g1 = std::fopen((data + "/scripts/gamelogic.lua").c_str(), "rb");
+            if (!g1) g1 = std::fopen((data + "/scripts_common/gamelogic.lua").c_str(), "rb");
+            if (g1) std::fclose(g1); else if ((g1 = std::fopen((data + "/gamelogic.lua").c_str(), "rb"))) { std::fclose(g1); flatData = true; }
+        }
         if (scripts.empty()) scripts = flatData ? data : data + "/scripts";
         if (configPath.empty()) {
             configPath = dir + "/config.lua";
@@ -328,7 +377,8 @@ static int GameMain(int argc, char** argv) {
             if (cf) {      // a config written for the other retina setting is written again
                 char buf[4096]; size_t n = std::fread(buf, 1, sizeof buf - 1, cf); buf[n] = 0; std::fclose(cf);
                 bool wasRetina = std::strstr(buf, "retina = true") != nullptr, hasMark = std::strstr(buf, "retina = ") != nullptr;
-                if (isIpa && (wasRetina != retinaOn || !hasMark)) { std::remove(configPath.c_str()); cf = nullptr; }
+                bool wasFlat = std::strstr(buf, "scriptPath = \".\"") != nullptr;      // and one written for the wrong layout (a flat folder or not)
+                if (isIpa && (wasRetina != retinaOn || !hasMark || wasFlat != flatData)) { std::remove(configPath.c_str()); cf = nullptr; }
                 else cf = (FILE*)1;
             }
             if (cf) {}
@@ -344,6 +394,7 @@ static int GameMain(int argc, char** argv) {
                         char fp[600]; std::snprintf(fp, sizeof fp, "%s/data/fonts/%dx%d/FONT_BASIC.dat", dir.c_str(), sz[0], sz[1]);
                         if (FILE* ff = std::fopen(fp, "rb")) { std::fclose(ff); cfgW = sz[0]; cfgH = sz[1]; break; }
                     }
+                    if (cfgW == 480) { FILE* ip = std::fopen((dir + "/data_ipad.txt").c_str(), "rb"); if (ip) { std::fclose(ip); cfgW = 1024; cfgH = 768; } }   // v3.1: Angry Birds HD keeps one picture set for the iPad (no size folders): 1024x768, not the iPhone's 480x320
                 }
                 std::fprintf(cf, "product = \"Angry Birds (%s)\"\npublisher = \"Rovio\"\nname = \"Angry Birds\"\nwidth = %d\nheight = %d\ndatapath = \"data\"\nisLiteVersion = %s\n"
                                  "imagePath = \"%s\"\nfontPath = \"%s\"\naudioPath = \"%s\"\nlocalizationPath = \"%s\"\nlevelPath = \"%s\"\n"
@@ -415,7 +466,7 @@ static int GameMain(int argc, char** argv) {
         if (f) { std::fclose(f); configPath = beside; } else configPath = "config.lua";
     }
     ReadConfigLua(configPath, wc);
-    if (shotFrames) { WindowConfig keep = wc; wc = WindowConfig(); if (testW > 0) { wc.width = testW; wc.height = testH; } wc.imagePath = keep.imagePath; wc.fontPath = keep.fontPath; wc.deviceModel = keep.deviceModel; wc.isLiteVersion = keep.isLiteVersion; wc.isBetaVersion = keep.isBetaVersion; wc.audioPath = keep.audioPath; wc.localizationPath = keep.localizationPath; wc.levelPath = keep.levelPath; wc.showCursor = keep.showCursor; wc.box2d = keep.box2d; }   // test runs use the default window
+    if (shotFrames) { WindowConfig keep = wc; wc = WindowConfig(); if (testW > 0) { wc.width = testW; wc.height = testH; } wc.product = keep.product; wc.imagePath = keep.imagePath; wc.fontPath = keep.fontPath; wc.deviceModel = keep.deviceModel; wc.isLiteVersion = keep.isLiteVersion; wc.isBetaVersion = keep.isBetaVersion; wc.audioPath = keep.audioPath; wc.localizationPath = keep.localizationPath; wc.levelPath = keep.levelPath; wc.showCursor = keep.showCursor; wc.box2d = keep.box2d; }   // test runs use the default window
 
     BootConfig cfg;
     cfg.scriptPath = scripts;
@@ -583,6 +634,9 @@ static int GameMain(int argc, char** argv) {
             };
             switch (e.type) {
                 case SDL_QUIT: running = false; break;
+                case SDL_DROPFILE:      // v3.1: a file dropped on the window (as in the later PC exes): the scripts' onFileDropped, else a level or a script is loaded
+                    if (e.drop.file) { platform.FileDropped(e.drop.file); SDL_free(e.drop.file); }
+                    break;
                 case SDL_KEYDOWN:
                     // Alt+Enter switches between the window and full screen, like the original exes
                     if (e.key.keysym.sym == SDLK_RETURN && (e.key.keysym.mod & KMOD_ALT)) {
@@ -668,7 +722,10 @@ static int GameMain(int argc, char** argv) {
             }
             if (c.frame + c.length == frame) input.KeyUp(KeyIndex("LBUTTON"));
         }
+        static int forcedW = 0, forcedH = 0;            // test: the offscreen surface keeps its size, so the new size is reported to the game and the backend directly
+        for (const TimedResize& r : resizes) if (r.frame == frame) { forcedW = r.w; forcedH = r.h; }
         SDL_GL_GetDrawableSize(window, &pw, &ph);
+        if (forcedW > 0) { pw = forcedW; ph = forcedH; }
         if (pw != titleW || ph != titleH) {              // the title ends with the size of the game: "Angry Birds (1024x600)"
             titleW = pw; titleH = ph;
             std::string title = wc.name + " (" + std::to_string(pw) + "x" + std::to_string(ph) + ")";
@@ -729,6 +786,9 @@ static int GameMain(int argc, char** argv) {
             if (total > (std::getenv("AB_SLOWMS") ? std::atof(std::getenv("AB_SLOWMS")) : 25.0)) std::printf("slow frame %d: %.1f ms (game %.1f, swap %.1f)\n", frame, total, (beforeSwap - frameStart) / f * 1000.0, (end - beforeSwap) / f * 1000.0);
         }
     }
+    // v3.1: closing the window is the phone being sent to the background: gamePaused saves settings.lua there (Friends 2.0.0 keeps the
+    // finished tutorial only in memory until then, so it was lost when the window was closed)
+    if (!inactive && !shotFrames) host.GamePaused();
     SDL_GL_DeleteContext(context);
     SDL_DestroyWindow(window);
     SDL_Quit();

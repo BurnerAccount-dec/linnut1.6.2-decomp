@@ -2,7 +2,7 @@
 
 An unofficial, from-scratch reimplementation of the Angry Birds PC engine, rebuilt from Ghidra decompiles of the original executables. It is written in C++ (SDL2, OpenGL 1.x, Lua 5.1, Box2D 2.1 and 2.2) and does not re-implement the game logic: it runs the game's **original Lua scripts** and provides the native functions those scripts expect, so levels, menus, physics and scoring behave like the original game.
 
-**Version 3.1.** Changes are listed in [`CHANGELOG.md`](CHANGELOG.md). The editor keys of every game are in [`docs/USAGE.md`](docs/USAGE.md#editor-keys); new in 3.1: world gravity in the editor (Shift+G / Ctrl+G), pivot arguments for the drawing functions, the `--retina` switch.
+**Version 3.2.** Changes are listed in [`CHANGELOG.md`](CHANGELOG.md). The editor keys of every game are in [`docs/USAGE.md`](docs/USAGE.md#editor-keys); new in 3.2: an achievement page (F7) with how-to texts and the games' own unlock pop-ups, Friends 2.0.0 saves, menus that follow the window and Friends 1.0.0's tournament levels, Stella's ability, Space 1.1.0 gravity boxes, rings and background drift, the slingshot menu and Christmas tree slingshot in Friends 2.0.0, no stray debug console in Friends 2.0.0, Stella's level exit loop fixed, Angry Birds HD 1.4.2's level-selection back button and world achievements, Seasons 4.1.0 for PC starting, and achievements in the Android and Seasons 4.x PC data.
 
 **Not affiliated with, endorsed by or connected to Rovio Entertainment.** "Angry Birds" and everything in the game belong to their owners. This repository contains no game files: no scripts, images, sounds, levels or executables. To run it you need your own legally obtained copy of the game.
 
@@ -20,16 +20,25 @@ An unofficial, from-scratch reimplementation of the Angry Birds PC engine, rebui
 | Angry Birds Star Wars 1.5.0 (PC) | Playable (Hoth, Tatooine and Endor levels load); contact filter, damage, water, kill timers, per-frame sync and the aiming aid follow the exe | Not tested | Known gaps below |
 | Angry Birds 1.3.5 (Android `.apk`) | Playable: menus, episode and level select, levels with their tutorials | Not tested | Opened by dragging the `.apk` onto the exe; see Quick start |
 | Angry Birds 2.1.0 (Android `.apk`) | Playable: menus, episode and level select, levels with their tutorials | Not tested | Same; the Birdday Party confetti keeps drawing after a tutorial closes |
-| Angry Birds 3.3.0 (Android `.apk`) | Starts and plays: menus, episode select, Red's Mighty Feathers (both pages: the 15 classic levels and the 15 Egg Defender levels) | Not tested | Scripts split over `scripts` and `scripts_common`; later levels need earlier ones cleared, as in the game |
+| Angry Birds 3.3.0 (Android `.apk`) | Starts and plays: menus, episode select, Red's Mighty Feathers (both pages: the 15 classic levels and the 15 Egg Defender levels) | Not tested | Scripts split over `scripts` and `scripts_common`; later levels need earlier ones cleared, as in the game; the pause menu shows a local Rovio News card in its promo space |
 | Angry Birds Seasons 2.3.0 (Android `.apk`) | Starts and plays: menus, Seasons 2012 / 2011 episodes, Cherry Blossom level 1 with its tutorials; the Mighty Dragon is drawn at its size and the point pop-ups stay while paused | Works (the engine's classic editor) | Opened by dragging the `.apk` onto the exe; the ad checks answer "no" |
 | Angry Birds Free 1.0.0 (iPhone `.ipa`, the Lite game) | Playable: all levels, saves, the video at the end (its sound is mixed down to mono, as the game mixes in mono) | Opens levels | Opened by dragging the `.ipa` onto the exe; the sky textures are PVRTC, read by the engine |
 | Angry Birds Seasons 2.4.1 (iPhone/iPad `.ipa`, with Piglantis) | Starts and plays; Piglantis: the water is drawn, scrolls and has buoyancy (compared with a recording of 1-1; the retina picture set is off unless `--retina`) | Not tested | iPad-sized data runs as `deviceModel = "ipad"`; the water tint and wave speeds are estimated |
+| Angry Birds Star Wars 1.0.0 (iPhone `.ipa`) | Plays: menus, Tatooine levels, with the Star Wars contact rules (Luke's lightsaber cuts blocks) | Not tested | Opened by dragging the `.ipa` onto the exe |
+| Angry Birds Rio HD 2.0.0 (iPad `.ipa`) | Plays: menus, Rio and Rio 2 chapters, levels, power-ups; wide windows use the 1024x768 pictures | Off (the build's editor is incomplete) | WebP pictures need Windows' "WebP Image Extensions" (installed with Windows 10 / 11) |
+| Angry Birds HD 1.4.2 (iPad `.ipa`) | Playable at 1024x768 | Not tested | |
+| Angry Birds Space 1.1.0 (iPhone `.ipa`) | Plays: main menu, episodes, levels, with the iPhone backgrounds (sky, moon, planets, clouds) | Yes (F2, the engine's) | |
+| Angry Birds Hatchery Island (iPad `.ipa`) | Starts: menus, levels | Not tested | Its server clock is this computer's clock |
+| Angry Birds Stella 1.0.0 (iPhone `.ipa`) | Starts; main menu, map intro, intro comic, level map; levels 1 to 4 play (aim, shoot, blocks break, Stella's hold-aim jump) | | Levels after 4 not checked; slow |
+| Angry Birds Seasons 4.1.0 (iPhone `.ipa`) | Plays: main menu, episode and level select (the strip settles on an episode), levels (JSON sprite sheets, RVIO composites, JPEG splashes), Game Center banners | Not tested | Phone scripts; background layers follow the camera up and down; water and some collision rules are not right yet (see CHANGELOG) |
+| Angry Birds Friends 1.0.0 (iPhone `.ipa`) | Plays: the tutorial, Power-up Practice and the Weekly Tournament against the Red Bird (three-star scores) and Yellow Bird (two-star scores) bots, with a local stand-in for the server (login, weekly levels and results, Bird Coins, the power-up shop, daily rewards) | Not tested | No real friends; the shop prices and rewards are made up |
+| Angry Birds Friends 2.0.0 (Android `.apk`) | Plays: the tutorial (Tutorial Tournament with the Red and Chuck bots), and "Play Tournament" as a guest on a local stand-in server: the Weekly Tournament on level files you add (docs/USAGE.md), score lists against Red (three-star scores) and Chuck (two-star scores), weekly results with coin prizes and trophies, coins for stars, the power-up and slingshot shop, the daily wheel | Not tested | Leagues (Glass to Diamond, bots, weekly promotion and prizes); no Facebook; the `.apk` has no tournament levels (Friends 1.0.0's are used when its `.ipa` is found; your own in `data\levels\tournament` replace them); menus follow a resized window; prices and prizes are made up; flight path dots and the Sling Scope path are drawn |
 | Angry Birds 1.0 (iPhone `.ipa`) | Starts: menus, level list, level 1-1 (birds launch, blocks and pigs react) | Not tested | Flat data folder, no `loadlist.lua`, boxes given by half sizes; background layer speeds are estimates, later levels and sounds not compared yet |
 | Angry Birds Rio 1.4.2 (Android `.apk`) | Starts and plays; the title music (a zipped mp3 in the apk) plays | Not tested | Opened by dragging the `.apk` onto the exe |
 
 ## Quick start
 
-1. **Build it** (Windows, Visual Studio and CMake; see [Build](#build)) or take the exe from a release zip (`AngryBirdsEngine-v3.1.zip`, made by `make_release.bat`).
+1. **Build it** (Windows, Visual Studio and CMake; see [Build](#build)) or take the exe from a release zip (`AngryBirdsEngine-v3.2.zip`, made by `make_release.bat`).
 2. **Start it from inside the game's folder**, the one that holds `config.lua`:
 
        cd /d "C:\Program Files (x86)\Rovio\Angry Birds"
@@ -50,6 +59,7 @@ More in [`docs/USAGE.md`](docs/USAGE.md): the command line, controls, the typed 
 - Menus, level select, tutorials, pause, restart and level-complete flows in all supported versions.
 - Saves shared with the original game (encrypted and plain format).
 - A DPI-aware resizable window (the scripts' `resolutionChanged` runs), smoothed frame times, a typed console and debug tools.
+- Rewind: `rewind(frames)` in Lua or `rewind [frames]` in the console puts the physics objects back up to 600 frames; files dropped on the window load as a level or run as a script (`onFileDropped` lets a script decide); the iOS games show a Game Center banner for each achievement, and F7 (or the game's Game Center button, or HD 1.4.2's Crystal button) opens a scrolling page listing every achievement, how to get it and which are unlocked; unlocks show in the game's own pop-up.
 - Android and iPhone: drag an `.apk` or `.ipa` onto the exe (or open it with the exe) and it runs the game's data, see [`docs/USAGE.md`](docs/USAGE.md#opening-an-android-apk-or-iphone-ipa).
 - Mods for any game: drag one or more `.lua` files onto the exe together with the `.apk` / `.ipa` (or on their own for a PC game) and they are loaded once the game scripts are up, like `extra_scripts.lua` is for 1.6.2. `extras/extra_scripts.lua` (screen wipe, aiming aid with silhouettes of the bird) works this way with 1.3.5 and the Angry Birds Free `.ipa`.
 - For mod makers: nearly everything can be changed from Lua. The `engine` table (originals of every native, events, rule hooks `engine.shouldCollide` / `engine.force` / `engine.damage` / `engine.strengthChange` / `engine.drawObject` / `engine.drawSprite`, so a script can change the force, damage and drawing of every hit and every sprite), the `tuning` table (about 40 built-in constants of the physics, damage, water, wobble, zoom, particles and backgrounds), theme layers as data (`getThemeLayers` / `setThemeLayer`, `getCamera`, `drawBackground` / `drawGame` events, so a script can do sine-wave parallax), plus the extra script functions (collider types, alpha, silhouettes, collision prediction, per-object gravity, audio and graphics controls). The compiled-in remainder (Box2D's own code, the OpenGL quad drawing) is listed in [`docs/SCRIPTING.md`](docs/SCRIPTING.md#what-can-still-not-be-reached-from-lua).
@@ -85,7 +95,7 @@ More in [`docs/USAGE.md`](docs/USAGE.md): the command line, controls, the typed 
 
 (Use `-A x64` for a 64-bit build.) SDL2 is downloaded and built on the first configure if CMake cannot find it (internet needed). The program is `build\Release\AngryBirdsEngine.exe` (`Debug` for a debug build).
 
-`make_release.bat` builds a release configuration and zips the exe with the licences into `AngryBirdsEngine-v3.1.zip`.
+`make_release.bat` builds a release configuration and zips the exe with the licences into `AngryBirdsEngine-v3.2.zip`.
 
 ## How it works
 

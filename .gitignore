@@ -1,1 +1,10 @@
 /SDL2-2.30.9.tar.gz
+/build/
+/dist/
+/stage/
+# made when the engine runs from this folder, or by mistyped commands
+/settings.lua
+/highscores.lua
+/cd
+/copy
+*.zip

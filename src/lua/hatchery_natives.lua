@@ -587,7 +587,6 @@ end
 
 -- ---- misc natives the Hatchery calls ---------------------------------------------------------------------------
 -- (the egg painter canvas, loadPersistentFileWrapper and checkForPersistentFile are in the engine)
-function env.drawMenuParticlesInAdvance() end
 function env.startAnalyzingCanvasColors() end
 function env.stopAnalyzingCanvasColors() end
 function env.drawHatcheryBackground() end

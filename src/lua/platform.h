@@ -124,7 +124,7 @@ public:
     virtual void SetAngularVelocity(const std::string& n, float w) { (void)n; (void)w; }
     virtual bool BodyCommand(const std::string& n, int cmd, float a, float& result) { (void)n; (void)cmd; (void)a; (void)result; return false; }
     virtual bool SpriteExists(const std::string& name) { (void)name; return false; }
-    virtual bool AimSimulate(const std::string& bird, float vx, float vy, int points, const float* start) { (void)bird; (void)vx; (void)vy; (void)points; (void)start; return false; }   // extension: aiming aid path with bounces
+    virtual bool AimSimulate(const std::string& bird, float vx, float vy, int points, const float* start, const float* force = nullptr) { (void)bird; (void)vx; (void)vy; (void)points; (void)start; (void)force; return false; }   // extension: aiming aid path with bounces
     virtual void SetSleeping(const std::string& n, bool sleeping) { (void)n; (void)sleeping; }
     virtual float GetAngle(const std::string& n) { (void)n; return 0; }
     virtual void GetWorldPoint(const std::string& n, float lx, float ly, float& wx, float& wy) { (void)n; wx = lx; wy = ly; }
@@ -224,6 +224,7 @@ public:
     virtual void DrawBackground() {}
     virtual void DrawForeground() {}
     virtual void DrawParticles(bool world = true) { (void)world; }
+    virtual void DrawMenuParticlesInAdvance() {}
     virtual void DrawLevelParticles(int layer) { (void)layer; }
     virtual void SetSprite(const std::string& n, const std::string& sprite) { (void)n; (void)sprite; }
     virtual void SetMaterial(const std::string& n, const std::string& material) { (void)n; (void)material; }
@@ -243,6 +244,8 @@ public:
     // ---- res.* (resources, fonts, text, audio)
     virtual void ResSetPath(const std::string& p) { (void)p; }
     virtual void ResCreateSpriteSheet(const std::string& path) { (void)path; }
+    // A sprite's size and pivot read from a sheet file that need not be loaded (Friends 2.0.0: the phone knew every sheet's sprites from the start)
+    virtual bool ResPeekSprite(const std::string& file, const std::string& sprite, float& w, float& h, float& px, float& py) { (void)file; (void)sprite; w = h = px = py = 0; return false; }
     virtual void ResReleaseSpriteSheet(const std::string& path) { (void)path; }
     virtual void SpawnFGLayerParticles(int id) { (void)id; }
     virtual void ResKeepLastFrame(bool on) { (void)on; }                                    // Classic screenwipe: captureSprite before anything is drawn this frame takes the last finished frame
@@ -287,7 +290,10 @@ public:
     virtual void SetThemeSprite(const std::string& name, const std::string& sprite, int layer) { (void)name; (void)sprite; (void)layer; }
     virtual void RotateThemeSprites(float dt) { (void)dt; }
     virtual void ScrollThemeLayers(float dt, bool force) { (void)dt; (void)force; }
-    virtual void ScrollWaterLayers(float dt) { (void)dt; }   // the water layers of Seasons 2.4.1 (Piglantis) drift by themselves, once per game frame
+    virtual void ScrollWaterLayers(float dt) { (void)dt; }
+    virtual void ResAliasFont(const std::string& name, float size) { (void)name; (void)size; }      // v3.1: createSystemFont (Friends): the name stands for the bitmap font closest in size
+    struct DatSprite { std::string name; int x = 0, y = 0, w = 0, h = 0, pivotX = 0, pivotY = 0; };
+    virtual bool ReadDatSprites(const std::string& path, std::vector<DatSprite>& out, std::string* error) { (void)path; (void)out; (void)error; return false; }   // v3.1: loadDATFileToTable   // the water layers of Seasons 2.4.1 (Piglantis) drift by themselves, once per game frame
     virtual void DrawTexturedLine2D(const std::string& sprite, float x1, float y1, float x2, float y2, float width, float r, float g, float b, float a) { (void)sprite; (void)x1; (void)y1; (void)x2; (void)y2; (void)width; (void)r; (void)g; (void)b; (void)a; }
     virtual void ResDrawSprite(const std::string& sprite, float x, float y, int vAnchor, int hAnchor, bool sized, float width, float height) {
         (void)sprite; (void)x; (void)y; (void)vAnchor; (void)hAnchor; (void)sized; (void)width; (void)height; }
@@ -296,6 +302,7 @@ public:
                                const std::string& vAlign, const std::string& hAlign) {
         (void)group; (void)text; (void)x; (void)y; (void)vAlign; (void)hAlign; }
     virtual void ResSetClipRect(float x, float y, float w, float h) { (void)x; (void)y; (void)w; (void)h; }
+    virtual void ResGetClipRect(float& x, float& y, float& w, float& h) { x = 0; y = 0; w = 0; h = 0; }      // v3.1: Angry Birds Friends saves and restores the clip
     // Hatchery (iPad) egg painter: a paint canvas the brushes are stamped on, shown through the egg-shaped alpha mask of a sprite
     virtual void CanvasInit(int w, int h) { (void)w; (void)h; }
     virtual void CanvasClear(float r, float g, float b, float a) { (void)r; (void)g; (void)b; (void)a; }
@@ -335,6 +342,7 @@ public:
     virtual void ResPauseAudio(bool paused, int track) { (void)paused; (void)track; }
     virtual bool ResIsAudioPaused(int track) { (void)track; return false; }
     virtual void ResSetMasterVolume(float v) { (void)v; }
+    virtual int Rewind(int frames) { (void)frames; return 0; }   // v3.1: rewind(frames): the physics objects go back that many frames (positions, angles, speeds)
     virtual float ResGetMasterVolume() { return 1; }
     virtual void ResSetAudioClipVolume(const std::string& n, float v) { (void)n; (void)v; }
     virtual void ResSetAudioClipSpeed(const std::string& n, float s) { (void)n; (void)s; }

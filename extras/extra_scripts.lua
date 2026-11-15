@@ -8,7 +8,7 @@ if extraScripts ~= nil or _G.type(loadLevel) ~= "function" or _G.type(update) ~=
 	return
 end
 extraScripts = true
-print("extra_scripts.lua loaded (screen wipe, aiming aid, version 10" .. (_G.type(simulateAimingAid) == "function" and ")" or ": this engine build is too old for the aiming aid, rebuild it)"))
+print("extra_scripts.lua loaded (screen wipe, aiming aid, version 12" .. (_G.type(simulateAimingAid) == "function" and ")" or ": this engine build is too old for the aiming aid, rebuild it)"))
 
 ------------------------------------------------------------------ 1. screen wipe
 screenwipe = {
@@ -152,7 +152,9 @@ drawGame = function(...)
 		local dist = _G.math.sqrt(dx * dx + dy * dy)
 		if dist > 0.0001 then
 			local distFactor = _G.math.min(1, _G.math.max(0, rubberBandLength / maxBandLength()))
-			local force = -defaultForce * physicsScale * (selectedBird and selectedBird.mass or objects.world[name].mass) * distFactor   -- the impulse shootSelectedBird applies
+			local def = blockTable.blocks[objects.world[name].definition or ""]
+			-- the impulse shootSelectedBird applies, worked out as the Sling Scope power-up does it (3.3.0's getLaunchVelocity): the bird's own launch force if it has one, and the King Sling's extra power
+			local force = -((def and def.slingshotLaunchForce) or defaultForce) * physicsScale * (selectedBird and selectedBird.mass or objects.world[name].mass) * distFactor * (g_slingshot_power or 1)
 			if not a.showing then
 				a.showing = true
 				-- the dots are small silhouettes of the bird that is pulled back: its current sprite, filled with the main colour of that sprite
@@ -180,7 +182,10 @@ drawGame = function(...)
 				setAimingAidSprite(sprite, scale)
 				enableAimingAid(true)
 			end
-			simulateAimingAid(name, dx / dist * force, dy / dist * force, a.points, rubberBandPos.x, rubberBandPos.y)
+			-- birds that are pushed while they fly (the Boomerang Bird's lift: gamelogic applies flyVerticalForce every frame until it is tapped) get the same push in the simulation, as the Sling Scope passes it to its native
+			local fx, fy = 0, 0
+			if def ~= nil then fx, fy = def.flyHorizontalForce or 0, def.flyVerticalForce or 0 end
+			simulateAimingAid(name, dx / dist * force, dy / dist * force, a.points, rubberBandPos.x, rubberBandPos.y, fx, fy)
 		end
 	elseif a.showing then
 		a.showing = false
