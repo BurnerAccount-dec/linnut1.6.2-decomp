@@ -690,6 +690,16 @@ LUA_API void lua_rawseti (lua_State *L, int idx, int n) {
 }
 
 
+LUA_API void lua_setwatched (lua_State *L, int idx, int on) {
+  StkId t;
+  lua_lock(L);
+  t = index2adr(L, idx);
+  api_check(L, ttistable(t));
+  hvalue(t)->watched = cast_byte(on != 0);
+  lua_unlock(L);
+}
+
+
 LUA_API int lua_setmetatable (lua_State *L, int objindex) {
   TValue *obj;
   Table *mt;

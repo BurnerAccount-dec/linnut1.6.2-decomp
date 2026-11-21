@@ -1395,6 +1395,55 @@ void SetNum(lua_State* L, const char* k, float v) { lua_pushnumber(L, v); lua_se
 void SetBool(lua_State* L, const char* k, bool v) { lua_pushboolean(L, v); lua_setfield(L, -2, k); }
 void SetStr(lua_State* L, const char* k, const std::string& v) { lua_pushlstring(L, v.data(), v.size()); lua_setfield(L, -2, k); }
 
+// (4.1.2) A plain write from a script to an entry of objects.world[name] reaches the body. The entry is a "watched" table (lua_setwatched in the bundled Lua): an assignment
+// made by Lua code, also to a key that is already there, goes to this __newindex; the engine's own writes (C code) do not, so nothing is checked per frame and
+// nothing is slowed down. It sets the value in the entry (a value of nil removes the key, a key that is new is added) and, for the keys that name a property of
+// the body, changes the body: x, y, angle, xVel, yVel, density, friction, restitution, radius (circles), z_order, collisionEnabled. A value that is already
+// there is not applied again. Any other key is only a record.
+int EntryNewIndex(lua_State* L) {            // (entry, key, value)
+    if (lua_type(L, 2) == LUA_TSTRING) {
+        const char* k = lua_tostring(L, 2);
+        lua_pushstring(L, "name"); lua_rawget(L, 1);
+        std::string name = lua_type(L, -1) == LUA_TSTRING ? lua_tostring(L, -1) : "";
+        lua_pop(L, 1);
+        lua_pushvalue(L, 2); lua_rawget(L, 1);
+        bool same = lua_rawequal(L, -1, 3) != 0;
+        lua_pop(L, 1);
+        auto other = [&](const char* key, float def) { lua_pushstring(L, key); lua_rawget(L, 1); float v = lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : def; lua_pop(L, 1); return v; };
+        if (!name.empty() && !same) {
+            if (lua_isnumber(L, 3)) {
+                float v = (float)lua_tonumber(L, 3);
+                if (!std::strcmp(k, "density")) P(L)->SetObjectDensity(name, v);
+                else if (!std::strcmp(k, "friction")) P(L)->SetObjectFriction(name, v);
+                else if (!std::strcmp(k, "restitution")) P(L)->SetObjectRestitution(name, v);
+                else if (!std::strcmp(k, "x")) P(L)->SetPosition(name, v, other("y", 0));
+                else if (!std::strcmp(k, "y")) P(L)->SetPosition(name, other("x", 0), v);
+                else if (!std::strcmp(k, "angle")) { float a = v; if (P(L)->SetRotation(name, v, a)) { lua_pushvalue(L, 2); lua_pushnumber(L, a); lua_rawset(L, 1); return 0; } }
+                else if (!std::strcmp(k, "xVel")) P(L)->SetVelocity(name, v, other("yVel", 0));
+                else if (!std::strcmp(k, "yVel")) P(L)->SetVelocity(name, other("xVel", 0), v);
+                else if (!std::strcmp(k, "radius")) P(L)->ResizeObjectCircle(name, v);
+                else if (!std::strcmp(k, "z_order")) P(L)->SetObjectZOrder(name, v);
+            } else if (lua_isboolean(L, 3) && !std::strcmp(k, "collisionEnabled")) {
+                P(L)->SetCollisionEnabled(name, lua_toboolean(L, 3) != 0);
+            }
+        }
+    }
+    lua_pushvalue(L, 2); lua_pushvalue(L, 3); lua_rawset(L, 1);
+    return 0;
+}
+// the entry on the top of the stack gets the shared metatable and is watched
+void MakeMaterialsWritable(lua_State* L) {
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.entrymeta");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushlightuserdata(L, P(L)); lua_pushcclosure(L, EntryNewIndex, 1); lua_setfield(L, -2, "__newindex");   // P(L) reads the platform from the closure
+        lua_pushvalue(L, -1); lua_setfield(L, LUA_REGISTRYINDEX, "ab.entrymeta");
+    }
+    lua_setmetatable(L, -2);
+    lua_setwatched(L, -1, 1);
+}
+
 // objects.world[name] = { name, sprite, type, x, y, width, height | radius, angle, density, friction,
 //                         restitution, mass, xVel, yVel, z_order }   (key order of the exe's helper)
 void WriteWorldEntry(lua_State* L, const BodyDef& d, const char* type, float mass) {
@@ -1425,6 +1474,7 @@ void WriteWorldEntry(lua_State* L, const BodyDef& d, const char* type, float mas
     SetNum(L, "animTimer", 0);
     SetNum(L, "animFrame", 0);
     SetNum(L, "animThresholdTimer", 0);
+    MakeMaterialsWritable(L);
     lua_setfield(L, -2, d.name.c_str());
     lua_pop(L, 1);
 }
@@ -3089,39 +3139,143 @@ static bool HttpGetText(const std::string& url, double seconds, std::string& bod
     body = reply.substr(headEnd + 4);
     return true;
 }
-// (4.1) isNetworkConnected() -> true and this computer's address when it is on a network (Wi-Fi or cable): it has an address from which an outside address can be reached. No packet
-// is sent (a UDP socket is only "connected", which picks the route), so it answers at once. A computer with no network, or only a loopback, answers false.
+// (4.1.1) isNetworkConnected() -> true and this computer's address when the internet can be reached. Having an address is not enough (a switched-off Wi-Fi often leaves a
+// virtual adapter, a VPN or a cable with a route that leads nowhere), so a connection to a public address (1.1.1.1 port 443, then 8.8.8.8 port 53) is really tried, at most
+// about a second each; no data is sent. A computer with no network answers false at once.
+static bool TcpReachable(const char* ip, int port, double seconds, std::string& mine) {
+    HttpSocket s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s == kNoSocket) return false;
+#ifdef _WIN32
+    u_long nonBlocking = 1; ioctlsocket(s, FIONBIO, &nonBlocking);
+#else
+    fcntl(s, F_SETFL, fcntl(s, F_GETFL, 0) | O_NONBLOCK);
+#endif
+    sockaddr_in to; std::memset(&to, 0, sizeof to);
+    to.sin_family = AF_INET; to.sin_port = htons((unsigned short)port); to.sin_addr.s_addr = inet_addr(ip);
+    bool ok = connect(s, (const sockaddr*)&to, sizeof to) == 0;
+#ifdef _WIN32
+    bool pending = !ok && WSAGetLastError() == WSAEWOULDBLOCK;
+#else
+    bool pending = !ok && errno == EINPROGRESS;          // any other error (no route, network unreachable) is the answer already
+#endif
+    if (pending) {
+        fd_set w, e; FD_ZERO(&w); FD_ZERO(&e); FD_SET(s, &w); FD_SET(s, &e);   // Windows reports a failed connection in the third set
+        timeval tv; tv.tv_sec = (long)seconds; tv.tv_usec = (long)((seconds - (long)seconds) * 1e6);
+        if (select((int)s + 1, nullptr, &w, &e, &tv) > 0 && FD_ISSET(s, &w)) {
+            int err = 0;
+#ifdef _WIN32
+            int len = sizeof err; getsockopt(s, SOL_SOCKET, SO_ERROR, (char*)&err, &len);
+#else
+            socklen_t len = sizeof err; getsockopt(s, SOL_SOCKET, SO_ERROR, &err, &len);
+#endif
+            ok = err == 0;
+        }
+    }
+    if (ok) {
+        sockaddr_in me; std::memset(&me, 0, sizeof me);
+#ifdef _WIN32
+        int len = sizeof me;
+#else
+        socklen_t len = sizeof me;
+#endif
+        if (getsockname(s, (sockaddr*)&me, &len) == 0) mine = inet_ntoa(me.sin_addr);
+    }
+    HttpClose(s);
+    return ok;
+}
 int l_isNetworkConnected(lua_State* L) {
 #ifdef _WIN32
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) { lua_pushboolean(L, 0); return 1; }
 #endif
-    bool connected = false;
     std::string address;
-    HttpSocket s = socket(AF_INET, SOCK_DGRAM, 0);
-    if (s != kNoSocket) {
-        sockaddr_in to; std::memset(&to, 0, sizeof to);
-        to.sin_family = AF_INET; to.sin_port = htons(53); to.sin_addr.s_addr = inet_addr("1.1.1.1");
-        if (connect(s, (const sockaddr*)&to, sizeof to) == 0) {
-            sockaddr_in me; std::memset(&me, 0, sizeof me);
-#ifdef _WIN32
-            int len = sizeof me;
-#else
-            socklen_t len = sizeof me;
-#endif
-            if (getsockname(s, (sockaddr*)&me, &len) == 0) {
-                unsigned long a = ntohl(me.sin_addr.s_addr);
-                connected = a != 0 && (a >> 24) != 127;
-                if (connected) address = inet_ntoa(me.sin_addr);
-            }
-        }
-        HttpClose(s);
-    }
+    bool connected = TcpReachable("1.1.1.1", 443, 0.9, address) || TcpReachable("8.8.8.8", 53, 0.9, address);
 #ifdef _WIN32
     WSACleanup();
 #endif
     lua_pushboolean(L, connected);
     if (connected) { lua_pushstring(L, address.c_str()); return 2; }
+    return 1;
+}
+
+// (4.1.2) math.sin, math.cos and math.tan the way the retail PC exes give them. Their Lua calls the C library, which on 32-bit Windows runs the x87 instructions fsin, fcos and
+// fptan. Those reduce the argument with an approximation of pi that has only 66 bits (pi truncated, short by 4.04e-21), so near a multiple of pi / 2 the answer differs
+// from the correctly rounded one: math.sin(math.pi) is 1.2246063538223773e-16 there (1.2246467991473532e-16 elsewhere) and math.cos(math.pi / 2) is 6.123031769111886e-17
+// (6.123233995736766e-17). Away from those points the two agree to the last digit. The reduction is done in double-double arithmetic here; the angle itself is then
+// handled by the host's own sin and cos. Arguments of 2^63 and beyond are left as the x87 leaves them (unreduced, C2 set): they go to the host's functions.
+namespace {
+const double kHalfPiHi = 1.5707963267948966, kHalfPiLo = 6.123031769111886e-17;   // pi truncated to 66 bits, halved
+void X87Reduce(double x, long long& quadrant, double& rHi, double& rLo) {
+    double n = std::nearbyint(x * 0.63661977236758134);
+    double p = n * kHalfPiHi, e = std::fma(n, kHalfPiHi, -p);
+    double t = x - p;                                    // exact: p is within a bit of x
+    double lo = -e - n * kHalfPiLo;
+    double s = t + lo, err = lo - (s - t);
+    rHi = s; rLo = err;
+    quadrant = (long long)n & 3;
+}
+bool X87Usable(double x) { return std::isfinite(x) && std::fabs(x) < 9.2233720368547758e18; }
+void X87SinCos(double x, double& sn, double& cs) {
+    long long q; double rh, rl;
+    X87Reduce(x, q, rh, rl);
+    double sr = std::sin(rh) + std::cos(rh) * rl, cr = std::cos(rh) - std::sin(rh) * rl;
+    switch (q) {
+        case 0: sn = sr; cs = cr; break;
+        case 1: sn = cr; cs = -sr; break;
+        case 2: sn = -sr; cs = -cr; break;
+        default: sn = -cr; cs = sr; break;
+    }
+}
+int m_sin(lua_State* L) { double x = luaL_checknumber(L, 1), s, c; if (!X87Usable(x)) { lua_pushnumber(L, std::sin(x)); return 1; } X87SinCos(x, s, c); lua_pushnumber(L, s); return 1; }
+int m_cos(lua_State* L) { double x = luaL_checknumber(L, 1), s, c; if (!X87Usable(x)) { lua_pushnumber(L, std::cos(x)); return 1; } X87SinCos(x, s, c); lua_pushnumber(L, c); return 1; }
+int m_tan(lua_State* L) { double x = luaL_checknumber(L, 1), s, c; if (!X87Usable(x)) { lua_pushnumber(L, std::tan(x)); return 1; } X87SinCos(x, s, c); lua_pushnumber(L, s / c); return 1; }
+}  // namespace
+void InstallX87TrigImpl(lua_State* L) {
+    lua_getglobal(L, "math");
+    if (lua_istable(L, -1)) {
+        lua_pushcfunction(L, m_sin); lua_setfield(L, -2, "sin");
+        lua_pushcfunction(L, m_cos); lua_setfield(L, -2, "cos");
+        lua_pushcfunction(L, m_tan); lua_setfield(L, -2, "tan");
+    }
+    lua_pop(L, 1);
+}
+
+
+// (4.1.2) The names of the `tuning` table with the engine's own values: listTuning() -> { name = default, ... }, getTuning(name) -> the value in use, the default
+// (nil for a name the engine does not know). The solver names have no single default (each game has its own), so they are not listed here.
+struct TuningName { const char* name; float def; };
+const TuningName kTuningNames[] = {
+    {"classic.birdForceDivisor", 10.0f}, {"classic.blockForce", 0.1f}, {"classic.blockScore", 10.0f}, {"classic.legacyVelocityFactor", 1.75f},
+    {"classic.sameMaterialDamage", 4.0f}, {"classic.sameMaterialVelocityLight", 1.9f},
+    {"sw.forceDivisor", 10.0f}, {"sw.homingDamage", 0.2f}, {"sw.wobbleFactor", 0.02f}, {"sw.wobbleMax", 0.1f}, {"sw.removeLimit", 0.88f},
+    {"rio.wobbleFactor", 0.02f}, {"rio.wobbleMax", 0.1f},
+    {"wobble.duration", 1.0f}, {"wobble.maxScale", 4.0f}, {"wobble.cutoff", 0.01f}, {"wobble.frequency", 100.0f}, {"wobble.baseFrequency", 5.0f},
+    {"flip.speed", 3.0f}, {"moving.tolerance", 0.5f}, {"moving.zeroTolerance", 0.001f}, {"moving.speed", 3.0f}, {"moving.angularSpeed", 0.1f},
+    {"frozen.maxY", 20.0f}, {"roll.volumeDivisor", 400.0f},
+    {"getup.speed", 2.0f}, {"getup.angularSpeed", 0.1f}, {"getup.minAngle", 0.7853982f}, {"getup.time", 3.0f}, {"getup.turnSpeed", 2.0f}, {"getup.uprightAngle", 0.1f},
+    {"gravity.birdDecay", 1.3f}, {"gravity.revertFactor", -0.1f}, {"gravity.forceScale", 0.1f}, {"gravity.phoneDecay", 2.0f},
+    {"water.buoyancy", 0.1f}, {"water.band", 1.5f}, {"water.keepOrientationOffset", 0.25f}, {"water.boxPushFactor", 0.25f}, {"water.pushSpeedLimit", 15.0f},
+    {"solver.velocityThreshold", 1.0f}, {"solver.maxLinearCorrection", 0.2f}, {"solver.baumgarte", 0.2f}, {"solver.maxRotation", 1.5707964f}, {"solver.angularSleepTolerance", 0.034906585f},
+    {"zoom.stepIn", 0.2f}, {"zoom.stepOut", 0.1f}, {"zoom.duration", 0.5f}, {"zoom.min", 0.6f}, {"speed.min", 0.25f}, {"speed.max", 8.0f},
+    {"particle.amountScale", 1.0f}, {"particle.lifeScale", 1.0f}, {"particle.sizeScale", 1.0f}, {"particle.speedScale", 1.0f},
+};
+int l_listTuning(lua_State* L) {
+    lua_newtable(L);
+    for (const TuningName& t : kTuningNames) { lua_pushnumber(L, t.def); lua_setfield(L, -2, t.name); }
+    return 1;
+}
+int l_getTuning(lua_State* L) {
+    const char* name = luaL_checkstring(L, 1);
+    for (const TuningName& t : kTuningNames) {
+        if (std::strcmp(t.name, name) != 0) continue;
+        PushEnv(L);
+        lua_getfield(L, -1, "tuning");
+        float v = t.def;
+        if (lua_istable(L, -1)) { lua_getfield(L, -1, name); if (lua_isnumber(L, -1)) v = (float)lua_tonumber(L, -1); }
+        lua_pushnumber(L, v); lua_pushnumber(L, t.def);
+        return 2;
+    }
+    lua_pushnil(L);
     return 1;
 }
 int l_httpGet(lua_State* L) {
@@ -3575,7 +3729,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"drawTexturedRect", l_nothing}, {"drawSome", l_nothing},
         {"drawGameNative", l_drawGameNative}, {"drawBackgroundNative", l_drawBackgroundNative},
         {"drawForegroundNative", l_drawForegroundNative}, {"drawParticlesFiltered", l_drawParticlesFiltered}, {"readDataFile", l_readDataFile}, {"listDataFolder", l_listDataFolder}, {"setObjectDensity", l_setObjectDensity}, {"setDensity", l_setObjectDensity}, {"setFriction", l_setFriction}, {"resizeCircle", l_resizeCircle}, {"setVisible", l_setVisible}, {"isVisible", l_isVisible}, {"inheritTeleportation", l_retailNoop}, {"setRestitution", l_setRestitution}, {"handleJointLimits", l_handleJointLimits}, {"getFullScreenWidth", l_getFullScreenWidth}, {"getFullScreenHeight", l_getFullScreenHeight}, {"performBitwiseOr", l_performBitwiseOr}, {"setWaterForceMultiplier", l_setWaterForceMultiplier}, {"getWaterForceMultiplier", l_getWaterForceMultiplier}, {"setBirdWaterDrag", l_setBirdWaterDrag}, {"setObjectWaterDrag", l_setObjectWaterDrag}, {"fileExistsInAppData", l_fileExistsInAppData}, {"loadTextFileToString", l_loadTextFileToString}, {"isGameOverlayActive", l_isGameOverlayActive}, {"clearScreen", l_retailNoop}, {"isEditing", l_false}, {"setRollingSound", l_retailNoop}, {"setRovioShelfAllowed", l_retailNoop}, {"setChannelCountLimit", l_retailNoop}, {"setOffsetedViewport", l_retailNoop}, {"refreshCurrentLocale", l_retailNoop}, {"recoverRenderObjects", l_retailNoop}, {"drawParticlesNative", l_drawParticlesNative}, {"drawMenuParticlesInAdvance", l_drawMenuParticlesInAdvance},
-        {"setSprite", l_setSprite}, {"setMaterial", l_setMaterial}, {"setTexture", l_setTexture}, {"httpGet", l_httpGet}, {"isNetworkConnected", l_isNetworkConnected}, {"playLevelText", l_playLevelText}, {"setTheme", l_setTheme},
+        {"setSprite", l_setSprite}, {"setMaterial", l_setMaterial}, {"setTexture", l_setTexture}, {"httpGet", l_httpGet}, {"listTuning", l_listTuning}, {"getTuning", l_getTuning}, {"isNetworkConnected", l_isNetworkConnected}, {"playLevelText", l_playLevelText}, {"setTheme", l_setTheme},
         {"clipText", l_clipText},
         {"startNewTrajectory", l_startNewTrajectory}, {"addToTrajectory", l_addToTrajectory},
         {"addPuffToTrajectory", l_addPuffToTrajectory}, {"setCustomTrajectorySprites", l_setCustomTrajectorySprites},
@@ -3900,4 +4054,5 @@ void EmitHook(lua_State* L, const char* event, const char* s1, const char* s2, i
     lua_settop(L, top);
 }
 
+void InstallX87Trig(lua_State* L) { InstallX87TrigImpl(L); }
 }  // namespace ab

@@ -48,6 +48,7 @@ Tips for getting the most out of them:
 * **Count what is inside.** Keep a table, `inside[zone] = (inside[zone] or 0) + 1` in `enterCollision` and `- 1` in `exitCollision`, and act only when it goes 0 → 1 or 1 → 0. A body that touches the sensor with two fixtures reports once per fixture pair, so counting is safer than a flag.
 * **Test names with patterns.** Names are plain strings, so give your zones a prefix (`zone_`, `wind_`, `warp_`) and match with `string.find(name, "^wind_")`.
 * **Do work, then return.** Both functions run inside the physics step. Moving, scaling, tinting, playing sounds, changing gravity (`setObjectGravity`) and `destroyObject` are fine; do not loop or wait.
+* **Writing to an entry (4.1.2).** An assignment in a script to `objects.world[name]` reaches the body, and any key can be set, added or removed (`entry.foo = 1`, `entry.foo = nil`; `pairs(entry)` lists everything). These keys change the body the moment they are written: `x`, `y`, `angle` (position and rotation), `xVel`, `yVel` (the velocity), `density`, `friction`, `restitution`, `radius` (circles), `z_order` and `collisionEnabled`; they do what `setPosition`, `setRotation`, `setVelocity`, `setDensity`, `setFriction`, `setRestitution`, `resizeCircle`, `setObjectZOrder` and `setCollisionEnabled` do. Writing the value a key already has does nothing, and nothing is checked while you are not writing. Every other key (`strength`, `defense`, your own fields) is the plain record the engine and your scripts read, so it takes effect where they read it. Removing a key removes the record only; the body keeps its value. Writes made with `rawset` skip all this. `width` and `height` of a box cannot be changed after it is made.
 * **Read the other object.** `objects.world[other]` has `x`, `y`, `angle`, `definition`; `getLinearVelocity(other)` gives the speed, which is useful for "only fast things trigger".
 * **Build effects out of existing natives.** Wind zone: in `enterCollision` call `setObjectGravity(other, 0, -5)`, in `exitCollision` call `resetObjectGravity(other)`. Teleporter: `setPosition(other, tx, ty)` on enter. Score pad: add to the score table and play a sound on enter.
 * **Compare with the retail chain.** Space's own gamelogic only defines `blockCollision(...)`, which fires the object's `onCollisionEnter` actions with `{name, obj, other, force, wasDamageDone, dot, resultDamage}` and stops when an action sets `continueExec = false`; `onCollisionExit` exists on objects too. `enterCollision` / `exitCollision` are the lower-level, engine-wide version of the same idea and work in Classic, Seasons, Rio and Space alike.
@@ -187,7 +188,7 @@ Ads and in-app purchases stay no-ops on purpose.
 | `getCoins()`, `addCoins(n)`, `spendCoins(n)` | The wallet (`wallet.lua`); `spendCoins` answers `false` when there are too few |
 | `buyWithCoins(price [, callback [, item]])` | The in-app purchase: opens the "You are about to buy the <item> feature" window (the golden egg's turning shine behind a pig with a dollar sign, cancel / BUY). `callback(true)` after BUY with enough coins (the price is taken), `callback(false)` on cancel or when there are too few (the window then offers the coin window). It answers later, not at once; `spendCoins(price)` is the silent version |
 | `watchAd([callback])` | The fake ad: a placeholder screen for `abCoinsConfig.adSeconds` seconds, then `callback(reward)` and the coins. It plays only while the computer is on a network (`isNetworkConnected()`) and the Social stand-in server answers; otherwise a window says "You must be connected to the internet to do that!" (no network) or "The Social server does not answer." and `callback(0)` is called. `showCoins()` or F10 opens the coin window |
-| `isNetworkConnected()` | `true` and this computer's address when it is on a network (Wi-Fi or cable), else `false`. Nothing is sent, so it answers at once |
+| `isNetworkConnected()` | `true` and this computer's address when the internet can be reached, else `false`. A connection to a public address is really tried (no data is sent), so a switched-off Wi-Fi with a leftover virtual adapter or VPN counts as offline; it answers at once with no network and within about two seconds otherwise |
 | `isSocialServerReachable()` | Asks the Social stand-in server (`socialLevels.server`, a second at most); also syncs the wallet |
 | `isOnline()` | Both of the above |
 | `getWalletInfo()` | `{coins, pending, id, account, server = "never" / "online" / "offline", network}` |
@@ -251,6 +252,8 @@ Examples: `setOffset(0, 120, "background")`, `setLayoutScale(1.6, 1.6, 640, 360,
 * `res.getSpritePixel(sprite, x, y)` returns `r, g, b, a` (0 to 255) of the pixel x right and y down from the sprite's top left corner (nil if outside); for collision masks, colour lookups and the like.
 * `res.getCompoSprites(name [, "current" | "all"])`: for a composite sprite (or an object drawn as one) `"current"` (default) is a list of `{sprite, x, y, scale, angle}` for the parts it is made of now, `"all"` is a list of the different sprite names it uses.
 
+**Composite sprites across games.** A `*_composprites.dat` file is read the same way in every game and version the engine runs (Classic 1.0.0 PC to 4.x, Seasons, Rio, Space...): `res.createSpriteSheet("images/rio/INGAME.dat")` then `res.createCompoSpriteSet("images/rio/INGAME_composprites.dat")`, then `res.drawCompoSprite(name, x, y)` or an object's sprite. Paths are relative to the data folder (the files must sit under it), the sprite sheets a set draws from must be loaded before the set (otherwise its bounds are 0), and a later set wins over an earlier one with the same name. Tested with Rio's `INGAME_composprites.dat` in Classic 1.6.3.1 and 1.0.0 PC. Rio has no tutorial composite; Classic's tutorial pictures are in `TUTORIALS_composprites.dat`.
+
 ### The console
 
 New commands (also listed in "The console" below): `text <group> <key> <text>`, `texts [group]`, `gravity [x y]`, `maxtranslation <t>`, `scale <object> <sx> [sy]`, `speedcap <object> <speed>`, `blend <object> <mode>`, `shader <object> <name>`. Anything else typed is still run as Lua (`lua getTouchingObjects("pig_3")`), and since every native is a Lua function, anything the engine does can be changed from there.
@@ -264,6 +267,8 @@ Space builds that keep everything in one folder are accepted: their `SettingsWra
 These are not in any of the supported games; the engine adds them so scripts can use them, the same way they use `physicsTimeStep`. Nothing changes for the original scripts.
 
 ### Transparency (alpha)
+
+**Scaling about a point (4.1).** `setRenderScale(sx [, sy [, cx, cy]])` scales everything drawn after it around the point (cx, cy), the screen centre by default, so you no longer divide or multiply positions yourself. `getRenderScale()` returns `sx, sy, cx, cy`. `setScale(sx [, sy])` and `getScale()` called with numbers or no arguments do the same (with an object name they still scale the object's sprite). `setRenderState` keeps its own meaning (its `tx, ty` are added before the scale). Put it back with `setRenderScale(1)`. Note that `drawRect(..., false)` always draws in plain screen coordinates and ignores the render state; give it the pivot arguments (10th and 11th) to scale it.
 
 `setRenderState(tx, ty, sx, sy, angle, pivotX, pivotY, alpha)`: the 8th value is the transparency of everything drawn after it, from 0 (invisible) to 1 (opaque); out-of-range values are clamped. `setAlpha(a)` does the same. The value stays until you set it again, and a call with only 7 values does not reset it, so always put it back to 1 when you are done:
 
@@ -720,7 +725,7 @@ end)
 | `setObjectZOrder(name, z)`, `getObjectZOrder(name)`, `bringObjectToFront(name)`, `sendObjectToBack(name)`, `getObjectDrawOrder()` | The draw order of `drawGameNative`. |
 | `setColliderType(name, type)`, `getColliderType(name)`, `setColliderRule(typeA, typeB, collides)`, `getColliderRule(typeA, typeB)` | Collider classes: two objects collide only when the rule for their types allows it. |
 | `setPolygonRadius(r)` / `getPolygonRadius()` | The skin radius of boxes and polygons made afterwards (Rio's Box2D 2.2). |
-| `setScale(name, sx [, sy])`, `getScale(name)` | The scale an object's sprite is drawn with (the shape does not change). |
+| `setScale(name, sx [, sy])`, `getScale(name)` | The scale an object's sprite is drawn with (the shape does not change). Without the name (numbers only) they scale the drawing around the screen centre, see `setRenderScale`. |
 | `setSpriteRotation(name, angle)`, `setPivotOffset(name, x, y)`, `setTextureScale(name, s)`, `setRecordVelocity(name, on)`, `setObjectDecoration(name, sprite, amount, angleIncrement, scale)` (Space) | Sprite look settings the Space scripts use. |
 | `setObjectParameter(name, id, value)` | The catch-all for per-object switches. The ids are listed with each game: see the table for SW above; for Seasons, Rio and Space the ids the scripts use are 5 (scale), 6 (use scale), 15 (`disableImmovable`) and the Rio bounce multipliers 6 and 7. |
 | `setSensorGravityMask(name, mask)`, `setObjectGravityCategory(name, category)`, `setSensorMinimumAndMaximumForces(name, min, max)`, `setRevertGravity(name, on)`, `setRevertGravityWithMultiplier(name, on, a, b)` (Space, SW) | A gravity sensor pulls only objects whose category bit is in its mask; the forces are clamped to the minimum and maximum; "revert" makes it push instead of pull. |
@@ -1018,6 +1023,28 @@ Pick the lever in this order: a tuning value if there is one, an event if you on
 | `moving.tolerance` | 0.5 | `hasMovingObjects()` counts an object as moving above this speed. |
 | `moving.zeroTolerance` | 0.001 | The same for `hasMovingObjectsZeroTolerance()`. |
 | `gravity.birdDecay` | 1.3 | How fast a bird's extra pull from gravity sensors fades after its first collision (per second). |
+
+**More names (4.1.2).**
+
+| Name | Default | Effect |
+|---|---|---|
+| `getup.speed` | 2 | Rio marmosets: a marmoset lying on its side stands up again only when it moves slower than this (units per second) and turns slower than `getup.angularSpeed`. |
+| `getup.angularSpeed` | 0.1 | See above; also the turn rate that ends a stand-up that has run out of time. |
+| `getup.minAngle` | 0.7853982 | It counts as lying down when it is tilted by more than this many radians (in either direction). |
+| `getup.time` | 3 | Seconds the stand-up animation (and the turning) may take. |
+| `getup.turnSpeed` | 2 | Radians a second it is turned upright at, the short way round. |
+| `getup.uprightAngle` | 0.1 | It counts as upright again within this many radians of straight. |
+| `moving.speed` | 3 | `hasMovingObjects` is true when an object moves faster than this. |
+| `moving.angularSpeed` | 0.1 | ... or turns faster than this (radians a second). |
+| `frozen.maxY` | 20 | An object lower than this (world units) is frozen as having left the level (games that do not use the level limits). |
+| `roll.volumeDivisor` | 400 | Rolling sounds: the volume is `rollFactor * turn rate / this * mass`. |
+| `gravity.forceScale` | 0.1 | The pull of a gravity sensor, per unit of its strength and the body's mass. |
+| `gravity.phoneDecay` | 2 | The same fade as `gravity.birdDecay` for Space 1.1.0 for iPhone. |
+| `classic.legacyVelocityFactor` | 1.75 | Now also read by the game's own collision path, not only the rules module. |
+| `zoom.min` | 0.6 | Below this zoom a wheel notch starts a new zoom instead of adding to the running one. |
+| `speed.min`, `speed.max` | 0.25, 8 | The range of the game-speed keys. |
+
+`listTuning()` returns a table with the name of every tuning value the engine knows and its built-in value; `getTuning(name)` returns the value in use and the built-in one (`nil` for an unknown name). The solver names have a different built-in value in each game, so they are not in the list's defaults.
 
 The dot in a name is part of the name: write `tuning["sw.forceDivisor"] = 5`.
 

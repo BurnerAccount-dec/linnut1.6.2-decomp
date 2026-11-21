@@ -93,9 +93,12 @@ int MissingGlobalHook(lua_State* L) {
 }
 }  // namespace
 
+void InstallX87Trig(lua_State* L);   // lua_api.cpp
+
 ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
     : platform_(platform), config_(config), L_(luaL_newstate()) {
     luaL_openlibs(L_);
+    InstallX87Trig(L_);   // math.sin / cos / tan as the retail PC exes' x87 instructions give them
 
     // The scripts run in their own environment table (the exe's Game root table, `this`). Engine
     // functions and values are visible there by bare name; the standard libraries, `res` and

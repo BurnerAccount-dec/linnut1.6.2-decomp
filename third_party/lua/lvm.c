@@ -140,7 +140,8 @@ void luaV_settable (lua_State *L, const TValue *t, TValue *key, StkId val) {
     if (ttistable(t)) {  /* `t' is a table? */
       Table *h = hvalue(t);
       TValue *oldval = luaH_set(L, h, key); /* do a primitive set */
-      if (!ttisnil(oldval) ||  /* result is no nil? */
+      if ((!ttisnil(oldval) &&  /* result is no nil? */
+           !(h->watched && isLua(L->ci))) ||  /* (a watched table sends the writes of Lua code to __newindex even then) */
           (tm = fasttm(L, h->metatable, TM_NEWINDEX)) == NULL) { /* or no TM? */
         setobj2t(L, oldval, val);
         luaC_barriert(L, h, val);

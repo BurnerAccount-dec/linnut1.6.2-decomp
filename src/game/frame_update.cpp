@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include "game/collision_damage.h"   // g_damageTune: the Lua tuning table
+
 namespace ab {
 
 namespace {
@@ -9,6 +11,7 @@ namespace {
 const float kPi = 3.1415927f;
 const float kTwoPi = 6.2831855f;
 
+float Tn(const char* k, float d) { return g_damageTune ? g_damageTune(k, d) : d; }
 float Angle(const Body& b) { return std::atan2(b.RotCol1Y(), b.RotCol1X()); }
 
 void StopOrAdjust(FrameHost& host, LoopSound which, float volume) {
@@ -95,6 +98,7 @@ void UpdateFrame(FrameState& s, FrameHost& host, float dt) {
         }
 
         // 4. publish to Lua
+        const float movingSpeed = Tn("moving.speed", 3.0f), movingTurn = Tn("moving.angularSpeed", 0.1f), rollDivisor = Tn("roll.volumeDivisor", 400.0f);
         bool hasMoving = false, hasAwake = false, hasMovingAboveTolerance = false, hasMovingZero = false;
         if (!s.objects.empty()) {
             for (size_t i = 0; i < s.objects.size(); i++) {
@@ -109,7 +113,7 @@ void UpdateFrame(FrameState& s, FrameHost& host, float dt) {
                         // anything that leaves the level is frozen
                         if (s.stepOnEqual) {      // Space (0x483c13): outside any of the four limits, in either direction
                             if ((float)s.levelMaxY < o->interpY || o->interpY < (float)s.levelMinY) host.SetObjectBool(o->id, "frozen", true);
-                        } else if (o->interpY > 20.0f) host.SetObjectBool(o->id, "frozen", true);
+                        } else if (o->interpY > Tn("frozen.maxY", 20.0f)) host.SetObjectBool(o->id, "frozen", true);
                         if (o->interpX < (float)s.levelMinX) host.SetObjectBool(o->id, "frozen", true);
                         if ((float)s.levelMaxX < o->interpX) host.SetObjectBool(o->id, "frozen", true);
                     }
@@ -121,10 +125,10 @@ void UpdateFrame(FrameState& s, FrameHost& host, float dt) {
                         // 0x43387c / 0x4338bf / 0x433a52: no joint test, and an object flagged with parameter 12 never counts; the angular test uses |w|
                         if (speedSq > 0.0f && !o->isBird && !o->ignoreMoving) hasMovingZero = true;
                         float aw = b.AngularVelocity(); if (aw < 0.0f) aw = -aw;
-                        if ((speedSq > 9.0f || aw > 0.1f) && !o->ignoreMoving) hasMoving = true;
+                        if ((speedSq > movingSpeed * movingSpeed || aw > movingTurn) && !o->ignoreMoving) hasMoving = true;
                         host.SetObjectNumber(o->id, "velocity", std::sqrt(speedSq));   // 0x433953: objects.world[name].velocity, read by gamescene's specialty speed limits
                     } else
-                    if (speedSq > 9.0f || (b.AngularVelocity() > 0.1f && !b.HasJoints())) hasMoving = true;
+                    if (speedSq > movingSpeed * movingSpeed || (b.AngularVelocity() > movingTurn && !b.HasJoints())) hasMoving = true;
 
                     bool done = false;
                     if (o->isBird) {
@@ -143,7 +147,7 @@ void UpdateFrame(FrameState& s, FrameHost& host, float dt) {
                     if (!done && o->rolls) {
                         float w = b.AngularVelocity();
                         if (w < 0.0f) w = -w;
-                        float volume = ((o->rollFactor * w) / 400.0f) * b.Mass();
+                        float volume = ((o->rollFactor * w) / rollDivisor) * b.Mass();
                         if (volume > 1.0f) volume = 1.0f;
                         if (o->rollMaterial == kRollWood && woodVolume < volume) woodVolume = volume;
                         if (o->rollMaterial == kRollRock && rockVolume < volume) rockVolume = volume;

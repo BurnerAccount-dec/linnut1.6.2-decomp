@@ -257,6 +257,26 @@ float Tune(lua_State* L, const char* key, float def) {
     return r;
 }
 
+// (4.1.2) runs the episodes.lua of the old menus: next to gamelogic.lua, else next to a dragged .lua file (extraScriptFolder); only a file with the ENGINE-EPISODES-FILE line
+static const char* const kEpisodesLoader =
+    "local env = _G.getfenv(1)\n"
+    "if env.episodesLoaded == nil and _G.type(env.createMenuPages) == 'function' and env.scriptPath and _G.io then\n"
+    "  local function try(path)\n"
+    "    local f = _G.io.open(path, 'rb')\n"
+    "    if not f then return false end\n"
+    "    local text = f:read('*a') f:close()\n"
+    "    if not text or not _G.string.find(text, 'ENGINE-EPISODES-FILE', 1, true) then return false end\n"
+    "    local fn, err = _G.loadstring(text, '@' .. path)\n"
+    "    if not fn then _G.print('episodes.lua error: ' .. _G.tostring(err)) return false end\n"
+    "    _G.setfenv(fn, env)\n"
+    "    env.episodesLoaded = true\n"
+    "    local ok, e2 = _G.pcall(fn)\n"
+    "    if not ok then _G.print('episodes.lua error: ' .. _G.tostring(e2)) end\n"
+    "    return true\n"
+    "  end\n"
+    "  if not try(env.scriptPath .. '/episodes.lua') and env.extraScriptFolder then try(env.extraScriptFolder .. '/episodes.lua') end\n"
+    "end\n";
+
 // engine.strengthChange(name, other, oldStrength, newStrength) -> number or nil: a script may replace the strength a block is left with after a hit
 float LuaStrengthHook(lua_State* L, const std::string& name, const std::string& other, float oldS, float newS) {
     if (!L) return newS;
@@ -447,8 +467,10 @@ void GamePlatform::Attach(ScriptHost& scripts) {
 // the output exists but is not running; the scripts only ever call stopAudioOutput.
 void GamePlatform::AddSpeed(float step) {
     speed_ += step;
-    if (speed_ < 0.25f) speed_ = 0.25f;
-    if (speed_ > 8.0f) speed_ = 8.0f;
+    lua_State* TL = scripts_ ? scripts_->State() : nullptr;
+    const float lowest = Tune(TL, "speed.min", 0.25f), highest = Tune(TL, "speed.max", 8.0f);
+    if (speed_ < lowest) speed_ = lowest;
+    if (speed_ > highest) speed_ = highest;
     Print("speed: " + std::to_string(speed_) + "x");
 }
 
@@ -720,6 +742,7 @@ void GamePlatform::RunFrame(float dt) {
                 std::string escDir;
                 for (char c : dir) { if (c == '\\' || c == '\'') escDir += '\\'; escDir += c; }
                 scripts_->RunString(("_G.getfenv(1).extraScriptFolder = '" + escDir + "'").c_str());
+                scripts_->RunString(kEpisodesLoader);   // an apk's or ipa's episodes.lua sits next to the dragged file
                 scripts_->RunString(("local env = _G.getfenv(1)\nlocal ok, err = _G.pcall(env.loadLuaFile, '" + esc + "', '', false, false)\nif not ok then _G.print('extra script error: ' .. _G.tostring(err)) end\n").c_str());
             }
             extraScriptFiles.clear();
@@ -770,29 +793,10 @@ void GamePlatform::RunFrame(float dt) {
             "  local f = _G.io.open(env.scriptPath .. '/extra_scripts.lua', 'rb')\n"
             "  if f then f:close(); _G.pcall(env.loadLuaFile, env.scriptPath .. '/extra_scripts.lua', '', false, false) end\n"
             "end\n");
-    // 3.9: Seasons (the menus before 2.4): an episodes.lua next to gamelogic.lua sets the levels of the packs (episodes.packs = { pack2 = { "LevelX_39", ... } }); the lists are changed in place
-    // before the menu pages are made from them (the extras/episodes.lua of Classic 1.6.2 does the same for its worlds)
-    if (scripts_ && execFrame == 3 && !scripts_->IsSpace() && IsSeasonsScripts())
-        scripts_->RunString(
-            "local env = _G.getfenv(1)\n"
-            "if env.episodesLoaded == nil and _G.type(env.createMenuPages) == 'function' and env.scriptPath and _G.loadfile then\n"
-            "  env.episodesLoaded = true\n"
-            "  local f = _G.loadfile(env.scriptPath .. '/episodes.lua')\n"
-            "  if f then _G.setfenv(f, env) end\n"
-            "  if f and _G.pcall(f) and _G.type(env.episodes) == 'table' and _G.type(env.episodes.packs) == 'table' then\n"
-            "    local original = env.createMenuPages\n"
-            "    env.createMenuPages = function(...)\n"
-            "      for name, levels in _G.pairs(env.episodes.packs) do\n"
-            "        local list = env.levelOrder[name]\n"
-            "        if _G.type(list) == 'table' then\n"
-            "          for i = #list, 1, -1 do list[i] = nil end\n"
-            "          for i = 1, #levels do list[i] = levels[i] end\n"
-            "        end\n"
-            "      end\n"
-            "      return original(...)\n"
-            "    end\n"
-            "  end\n"
-            "end\n");
+    // 4.1.2: the episode system is the one file episodes.lua (extras/episodes.lua) for the menus before 2.0.0 (Classic 1.6.x, Seasons 2.3.0 and before, and the Android / iPhone
+    // builds with that menu): its table and the code that makes the menu follow it. It is looked for next to gamelogic.lua; a file with the line ENGINE-EPISODES-FILE only
+    // (the later games have an episodes.lua of their own), run once before the menu pages are made.
+    if (scripts_ && execFrame == 3 && !scripts_->IsSpace()) scripts_->RunString(kEpisodesLoader);
     // 3.9: console `track <name>` (or AB_TRACK=<name> in the environment) prints the object's position and angle twice a second, `track all` every object that moved or turned
     // since the last line (about once a second, the first line lists every object), `track` alone stops: a slow creep or tilt, which no contact reports
     if (trackName_.empty() && execFrame == 1) if (const char* t = std::getenv("AB_TRACK")) trackName_ = t;
@@ -1322,7 +1326,7 @@ void GamePlatform::OnContactStarWars(PhysObject& pa, PhysObject& pb, ContactHand
                         if (lua_istable(L, -1)) { lua_pushvalue(L, iw); lua_setfield(L, -2, block->name.c_str()); }
                         lua_pop(L, 2);
                         if (legacy) {
-                            float ratio = ((-remaining / pbird.Mass()) / force) * divisor * 1.75f;
+                            float ratio = ((-remaining / pbird.Mass()) / force) * divisor * Tune(L, "classic.legacyVelocityFactor", 1.75f);
                             if (ratio > 1.0f) ratio = 1.0f;
                             VelocityChange vc; vc.name = bird->name; vc.velocity = {pbird.VelX() * ratio, pbird.VelY() * ratio}; vc.immediate = true;
                             Physics().ApplyVelocityChange(vc);
@@ -2926,7 +2930,7 @@ void GamePlatform::Wheel(int notches) {
     float step = zoom_ >= 1.0f ? Tune(TL, "zoom.stepIn", 0.2f) : Tune(TL, "zoom.stepOut", 0.1f);
     if (wheelFine_) step *= 0.05f;
     zoomPrev_ = zoom_;
-    if (zoomT_ > -1.0f && zoom_ > 0.6f && zoom_ < zoomMax_) {
+    if (zoomT_ > -1.0f && zoom_ > Tune(TL, "zoom.min", 0.6f) && zoom_ < zoomMax_) {
         zoomTarget_ = step * 0.5f * (float)notches + zoomTarget_;
         zoomDur_ = 1.0f - zoomT_;
     } else {
@@ -4461,6 +4465,9 @@ void GamePlatform::UpdateRioSquash(float dt) {
 // The exe starts the "getting_up" animation, then turns the body upright at 2 rad/s the short way round.
 void GamePlatform::UpdateRioGettingUp(float dt) {
     const float kPi = 3.1415927f, kTwoPi = 6.2831855f;
+    lua_State* TL = scripts_ ? scripts_->State() : nullptr;
+    const float stillSpeed = Tune(TL, "getup.speed", 2.0f), stillTurn = Tune(TL, "getup.angularSpeed", 0.1f), lyingAngle = Tune(TL, "getup.minAngle", 0.7853982f);
+    const float getUpTime = Tune(TL, "getup.time", 3.0f), turnSpeed = Tune(TL, "getup.turnSpeed", 2.0f), uprightAngle = Tune(TL, "getup.uprightAngle", 0.1f);
     std::vector<std::string> started;
     for (auto& o : Physics().Objects()) {
         if (!o->canGetUp || !o->pbody) continue;
@@ -4470,10 +4477,10 @@ void GamePlatform::UpdateRioGettingUp(float dt) {
         float w = std::fabs(body->AngularVelocity());
         if (!o->gettingUp) {
             if (o->getUpTimer > 0 || body->IsStatic()) continue;
-            if (body->VelX() * body->VelX() + body->VelY() * body->VelY() >= 4.0f || w >= 0.1f) continue;
+            if (body->VelX() * body->VelX() + body->VelY() * body->VelY() >= stillSpeed * stillSpeed || w >= stillTurn) continue;
             if (Physics().HasJoints(o->name) || o->disableRotation) continue;
-            if (angle > 0.7853982f && angle < 5.4977875f) {
-                o->getUpTimer = 3.0f; o->gettingUp = true;
+            if (angle > lyingAngle && angle < kTwoPi - lyingAngle) {
+                o->getUpTimer = getUpTime; o->gettingUp = true;
                 started.push_back(o->name);
                 if (std::getenv("AB_WOBDBG")) std::fprintf(stderr, "DBG getup start %s angle=%.2f\n", o->name.c_str(), angle);
             }
@@ -4482,12 +4489,12 @@ void GamePlatform::UpdateRioGettingUp(float dt) {
         o->getUpTimer -= dt;
         bool done = false;
         if (o->getUpTimer <= 0) {
-            done = w > 0.1f;
-        } else if (angle < 0.1f || angle > 6.183f) {
+            done = w > stillTurn;
+        } else if (angle < uprightAngle || angle > kTwoPi - uprightAngle) {
             done = true;
-        } else if (w < 2.0f) {
+        } else if (w < turnSpeed) {
             body->SetAwake(true);
-            body->SetAngularVelocity(angle > kPi ? 2.0f : -2.0f);
+            body->SetAngularVelocity(angle > kPi ? turnSpeed : -turnSpeed);
         }
         if (done) {
             if (std::getenv("AB_WOBDBG")) std::fprintf(stderr, "DBG getup done %s angle=%.2f\n", o->name.c_str(), angle);

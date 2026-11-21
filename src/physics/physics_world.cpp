@@ -346,12 +346,12 @@ bool PhysicsWorld::GravityPull(const PhysObject& s, const PhysObject& t, float t
         float d = std::sqrt(px * px + py * py);
         F = s.gravExt > 0 ? s.gravMax - d / s.gravExt * (s.gravMax - s.gravMin) : s.gravMax;
     }
-    float mag = F * mass * 0.1f;
+    float mag = F * mass * Tn("gravity.forceScale", 0.1f);
     if (const char* gd = std::getenv("AB_GRAVDBG")) { static int gn = 0; if ((gd[0] == '1' || s.name == gd) && gn++ < 40) std::fprintf(stderr, "GRAV %s -> %s min=%g max=%g rad=%g ext=%g F=%g dir=%g,%g mass=%g\n", s.name.c_str(), t.name.c_str(), s.gravMin, s.gravMax, s.gravRadius, s.gravExt, F, ux, uy, mass); }
     // Space 1.1.0 for iPhone (0x37522): the bird factor is not used by box sensors, and it fades by 2 a second (the PC's 1.3); a
     // gravity box (Bonus191) pulled birds gravityForceMultiplier (3.28) times too hard
     if (t.isBird && !(phoneSpaceGravity && s.gravRadius <= -1)) {
-        if (phoneSpaceGravity && timer >= 0) { float m = gravityForceMultiplier - timer * 2.0f; if (m > 1) mag *= m; }
+        if (phoneSpaceGravity && timer >= 0) { float m = gravityForceMultiplier - timer * Tn("gravity.phoneDecay", 2.0f); if (m > 1) mag *= m; }
         else mag *= BirdGravityFactor(timer);
     }
     else if (t.revertGravity) mag *= Tn("gravity.revertFactor", -0.1f);

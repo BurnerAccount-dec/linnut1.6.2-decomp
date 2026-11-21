@@ -51,10 +51,16 @@ end
 local function sync()
     if type(env.httpGet) ~= "function" then return end
     local server, player = social()
-    local body = env.httpGet(server .. "/classic/wallet?id=" .. wallet.id .. "&player=" .. urlEncode(player or "") .. "&delta=" .. floor(wallet.pending) .. "&coins=" .. floor(wallet.coins), 1)
+    local query = "/classic/wallet?id=" .. wallet.id .. "&player=" .. urlEncode(player or "") .. "&delta=" .. floor(wallet.pending) .. "&coins=" .. floor(wallet.coins)
+    local body, why = env.httpGet(server .. query, 1.5)
+    if not body and string.find(server, "//localhost", 1, true) then         -- "localhost" may lead to an address the server does not listen on
+        body, why = env.httpGet((string.gsub(server, "//localhost", "//127.0.0.1", 1)) .. query, 1.5)
+    end
+    state.why = nil
     local coins, account
     if body then coins, account = string.match(body, "^ok\t(%d+)\t([^\n]*)") end
     if not coins then
+        state.why = body and "It runs an older version: restart it from social-server/" or (server .. ": " .. tostring(why))
         state.status, state.nextSync = "offline", state.clock + cfg.retryAfter
         return false
     end
@@ -265,7 +271,7 @@ local function drawWindow()
         return
     elseif page.mode == "offline" then
         if page.problem == "server" then
-            drawDialog(sw, sh, {"The Social server does not answer.", "Start it and try again."}, {{"OK", "ESCAPE"}})
+            drawDialog(sw, sh, {"The Social server does not answer.", state.why or "Start it and try again."}, {{"OK", "ESCAPE"}})
         else
             drawDialog(sw, sh, {"You must be connected", "to the internet to do that!"}, {{"OK", "ESCAPE"}})
         end
