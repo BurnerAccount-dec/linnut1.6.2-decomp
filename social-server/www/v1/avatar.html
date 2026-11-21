@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Angry Birds Avatar Creator V1</title>
+<style>
+body{margin:0;background:#222;color:#ddd;font-family:sans-serif}
+#bar{width:960px;margin:8px auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+#bar input{padding:4px;width:170px} #bar button{padding:4px 10px}
+#g{width:960px;height:640px;margin:0 auto;display:block}
+#msg{margin-left:8px;color:#9c9}
+</style>
+<script>
+// the Avatar Creator is a game of its own (AvatarCreator20.swf); this page logs the player in and opens it, like the Social page does for the game
+function swf() { return document.getElementById("g"); }
+function say(t) { document.getElementById("msg").textContent = t; }
+function call(name, arg) {
+    var s = swf();
+    if (!s || typeof s[name] !== "function") { return null; }            // this version of the creator does not have that call (or is still loading)
+    try { return arg === undefined ? s[name]() : s[name](arg); } catch (e) { say("The Avatar Creator is not ready yet, wait for it to load and press the button again."); }
+}
+function parseReply(text) {
+    var o = {}; text.split("&").forEach(function (p) { var i = p.indexOf("="); if (i > 0) o[decodeURIComponent(p.slice(0, i))] = decodeURIComponent(p.slice(i + 1)); });
+    if (o.json) { try { var j = JSON.parse(o.json); for (var k in j) o[k] = j[k]; } catch (e) {} }
+    return o;
+}
+function login() {
+    var x = new XMLHttpRequest();
+    x.open("POST", "/services/login");
+    x.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+    x.onload = function () {
+        var r = parseReply(x.responseText);
+        if (!r.token) { say("Login failed: " + (r.E || x.responseText)); return; }
+        call("setAuthToken", r.token);   // the V1 creator only takes the token and opens by itself
+        say("Logged in as " + r.username);
+    };
+    x.onerror = function () { say("Could not reach the server"); };
+    x.send("auth=" + encodeURIComponent(document.getElementById("em").value) + "&pass=" + encodeURIComponent(document.getElementById("pw").value) + "&type=AB");
+}
+var noop = function () { return null; };
+["closeAvatarEditor","getFacebookFriendsForSwf","getSessionInfo","getUserFacebookInfo","setCoins","setGoldenEggs"].forEach(function (n) { window[n] = noop; });
+
+function resume() {      // the server remembers who signed in last from this computer
+    var x = new XMLHttpRequest(); x.open("GET", "/session");
+    x.onload = function () {
+        var r = {}; try { r = JSON.parse(x.responseText); } catch (e) {}
+        if (!r.token) return;
+        document.getElementById("em").value = r.email || "";
+        var tries = 0, t = setInterval(function () {
+            var s = swf();
+            if (s && typeof s.setAuthToken === "function") { clearInterval(t); call("setAuthToken", r.token); say("Signed in as " + r.username); }
+            else if (++tries > 80) clearInterval(t);
+        }, 500);
+    };
+    x.send();
+}
+window.addEventListener("load", resume);
+</script></head>
+<body>
+<div id="bar">
+  <input id="em" placeholder="e-mail" value="player@example.com"><input id="pw" type="password" placeholder="password" value="pw">
+  <button onclick="login()">Log in</button>
+  
+  <span id="msg">Log in with the same e-mail and password as in the game.</span>
+</div>
+<embed id="g" src="AvatarCreator8.swf" type="application/x-shockwave-flash" width="960" height="640"
+       allowscriptaccess="always" allowfullscreen="true" wmode="direct" quality="high" bgcolor="#222222">
+</body></html>

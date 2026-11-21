@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Angry Birds Social V1</title>
+<style>
+body{margin:0;background:#222;color:#ddd;font-family:sans-serif}
+#bar{width:960px;margin:8px auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+#bar input{padding:4px;width:170px} #bar button{padding:4px 10px}
+#g{width:960px;height:640px;margin:0 auto;display:block}
+#msg{margin-left:8px;color:#9c9}
+</style>
+<script>
+// In the original site this page was the host: it logged the player in and told the game what to show
+// (the game's ExternalInterface methods: setAuthToken, setUserName, showEditor, showLevel, showSavedLevel).
+function swf() { return document.getElementById("g"); }
+function say(t) { document.getElementById("msg").textContent = t; }
+function call(name, arg) {
+    try { var s = swf(); return arg === undefined ? s[name]() : s[name](arg); }
+    catch (e) { say("The game is not ready yet (" + name + "): " + e); }
+}
+function parseReply(text) {
+    var o = {}; text.split("&").forEach(function (p) { var i = p.indexOf("="); if (i > 0) o[decodeURIComponent(p.slice(0, i))] = decodeURIComponent(p.slice(i + 1)); });
+    if (o.json) { try { var j = JSON.parse(o.json); for (var k in j) o[k] = j[k]; } catch (e) {} }
+    return o;
+}
+function login() {
+    var x = new XMLHttpRequest();
+    x.open("POST", "/services/login");
+    x.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+    x.onload = function () {
+        var r = parseReply(x.responseText);
+        if (!r.token) { say("Login failed: " + (r.E || x.responseText)); return; }
+        call("setUserName", r.username); call("setAuthToken", r.token);
+        say("Logged in as " + r.username);
+    };
+    x.onerror = function () { say("Could not reach the server"); };
+    x.send("auth=" + encodeURIComponent(document.getElementById("em").value) + "&pass=" + encodeURIComponent(document.getElementById("pw").value) + "&type=AB");
+}
+// the game calls these on the page; nothing here needs a real site behind it
+var noop = function () { return null; };
+["getFacebookFriendsForSwf","getSessionInfo","getUserFacebookInfo","updateLevelPage","setCurrentLevel","showLogin","showRegister","setCoins",
+ "setGoldenEggs","setXp","setLevel","showSavedLevel","getLevelInfo","updateFriendsProfile"].forEach(function (n) { window[n] = noop; });
+window.showLogin = function () { say("Log in with the boxes above"); };
+window.showRegister = window.showLogin;
+
+function resume() {      // the server remembers who signed in last from this computer
+    var x = new XMLHttpRequest(); x.open("GET", "/session");
+    x.onload = function () {
+        var r = {}; try { r = JSON.parse(x.responseText); } catch (e) {}
+        if (!r.token) return;
+        document.getElementById("em").value = r.email || "";
+        var tries = 0, t = setInterval(function () {
+            var s = swf();
+            if (s && typeof s.setAuthToken === "function") { clearInterval(t); call("setUserName", r.username); call("setAuthToken", r.token); say("Signed in as " + r.username); }
+            else if (++tries > 80) clearInterval(t);
+        }, 500);
+    };
+    x.send();
+}
+window.addEventListener("load", resume);
+</script></head>
+<body>
+<div id="bar">
+  <input id="em" placeholder="e-mail" value="player@example.com"><input id="pw" type="password" placeholder="password" value="pw">
+  <button onclick="login()">Log in</button>
+  <button onclick="call('showLevel', {})">Play levels</button>
+  <button onclick="call('showEditor', {})">Level editor</button>
+  <span id="msg">Log in first, then pick Play levels or Level editor.</span>
+</div>
+<embed id="g" src="AngryBirdsSocial62.swf" type="application/x-shockwave-flash" width="960" height="640"
+       allowscriptaccess="always" allowfullscreen="true" wmode="direct" quality="high" bgcolor="#222222">
+</body></html>

@@ -1,0 +1,38 @@
+Hosting the Angry Birds Social server for everyone
+==================================================
+
+Everyone then plays on one server, sees the same levels, profiles and high scores (the Players page, /classic/players).
+
+1. A computer that stays on and can be reached
+   - A cheap VPS (any Windows or Linux machine with a public address), or your own PC with port 80 forwarded in the router to it.
+   - Install Node.js (LTS) from https://nodejs.org .
+   - Copy this whole folder there and start it:  node server.js 80   (start.bat does the same on Windows, as administrator).
+   - Open port 80 (TCP) in the firewall.
+
+2. Tell the server its public address
+   - Behind a router, or with a name instead of the address the machine sees, set PUBLIC_HOST before starting it, e.g. on Windows
+         set PUBLIC_HOST=203.0.113.7
+         node server.js 80
+     That is the address join.bat and the /join page give to friends. Leave it out on a VPS whose public address is the machine's own.
+
+3. What a friend does
+   - Opens  http://<your address>/join  in a browser, downloads join.bat and runs it as administrator once. (It points the game's old
+     domains at your server in the hosts file. Running join.bat on the server itself is not needed.)
+   - Opens http://sl.angry-birds-social.appspot.com/ in a browser with Flash, and signs in with any e-mail and password; the first
+     sign-in makes the account.
+   - Angry Birds Classic (engine): socialLevels.server = "http://<your address>" and socialLevels.player = "name" in extra_scripts.lua.
+
+4. What the server does for you
+   - Passwords are stored hashed (accounts made before this are converted at their next sign-in).
+   - Limits per address: 10 wrong passwords an hour, 5 new accounts an hour (not on the server's own computer), 120 scores an hour.
+   - A level may be 600 KB, a profile picture 400 KB, a request 3 MB, a player 200 levels, the server 2000 players.
+   - Every sign-in is remembered with a cookie where the browser keeps it, else by address and browser, so two players behind one
+     router do not take over each other's sign-in. The old shared sign-in of one computer works as before.
+   - social-data.json holds everything; social-data.json.bak is a copy made at start and every hour. Copy both somewhere now and then.
+
+5. Mind
+   - Players' levels and names are shown to everybody and anyone can publish; look at /classic/players now and then. To remove a level
+     or a player, stop the server, edit social-data.json (delete the entry under "levels" or "users"), start it again.
+   - The coins, level and avatar items are given to every player and the scores sent by the engine are not checked: it is a friendly server, not a safe one.
+   - Do not put the original game files from Rovio on a public download. Share the patch steps, not the SWFs.
+   - The server speaks plain HTTP only (the game does), so a password travels unencrypted: tell players to use one they use nowhere else.

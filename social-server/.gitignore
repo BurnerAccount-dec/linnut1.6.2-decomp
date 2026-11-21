@@ -1,0 +1,7 @@
+# the game's own files (put them in www yourself) and the data the server writes
+*.swf
+/www/external_assets/
+/www/v1/external_assets/
+/social-data.json
+/social-data.json.bak
+/poached-eggs.json
