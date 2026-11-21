@@ -2,6 +2,41 @@
 
 What changed in each version of the engine, newest first. The README has the current status; the reference for script writers is in [`docs/SCRIPTING.md`](docs/SCRIPTING.md) and how to run and debug in [`docs/USAGE.md`](docs/USAGE.md).
 
+## New in 4.1
+
+- **Round pop-ups:** the pop-ups the engine adds (leaving a level, the level spawner, the Social levels, the coin and language windows) have round corners, the green of the pause menu with its pale yellow rim, and round glossy buttons. New script function `drawRoundRect`. The Social levels footer wraps onto two lines inside the panel.
+- **Purchase window:** `buyWithCoins(price, callback, item)` opens "You are about to buy the ... feature", with the golden egg's turning shine behind the green dollar piggy bank of Angry Birds Social (`loadPiggyBank`), cancel and BUY; with too few coins it says so and offers the coin window.
+- **Ads need the internet:** the fake ad plays only while the computer is on a network (new `isNetworkConnected()`) and the Social stand-in server answers; otherwise a window says "You must be connected to the internet to do that!" or "The Social server does not answer.". More for scripts: `isSocialServerReachable`, `isOnline`, `getWalletInfo`, the `abCoinsConfig` table (ad reward, ad length, sync times) and the `onCoinsChanged`, `onAdWatched` and `onLanguageChanged` hooks.
+
+- **Languages:** every language a text file carries is now read (Angry Birds 2.0.0 has eight, Space and the Android builds more), not only the first. F9 (or `showLanguages()`) lists them; Up / Down and Return, or a click, switch at once and the choice is kept in `language.txt`. `res.useLocale`, `res.loadLocale`, `res.getLocale`, `getCurrentLocale` and the new `res.getLocales()` work for the games that switch language themselves.
+- **Coins and the fake ad:** a wallet (`wallet.lua`) saved at once. F10 shows it, with "Watch an ad" (a few seconds of a placeholder screen, no video, then 10 coins) and "Sync now". When the Social stand-in server answers, the wallet is shared with it; a wallet that exists before any Social account does is kept by the server, and joins the account (once) as soon as an account with the name in `socialLevels.player` exists. Offline it works alone. `getCoins`, `addCoins`, `spendCoins`, `buyWithCoins(price [, callback])` and `watchAd([callback])` are there for scripts. Banner and interstitial ad calls stay silent.
+- **Social server:** `/classic/wallet` keeps the wallets (in `social-data.json`, so no restart loses them).
+
+- Device services answered on this machine: Game Center leaderboards (`postHighscore`, score queries, `showLeaderboards`), local notification timers, analytics counted in `analytics.lua`, and update checks. Ads and purchases remain no-ops.
+
+- **More Star Wars natives matched against the executable:** `enableInGameParticlesNative` now hides the level's particles, `drawMenuParticlesNative` draws the menu particles, and `enableSmoothZooming`, `setStat`, `setStatFloat` are documented as what they are in the executable. See `docs/SCRIPTING.md`.
+
+- **Star Wars: stubbed natives matched against the executable.** `setThemeOffsetY(layer, foreground, x, y)`, `setMenuParticlesScale`, `setSelectedBirdDuringSimulation` and `drawRubberband` now do what the executable does; `linkSensor` and `storePersistentData` are empty there and stay empty. `getThemeLayers` / `setThemeLayer` expose `posX` and `posY`. All are documented in `docs/SCRIPTING.md`.
+
+- **Star Wars: Cloud City levels no longer draw too high.** A theme layer flagged `ANCHOR_V` stays at one height on the screen and its `offsetY` counts from the middle of the screen, not from the top, so the Cloud City sky now fills the screen down to the horizon instead of ending halfway.
+
+- **Star Wars: the particle natives.** `addParticles`, `addMultipleParticles`, `addParticlesToPosition` and `addParticlesFromDefinitionToPosition` were missing, so every explosion, damage puff, laser bounce and boss steam jet stopped its script with a nil call. They now emit the particle type (a name or a list of names) at the object or at the point.
+
+- **Stella: `native_resizeRadius`** (the Inflate power-up's potion and its end) is no longer empty. Matched against the iPhone executable (0x53d1c): the object's native data takes the radius, density, friction and restitution the script gives, and the circle is built again with them, so an inflated pig has the bigger body and goes back to its own size afterwards.
+
+- **Social V1: the Avatar Creator's profile picture.** The V1 creator sends its token as `auth` in some calls and its picture as a JPEG; the server now accepts both, so saving the avatar and the profile picture works like in V2, and the picture is served with the right type. The blue numbers at the top right of the V1 page are the player's coins and golden eggs.
+
+- **The Social V1 page looks like the original site's page.** Olive green background, the Home | Browse | Build | Profile links, the box at the top right with the avatar, name, Log in / Sign up (or Sign out) and the player's number of levels and plays, the game on the left and a News / Quests / Inbox box on the right. News shows what just happened on the server (`/classic/news.json`).
+
+- **The episodes file works for Android and iPhone builds that have the old menu (Angry Birds 1.3.5 and others).** An `.apk` / `.ipa` keeps its scripts in a cache folder, so `episodes.lua` is now also read from the folder of the `extra_scripts.lua` that is dragged onto the engine together with the game. The pop-up style does nothing on these builds (their episode screen is already the pop-up one).
+
+- **Pop-up episode style: names.** In `episodes.lua`, `episodes[n] = { name = "2. My Pack" }` sets the title of box n of the pop-up episode screen (Angry Birds 1.6.2 / 1.6.3.1, `style = "popup"`).
+- **The Social levels list (F12) wraps long messages** (such as "No answer from the server") inside its panel instead of running past the edge of the window.
+
+## New in 4.0
+
+- **Angry Birds Social comes with the engine.** Every release zip now holds the `social-server/` folder next to the engine, the extras and the docs, so the Social game and the engine's Classic games are set up from one download: start the server (`social-server\start.bat`), play Social in a browser with Flash, and play its levels in Classic with F12. The Social game's own files are not part of the zip; bring them from your own copy (`social-server/README.txt`).
+
 ## New in 3.9
 
 - **A stand-in server for Angry Birds Social is part of the repository** (`social-server/`, needs Node.js). Sign-in shared by every Social page, the level editor, sharing and high scores, an Avatar Creator, a Players page with everyone's profile and levels, and the bridge that turns Social levels into Classic level files and back. It can be run for other players over a network or the internet (`HOSTING.txt`): passwords are hashed, there are limits per address and for sizes, and sessions do not mix up players behind one router. The game's own files are not included.

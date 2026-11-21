@@ -31,6 +31,8 @@ extern const unsigned int kFriends2NativesLuaSize;
 extern const unsigned char kStellaNativesLua[];
 extern const unsigned char kAchievementsPageLua[];
 extern const unsigned int kAchievementsPageLuaSize;
+extern const unsigned char kCoinsLanguageLua[];
+extern const unsigned int kCoinsLanguageLuaSize;
 extern const unsigned int kStellaNativesLuaSize;
 extern const unsigned char kMotionLua[];
 extern const unsigned int kMotionLuaSize;
@@ -1328,6 +1330,13 @@ bool ScriptHost::Update(float dt, float realDt) {
             lua_pushvalue(L_, -2);
             if (lua_pcall(L_, 1, 0, 0) != 0) { std::fprintf(stderr, "achievements: %s\n", lua_tostring(L_, -1)); lua_pop(L_, 1); }
         } else { std::fprintf(stderr, "achievements: %s\n", lua_tostring(L_, -1)); lua_pop(L_, 1); }
+        lua_pop(L_, 1);
+        // v4.1: the wallet of coins (shared with the Social stand-in server), the fake ad and the language list (coins_language.lua)
+        lua_getfield(L_, LUA_REGISTRYINDEX, "ab.env");
+        if (luaL_loadbuffer(L_, (const char*)kCoinsLanguageLua, kCoinsLanguageLuaSize, "coins_language.lua") == 0) {
+            lua_pushvalue(L_, -2);
+            if (lua_pcall(L_, 1, 0, 0) != 0) { std::fprintf(stderr, "coins: %s\n", lua_tostring(L_, -1)); lua_pop(L_, 1); }
+        } else { std::fprintf(stderr, "coins: %s\n", lua_tostring(L_, -1)); lua_pop(L_, 1); }
         lua_pop(L_, 1);
     }
     lua_pushnumber(L_, realDt > 0 ? realDt : dt);

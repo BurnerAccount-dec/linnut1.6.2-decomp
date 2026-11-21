@@ -123,12 +123,23 @@ static bool ParseLegacyTextGroup(const std::vector<uint8_t>& b, TextGroup& out) 
         ids.push_back(std::string((const char*)&b[p], n)); p += n;
     }
     if (b[5] == 0) return false;
-    size_t at = p + 4 + u32(p);
-    out.strings.clear();
-    for (size_t i = 0; i < ids.size(); i++) {
-        unsigned n = u16(at); at += 2;
-        if (at + n > b.size()) return false;
-        out.strings[ids[i]] = std::string((const char*)&b[at], n); at += n;
+    out.strings.clear(); out.locales.clear(); out.localeNames.clear();
+    size_t names = 6;
+    for (unsigned l = 0; l < b[5]; l++) {
+        std::string name((const char*)&b[names + 2], u16(names));
+        names += 2 + u16(names);
+        size_t at = p + 4 + u32(p + 4 * l);
+        std::map<std::string, std::string> texts;
+        bool ok = true;
+        for (size_t i = 0; i < ids.size() && ok; i++) {
+            unsigned n = u16(at); at += 2;
+            if (at + n > b.size()) { ok = false; break; }
+            texts[ids[i]] = std::string((const char*)&b[at], n); at += n;
+        }
+        if (!ok && l == 0) return false;
+        if (!ok) break;
+        out.localeNames.push_back(name); out.locales[name] = texts;
+        if (l == 0) out.strings = texts;
     }
     return true;
 }
@@ -142,8 +153,8 @@ bool ParseTextGroup(const std::vector<uint8_t>& bytes, TextGroup& out, std::stri
     r.U32();
     r.U16();
     std::vector<std::string> ids;
-    bool gotGroup = false;               // 2.0.0 has one TXGP per locale (en_EN first); the first is used
-    out.strings.clear();
+    size_t groups = 0;                   // 2.0.0 has one TXGP per locale (named in LDAT, en_EN first); the first is used until another is picked
+    out.strings.clear(); out.locales.clear(); out.localeNames.clear();
     while (r.ok && r.pos + 8 <= bytes.size()) {
         std::string tag = r.Bytes(4);
         uint32_t size = r.U32();
@@ -151,9 +162,15 @@ bool ParseTextGroup(const std::vector<uint8_t>& bytes, TextGroup& out, std::stri
         if (tag == "LIDS") {
             unsigned n = r.U16();
             for (unsigned i = 0; i < n && r.ok; i++) ids.push_back(r.Bytes(r.U16()));
-        } else if (tag == "TXGP" && !gotGroup) {
-            gotGroup = true;
-            for (size_t i = 0; i < ids.size() && r.ok && r.pos < end; i++) out.strings[ids[i]] = r.Bytes(r.U16());
+        } else if (tag == "LDAT") {
+            unsigned n = r.U16();
+            for (unsigned i = 0; i < n && r.ok; i++) out.localeNames.push_back(r.Bytes(r.U16()));
+        } else if (tag == "TXGP") {
+            std::map<std::string, std::string> texts;
+            for (size_t i = 0; i < ids.size() && r.ok && r.pos < end; i++) texts[ids[i]] = r.Bytes(r.U16());
+            if (groups == 0) out.strings = texts;
+            if (groups < out.localeNames.size()) out.locales[out.localeNames[groups]] = texts;
+            groups++;
         }
         r.pos = end;
     }

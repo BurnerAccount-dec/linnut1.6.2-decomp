@@ -715,6 +715,11 @@ void GamePlatform::RunFrame(float dt) {
                 std::string esc;
                 for (char c : f) { if (c == '\\' || c == '\'') esc += '\\'; esc += c; }
                 std::printf("extra script: %s\n", f.c_str());
+                // 4.1: the folder of the file, for the files that sit next to it (an apk's or ipa's scripts are in a cache folder, so extras/episodes.lua is looked for here)
+                std::string dir = f.substr(0, f.find_last_of("/\\") == std::string::npos ? 0 : f.find_last_of("/\\"));
+                std::string escDir;
+                for (char c : dir) { if (c == '\\' || c == '\'') escDir += '\\'; escDir += c; }
+                scripts_->RunString(("_G.getfenv(1).extraScriptFolder = '" + escDir + "'").c_str());
                 scripts_->RunString(("local env = _G.getfenv(1)\nlocal ok, err = _G.pcall(env.loadLuaFile, '" + esc + "', '', false, false)\nif not ok then _G.print('extra script error: ' .. _G.tostring(err)) end\n").c_str());
             }
             extraScriptFiles.clear();
@@ -2461,7 +2466,35 @@ void GamePlatform::ResCreateTextGroupSet(const std::string& path) {
     TextGroup group;
     if (!ReadWholeFile(full, bytes)) { Print("createTextGroupSet: cannot open " + full); return; }
     if (!ParseTextGroup(bytes, group, &error)) { Print("createTextGroupSet: " + full + ": " + error); return; }
+    if (language_.empty()) {         // the language saved last time
+        std::vector<uint8_t> saved;
+        if (ReadWholeFile(ResolveUserFile("language.txt", true), saved)) language_ = std::string(saved.begin(), saved.end());
+        while (!language_.empty() && (language_.back() == '\n' || language_.back() == '\r' || language_.back() == ' ')) language_.pop_back();
+    }
+    auto l = group.locales.find(language_);
+    if (l != group.locales.end()) group.strings = l->second;
     textGroups_[BaseName(path)] = group;
+}
+
+// a language of a text file: the texts the file has for it replace the ones in use (a language the file lacks leaves them as they are)
+void GamePlatform::ResLoadLocale(const std::string& group, const std::string& locale) {
+    auto g = textGroups_.find(group);
+    if (g == textGroups_.end()) return;
+    auto l = g->second.locales.find(locale);
+    if (l != g->second.locales.end()) g->second.strings = l->second;
+}
+
+void GamePlatform::ResUseLocale(const std::string& locale) {
+    language_ = locale;
+    for (auto& g : textGroups_) ResLoadLocale(g.first, locale);
+    if (FILE* f = std::fopen(ResolveUserFile("language.txt", true).c_str(), "wb")) { std::fwrite(locale.data(), 1, locale.size(), f); std::fclose(f); }
+}
+
+std::vector<std::string> GamePlatform::ResLocaleNames() {
+    std::vector<std::string> names;
+    for (const auto& g : textGroups_)
+        for (const auto& n : g.second.localeNames) if (std::find(names.begin(), names.end(), n) == names.end()) names.push_back(n);
+    return names;
 }
 
 std::string GamePlatform::ResGetString(const std::string& group, const std::string& key) {
@@ -3045,6 +3078,8 @@ void GamePlatform::DrawNewThemeLayers(std::vector<BgLayer>& layers, int layerBas
             float ox = shX + ntRef_.refX + z * (p5 / f4) + p5 * (1.0f - z);
             float oy = shY + refYuse + p6 * (1.0f - z) + z * (p6 / f4);
             cx = (ox - camX) * ws + centreX; cy = (oy - camY) * ws + centreY;
+            // Star Wars: a layer with ANCHOR_V stays at one height on the screen, and its offsetY counts from the middle of the screen (Cloud City's sky, scaled 1.4, then just covers it)
+            if ((flags & 0x20) && !mid) cy += sh * 0.5f;
         };
         auto drawAt = [&](const std::string& name, float cx, float cy, float szx, float szy) {
             state_ = RenderState();
@@ -3338,7 +3373,7 @@ bool GamePlatform::GetThemeLayer(int which, int i, ThemeLayerInfo& o) {
     auto& v = which == 1 ? ntFg_ : bgLayers_;
     if (i < 0 || i >= (int)v.size()) return false;
     const BgLayer& l = v[i];
-    o.sprite = l.sprite; o.speed = l.speed; o.scale = l.scale; o.scaleX = l.scaleX; o.scaleY = l.scaleY; o.offset = l.offset; o.offX = l.offX; o.offY = l.offY;
+    o.sprite = l.sprite; o.speed = l.speed; o.scale = l.scale; o.scaleX = l.scaleX; o.scaleY = l.scaleY; o.offset = l.offset; o.offX = l.offX; o.offY = l.offY; o.posX = l.posX; o.posY = l.posY;
     o.dx = l.dx; o.dy = l.dy; o.velX = l.velX; o.velY = l.velY; o.angle = l.angle; o.looping = l.looping; o.hidden = l.hidden;
     return true;
 }
@@ -3352,7 +3387,7 @@ bool GamePlatform::SetThemeLayer(int which, int i, const ThemeLayerInfo& in) {
     auto& v = which == 1 ? ntFg_ : bgLayers_;
     if (i < 0 || i >= (int)v.size()) return false;
     BgLayer& l = v[i];
-    l.sprite = in.sprite; l.speed = in.speed; l.scale = in.scale; l.scaleX = in.scaleX; l.scaleY = in.scaleY; l.offset = in.offset; l.offX = in.offX; l.offY = in.offY;
+    l.sprite = in.sprite; l.speed = in.speed; l.scale = in.scale; l.scaleX = in.scaleX; l.scaleY = in.scaleY; l.offset = in.offset; l.offX = in.offX; l.offY = in.offY; l.posX = in.posX; l.posY = in.posY;
     l.dx = in.dx; l.dy = in.dy; l.velX = in.velX; l.velY = in.velY; l.angle = in.angle; l.looping = in.looping; l.hidden = in.hidden;
     return true;
 }
@@ -4257,6 +4292,7 @@ void GamePlatform::DrawParticles(bool world) {
 void GamePlatform::DrawParticlesOf(bool world, int second, int levelLayer) {
     TagScope tag(this, "particles");
     if (!backend_) return;
+    if (world && Tune(scripts_ ? scripts_->State() : nullptr, "particles.inGame", 1.0f) == 0) return;   // enableInGameParticlesNative(false) (0x40daa0)
     for (const Particle& p : particles_) {
         if (levelLayer > 0 ? (!p.level || p.layer != levelLayer) : p.level) continue;
         if (second >= 0 && p.second != (second == 1)) continue;
@@ -4266,7 +4302,7 @@ void GamePlatform::DrawParticlesOf(bool world, int second, int levelLayer) {
         const Sprite* sp = sprites_.Find(p.sprite, &sheet);
         if (!sp) continue;
         state_ = RenderState();
-        float cx = world ? camX_ : 0, cy = world ? camY_ : 0, ws = world ? worldScale_ : 1;
+        float cx = world ? camX_ : 0, cy = world ? camY_ : 0, ws = world ? worldScale_ : Tune(scripts_ ? scripts_->State() : nullptr, "menuParticles.scale", 1.0f);   // setMenuParticlesScale (0x40da80)
         state_.tx = -cx / p.scale; state_.ty = -cy / p.scale;
         state_.sx = state_.sy = p.scale * ws;
         state_.angle = p.angle;
@@ -5114,6 +5150,17 @@ bool GamePlatform::CanvasLoadSprite(const std::string& name, const std::string& 
     TextureInfo info; info.handle = backend_->CreateTexture(picture); info.width = picture.width; info.height = picture.height;
     textures_["canvas:/" + name] = info;
     AddRuntimeSprite(sprites_, name, picture.width, picture.height, pivotX, pivotY);
+    return true;
+}
+
+bool GamePlatform::CanvasLoadSpriteFromMemory(const std::string& name, const unsigned char* png, size_t size) {
+    if (!backend_ || textures_.count("canvas:/" + name)) return backend_ != nullptr;
+    Image picture;
+    std::string error;
+    if (!DecodePng(std::vector<uint8_t>(png, png + size), picture, &error)) { Print("embedded picture: " + error); return false; }
+    TextureInfo info; info.handle = backend_->CreateTexture(picture); info.width = picture.width; info.height = picture.height;
+    textures_["canvas:/" + name] = info;
+    AddRuntimeSprite(sprites_, name, picture.width, picture.height, 0, 0);
     return true;
 }
 

@@ -194,7 +194,7 @@ public:
     // ---- camera
     virtual void SetTopLeft(float x, float y) { (void)x; (void)y; }
     // theme layers as data (which: 0 background, 1 foreground of the new theme system)
-    struct ThemeLayerInfo { std::string sprite; float speed = 1, scale = 1, scaleX = 1, scaleY = 1, offset = 0, offX = 0, offY = 0, dx = 0, dy = 0, velX = 0, velY = 0, angle = 0; bool looping = true, hidden = false; };
+    struct ThemeLayerInfo { std::string sprite; float speed = 1, scale = 1, scaleX = 1, scaleY = 1, offset = 0, offX = 0, offY = 0, posX = 0, posY = 0, dx = 0, dy = 0, velX = 0, velY = 0, angle = 0; bool looping = true, hidden = false; };
     virtual void ClearParticleCache() {}
     virtual void GroundColor(bool set, float& r, float& g, float& b) { if (!set) r = g = b = 0; }
     virtual void GetCamera(float& x, float& y, float& ws, int& w, int& h) { x = y = 0; ws = 1; w = h = 0; }
@@ -291,6 +291,9 @@ public:
     virtual void ResCreateTextGroupSet(const std::string& path) { (void)path; }
     virtual void ResLoadLocale(const std::string& group, const std::string& locale) { (void)group; (void)locale; }
     virtual void ResUseLocale(const std::string& locale) { (void)locale; }
+    virtual bool CanvasLoadSpriteFromMemory(const std::string& name, const unsigned char* png, size_t size) { (void)name; (void)png; (void)size; return false; }   // a sprite from a picture the exe carries
+    virtual std::string ResGetLocale() { return "en_US"; }                  // the language in use ("en_EN", "fr_FR", ...; "en_US" before one is picked)
+    virtual std::vector<std::string> ResLocaleNames() { return {}; }        // the languages the loaded text files have
     virtual std::string ResGetString(const std::string& group, const std::string& key) { (void)group; return key; }
     // drawSprite(name, x, y, [anchor], [anchor], [width, height]). Anchors (see Anchor in lua_api.cpp):
     // vertical 0 TOP, 1 VCENTER, 2 BOTTOM, 3 BASELINE, 4 VPIVOT; horizontal 0 LEFT, 1 HCENTER, 2 RIGHT, 3 HPIVOT.

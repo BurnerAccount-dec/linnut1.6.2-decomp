@@ -17,7 +17,7 @@ const MIME = { ".html": "text/html", ".swf": "application/x-shockwave-flash", ".
 const PORT = parseInt(process.argv[2] || process.env.PORT || "80", 10);
 const FILE = path.join(__dirname, "social-data.json");
 
-let db = { users: {}, tokens: {}, levels: {}, scores: {}, rates: {}, nextLevel: 1 };
+let db = { users: {}, tokens: {}, levels: {}, scores: {}, rates: {}, wallets: {}, nextLevel: 1 };
 try { db = Object.assign(db, JSON.parse(fs.readFileSync(FILE, "utf8"))); } catch (e) { /* first start */ }
 try { if (fs.existsSync(FILE)) fs.copyFileSync(FILE, FILE + ".bak"); } catch (e) { /* no backup, carry on */ }
 setInterval(() => { try { if (fs.existsSync(FILE)) fs.copyFileSync(FILE, FILE + ".bak"); } catch (e) { /* carry on */ } }, 3600000);          // a copy of the data every hour
@@ -57,7 +57,7 @@ function withBar(html) { return /<body[^>]*>/i.test(html) ? html.replace(/<body[
 
 const seen = {};                                   // player name -> when the game or the engine last asked something (the "online now" list)
 function userOf(p) {
-    const name = db.tokens[p.token];
+    const name = db.tokens[p.token] || db.tokens[p.auth];          // Social V1 sends its token as "auth" in some calls
     if (name) seen[name] = Date.now();
     return name ? db.users[name] : null;
 }
@@ -292,6 +292,28 @@ function reply(res, cmd, obj) {
 function classicRoutes(req, res, url, body) {
     const send = (code, type, text, extra) => { res.writeHead(code, Object.assign({ "Content-Type": type + "; charset=utf-8", "Cache-Control": "no-store" }, extra || {})); res.end(type === "text/html" ? withBar(String(text)) : text); };
     const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    if (url.pathname === "/classic/wallet") {           // the engine's coins: /classic/wallet?id=<wallet>&player=Name&delta=10&coins=40, answered "ok <tab> coins <tab> account"
+        // A wallet belongs to one copy of the engine and exists whether or not there is a Social account: the coins it earns offline are kept here and, once an account
+        // with the player's name exists, they join the account's coins (once). Afterwards the account's coins are the wallet's.
+        const id = String(url.searchParams.get("id") || ""), player = String(url.searchParams.get("player") || "").replace(/[^\w .-]/g, "").slice(0, 24);
+        if (!/^[0-9a-f]{8,32}$/.test(id)) return send(400, "text/plain", "no wallet id");
+        if (tooMany(callerIp, "wallet", 240)) return send(429, "text/plain", "too many requests"); countTry(callerIp, "wallet");
+        const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, Number.isFinite(v) ? v : 0));
+        db.wallets = db.wallets || {};
+        const delta = clamp(parseInt(url.searchParams.get("delta"), 10), -1000, 1000);
+        let w = db.wallets[id], account = "";
+        const name = player || (w && w.player) || "";          // a wallet that joined an account stays with it, even when the engine names nobody
+        const u = name ? db.users[name] : null;
+        if (!w) w = db.wallets[id] = { coins: clamp(parseInt(url.searchParams.get("coins"), 10), 0, 100000), player: "", created: Date.now() };     // first time: the coins earned so far
+        else if (u && w.player === name) u.coin = Math.max(0, (u.coin | 0) + delta);                                                          // linked: the account takes the change
+        else w.coins = Math.max(0, (w.coins | 0) + delta);
+        if (u) {
+            if (w.player !== name) { u.coin = (u.coin | 0) + w.coins; note(name, "joined " + w.coins + " coins from the engine"); w.coins = 0; w.player = name; }
+            account = name;
+        }
+        save();
+        return send(200, "text/plain", "ok\t" + (account ? u.coin | 0 : w.coins) + "\t" + account + "\n");
+    }
     if (url.pathname === "/classic/levels.txt") {       // for the engine's "Social levels" list: one level a line, key, name, user and plays with tabs between
         const clean = (v) => String(v).replace(/[\t\r\n]+/g, " ");
         const all = Object.values(db.levels).filter((l) => l.data && l.published !== false);
@@ -327,6 +349,9 @@ function classicRoutes(req, res, url, body) {
                 "<div style='clear:both'></div>" + mine.map((l) => "<div><a href='/classic/" + l.key + ".lua'>" + esc(l.name) + "</a> (" + (l.plays | 0) + " plays)</div>").join("") + "</div>";
         }).join("");
         return send(200, "text/html", "<!doctype html><meta charset=utf-8><title>Players</title><body style='font:15px sans-serif;max-width:70em;margin:2em auto'><h2>Players and their levels</h2>" + (cards || "<p>nobody has signed up yet</p>") + "<p><a href='/classic'>All levels</a></p>");
+    }
+    if (url.pathname === "/classic/news.json") {       // the newest things that happened, for the News box of the V1 page
+        return send(200, "application/json", JSON.stringify((db.activity || []).slice(-12).reverse().map((x) => ({ user: x.user, text: x.text, t: x.t }))), { "Access-Control-Allow-Origin": "*" });
     }
     if (url.pathname === "/classic/live") {             // who is playing and what just happened; reloads itself
         const now = Date.now(), online = Object.keys(seen).filter((n) => now - seen[n] < 5 * 60 * 1000);
@@ -380,7 +405,7 @@ http.createServer((req, res) => {
     if (req.url.startsWith("/services/downloadProfileImage")) {
         const q = new URL(req.url, "http://x").searchParams; let png = null;
         for (const v of q.values()) { const u = db.users[v] || Object.values(db.users).find(x => x.name === v || x.id === v); if (u && u.profileImage) { png = Buffer.from(u.profileImage, "base64"); break; } }
-        res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "no-store" });
+        res.writeHead(200, { "Content-Type": png && png[0] === 0xff && png[1] === 0xd8 ? "image/jpeg" : "image/png", "Cache-Control": "no-store" });          // the V1 creator sends a JPEG, the V2 one a PNG
         return res.end(png || Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64"));
     }
     if (req.url === "/crossdomain.xml") {

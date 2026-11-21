@@ -14,6 +14,32 @@ end
 extraScripts = true
 print("extra_scripts.lua loaded (screen wipe, aiming aid, laser mod, restart, shape blocks, leave pop-up, episodes, version 19" .. (_G.type(simulateAimingAid) == "function" and ")" or ": this engine build is too old for the aiming aid, rebuild it)"))
 
+------------------------------------------------------------------ the pop-ups' look (4.1)
+-- Every pop-up of this file (leaving a level, the level spawner, the Social levels) is a round-cornered panel in the green of the pause menu with its pale yellow rim,
+-- and round buttons; drawRoundRect is the engine's native (an older exe without it gets square corners).
+popupBox = function(x1, y1, x2, y2, radius)
+	radius = radius or 24
+	if _G.type(drawRoundRect) == "function" then
+		drawRoundRect(x1 - 4, y1 - 4, x2 + 4, y2 + 4, radius + 4, 0, 0, 0, 0.22)                    -- a soft shadow
+		drawRoundRect(x1 - 2, y1 - 2, x2 + 2, y2 + 2, radius + 2, 0.97, 0.95, 0.59, 1)               -- the pale yellow rim
+		drawRoundRect(x1, y1, x2, y2, radius, 0.13, 0.42, 0.36, 1)                                    -- the pause menu's green
+	else
+		drawRect(0.13, 0.42, 0.36, 1, x1, y1, x2, y2, false)
+		drawRectLines(x1, y1, x2, y2, 3, 248, 242, 151, 255)
+	end
+end
+popupButton = function(x1, y1, x2, y2, r, g, b, selected)
+	local radius = (y2 - y1) * 0.3
+	if _G.type(drawRoundRect) == "function" then
+		drawRoundRect(x1 - 2, y1 - 2, x2 + 2, y2 + 2, radius + 2, 1, 1, 1, selected and 1 or 0.85)
+		drawRoundRect(x1, y1, x2, y2, radius, r, g, b, 1)
+		drawRoundRect(x1 + 2, y1 + 2, x2 - 2, (y1 + y2) / 2, radius - 1, 1, 1, 1, 0.16)              -- the glossy upper half of the game's buttons
+	else
+		drawRect(r, g, b, 1, x1, y1, x2, y2, false)
+		drawRectLines(x1, y1, x2, y2, 2, 255, 255, 255, 255)
+	end
+end
+
 ------------------------------------------------------------------ 1. screen wipe
 screenwipe = {
 	time = 1,            -- seconds the wipe takes
@@ -944,14 +970,12 @@ do
 		local bw, bh = w * 0.24, h * 0.11
 		local cx, cy = w * 0.5, h * 0.5
 		local pw, ph = bw * 3 + w * 0.06, h * 0.36
-		drawRect(0.16, 0.12, 0.08, 0.95, cx - pw / 2, cy - ph / 2, cx + pw / 2, cy + ph / 2, false)
-		drawRectLines(cx - pw / 2, cy - ph / 2, cx + pw / 2, cy + ph / 2, 3, 240, 200, 120, 255)
+		popupBox(cx - pw / 2, cy - ph / 2, cx + pw / 2, cy + ph / 2)
 		local function button(key, text, i, r, g, b)
 			local x1 = cx - pw / 2 + w * 0.015 + (i - 1) * (bw + w * 0.015)
 			local y1 = cy + ph / 2 - bh - h * 0.04
 			buttons[key] = { x1 = x1, y1 = y1, x2 = x1 + bw, y2 = y1 + bh }
-			drawRect(r, g, b, 1, x1, y1, x1 + bw, y1 + bh, false)
-			drawRectLines(x1, y1, x1 + bw, y1 + bh, 2, 255, 255, 255, 255)
+			popupButton(x1, y1, x1 + bw, y1 + bh, r, g, b)
 			if type(fontBasic) ~= "nil" then _G.res.useFont(fontBasic) end
 			_G.res.drawString("", text, x1 + bw / 2, y1 + bh / 2, "VCENTER", "HCENTER")
 		end
@@ -1412,8 +1436,7 @@ do
 
 	local function button(x1, y1, x2, y2, label, action)
 		buttons[#buttons + 1] = { x1 = x1, y1 = y1, x2 = x2, y2 = y2, action = action }
-		drawRect(0.3, 0.22, 0.12, 1, x1, y1, x2, y2, false)
-		drawRectLines(x1, y1, x2, y2, 2, 240, 200, 120, 255)
+		popupButton(x1, y1, x2, y2, 0.95, 0.62, 0.12)
 		_G.res.drawString("", label, (x1 + x2) / 2, (y1 + y2) / 2, "VCENTER", "HCENTER")
 	end
 
@@ -1427,8 +1450,7 @@ do
 		local x1, y1 = (w - pw) / 2, (h - ph) / 2
 		panel = { x1 = x1, y1 = y1, x2 = x1 + pw, y2 = y1 + ph }
 		buttons = {}
-		drawRect(0.16, 0.12, 0.08, 0.95, x1, y1, x1 + pw, y1 + ph, false)
-		drawRectLines(x1, y1, x1 + pw, y1 + ph, 3, 240, 200, 120, 255)
+		popupBox(x1, y1, x1 + pw, y1 + ph)
 		if type(fontBasic) ~= "nil" then _G.res.useFont(fontBasic) end
 		_G.res.drawString("", levelSpawner.title, w / 2, y1 + ph * 0.06, "VCENTER", "HCENTER")
 		local bw, bh = 44, 44
@@ -1446,7 +1468,7 @@ do
 		button(w / 2 - 150, fy - 16, w / 2 - 20, fy + 16, "folder -", function() stepFolder(-1) end)
 		button(w / 2 + 20, fy - 16, w / 2 + 150, fy + 16, "folder +", function() stepFolder(1) end)
 		_G.res.drawString("", "Left / Right: level    Up / Down: folder", w / 2, y1 + ph * 0.905, "VCENTER", "HCENTER")
-		_G.res.drawString("", levelSpawner.placement and "Return: spawn here    Click the picture: place it    Esc: close" or "Return: spawn here    Esc: close", w / 2, y1 + ph * 0.96, "VCENTER", "HCENTER")
+		_G.res.drawString("", levelSpawner.placement and "Return: spawn here    Click the picture: place it    Esc: close" or "Return: spawn here    Esc: close", w / 2, y1 + ph * 0.968, "VCENTER", "HCENTER")
 	end
 
 	local originalUpdate, originalDrawGame = update, drawGame
@@ -1567,12 +1589,19 @@ do
 		drawRect(0, 0, 0, 0.6, 0, 0, w, h, false)
 		local pw, ph = w * 0.6, h * 0.82
 		local x1, y1 = (w - pw) / 2, (h - ph) / 2
-		drawRect(0.16, 0.12, 0.08, 0.96, x1, y1, x1 + pw, y1 + ph, false)
-		drawRectLines(x1, y1, x1 + pw, y1 + ph, 3, 240, 200, 120, 255)
+		popupBox(x1, y1, x1 + pw, y1 + ph)
 		if type(fontBasic) ~= "nil" then _G.res.useFont(fontBasic) end
 		_G.res.drawString("", socialLevels.title, w / 2, y1 + ph * 0.07, "VCENTER", "HCENTER")
 		rowRects = {}
-		if status ~= "" then _G.res.drawString("", status, w / 2, y1 + ph * 0.5, "VCENTER", "HCENTER") end
+		if status ~= "" then
+			-- a long message (the server's address and the reason) is broken into lines that fit the panel
+			local lines, line = {}, ""
+			for word in _G.string.gmatch(status, "%S+") do
+				if line ~= "" and _G.res.getStringWidth(line .. " " .. word) > pw * 0.9 then lines[#lines + 1] = line line = word else line = (line == "" and word) or (line .. " " .. word) end
+			end
+			lines[#lines + 1] = line
+			for i = 1, #lines do _G.res.drawString("", lines[i], w / 2, y1 + ph * 0.5 + (i - (#lines + 1) / 2) * 34, "VCENTER", "HCENTER") end
+		end
 		local rows = socialLevels.rows
 		local first = floor((selected - 1) / rows) * rows + 1
 		local rowH = ph * 0.075
@@ -1581,11 +1610,12 @@ do
 			local ry1 = y1 + ph * 0.15 + (i - first) * (rowH + ph * 0.012)
 			local r = { x1 = x1 + pw * 0.04, y1 = ry1, x2 = x1 + pw * 0.96, y2 = ry1 + rowH, index = i }
 			rowRects[#rowRects + 1] = r
-			if i == selected then drawRect(0.45, 0.3, 0.1, 1, r.x1, r.y1, r.x2, r.y2, false) else drawRect(0.28, 0.2, 0.12, 1, r.x1, r.y1, r.x2, r.y2, false) end
+			if i == selected then popupButton(r.x1, r.y1, r.x2, r.y2, 0.95, 0.62, 0.12, true) else popupButton(r.x1, r.y1, r.x2, r.y2, 0.09, 0.3, 0.26) end
 			_G.res.drawString("", e.name .. "   by " .. e.user .. (e.topScore > 0 and ("   best " .. e.topScore .. " (" .. e.topPlayer .. ")") or (e.plays ~= "" and ("   (" .. e.plays .. " plays)") or "")), w / 2, (r.y1 + r.y2) / 2, "VCENTER", "HCENTER")
 		end
-		if #list > 0 then _G.res.drawString("", "page " .. (floor((selected - 1) / rows) + 1) .. " / " .. (floor((#list - 1) / rows) + 1), w / 2, y1 + ph * 0.89, "VCENTER", "HCENTER") end
-		_G.res.drawString("", "Up / Down: choose    Left / Right: page    Return: play    Esc: close", w / 2, y1 + ph * 0.95, "VCENTER", "HCENTER")
+		if #list > 0 then _G.res.drawString("", "page " .. (floor((selected - 1) / rows) + 1) .. " / " .. (floor((#list - 1) / rows) + 1), w / 2, y1 + ph * 0.875, "VCENTER", "HCENTER") end
+		_G.res.drawString("", "Up / Down: choose    Left / Right: page", w / 2, y1 + ph * 0.925, "VCENTER", "HCENTER")
+		_G.res.drawString("", "Return: play    Esc: close", w / 2, y1 + ph * 0.968, "VCENTER", "HCENTER")
 	end
 
 	local originalUpdate, originalDrawGame, originalDrawMenu = update, drawGame, drawMenu
@@ -1602,7 +1632,8 @@ end
 -- which levels each world holds (and in which folder), which art each episode tile shows and in which order the tiles stand. See episodes.lua in extras/.
 episodes = nil
 do
-	local file = _G.loadfile(scriptPath .. "/episodes.lua")
+	-- next to gamelogic.lua, or (an .apk / .ipa keeps its scripts in a cache folder) next to this file
+	local file = _G.loadfile(scriptPath .. "/episodes.lua") or (extraScriptFolder ~= nil and _G.loadfile(extraScriptFolder .. "/episodes.lua")) or nil
 	if file ~= nil then _G.setfenv(file, _G.getfenv(1)) end
 	if file ~= nil and _G.pcall(file) and _G.type(episodes) == "table" then
 		-- the six pages of the old menu: the first world of each (pack number), how many worlds it has, and the variable of its page
@@ -1614,7 +1645,7 @@ do
 		local originalCreateMenuPages = createMenuPages
 		createMenuPages = function(...)
 			-- style = "popup": the episodes are drawn as pop-up boxes with their names as text (the way the mobile versions draw them), not as picture tiles
-			if episodes.style == "popup" then g_newEpisodeScreen.enabled, g_newEpisodeScreen.lastSetEnabled = false, false end
+			if episodes.style == "popup" and g_newEpisodeScreen ~= nil then g_newEpisodeScreen.enabled, g_newEpisodeScreen.lastSetEnabled = false, false end
 			-- the lists are changed in place, the score totals of the menu hold the same tables
 			for s = 1, 6 do
 				local worlds = episodes[s] and episodes[s].worlds or {}
@@ -1648,7 +1679,7 @@ do
 		end
 
 		-- style = "popup": the boxes grow a little under the cursor (the retail hover code only handles single sprites, the boxes are not)
-		if episodes.style == "popup" then
+		if episodes.style == "popup" and env.g_newEpisodeScreen ~= nil then
 			local originalUpdate = update
 			update = function(...)
 				originalUpdate(...)
@@ -1671,9 +1702,16 @@ do
 		prepareMenuPage = function(page, ...)
 			-- the pop-up boxes are drawn when the hover buttons are off, so they are off while this page is built (the other menus keep theirs)
 			local hover = env.g_enableMouseOverStates
-			if page == episodeSelectionPage and episodes.style == "popup" then env.g_enableMouseOverStates = false end
+			if page == episodeSelectionPage and episodes.style == "popup" and env.g_newEpisodeScreen ~= nil then env.g_enableMouseOverStates = false end
 			originalPrepareMenuPage(page, ...)
 			env.g_enableMouseOverStates = hover
+			if page == episodeSelectionPage and episodes.style == "popup" and env.g_newEpisodeScreen ~= nil then
+				-- episodes[n].name is the title of box n (it replaces the built-in "1. Poached Eggs"; write the number in it if you want one)
+				for n = 1, 4 do
+					local title = episodes[n] and episodes[n].name and getItemByName(page.items, "episode" .. n .. "Text")
+					if title then title.text = episodes[n].name end
+				end
+			end
 			for s = 1, 6 do
 				if page == env[slots[s].page] then
 					-- the places of a world that has fewer levels than its page are left empty

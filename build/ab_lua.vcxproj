@@ -1035,6 +1035,118 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\coins_language_lua.cpp.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kCoinsLanguageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/coins_language.lua -DSYMBOL=kCoinsLanguageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/coins_language_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\coins_language.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\coins_language_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Embedding kCoinsLanguageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/coins_language.lua -DSYMBOL=kCoinsLanguageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/coins_language_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\coins_language.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\coins_language_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Embedding kCoinsLanguageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/coins_language.lua -DSYMBOL=kCoinsLanguageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/coins_language_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\coins_language.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\coins_language_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Embedding kCoinsLanguageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/coins_language.lua -DSYMBOL=kCoinsLanguageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/coins_language_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\coins_language.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\coins_language_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\piggybank_png.cpp.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kPiggyBankPng</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/piggybank.png -DSYMBOL=kPiggyBankPng -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/piggybank_png.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\piggybank.png;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\piggybank_png.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Embedding kPiggyBankPng</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/piggybank.png -DSYMBOL=kPiggyBankPng -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/piggybank_png.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\piggybank.png;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\piggybank_png.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Embedding kPiggyBankPng</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/piggybank.png -DSYMBOL=kPiggyBankPng -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/piggybank_png.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\piggybank.png;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\piggybank_png.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Embedding kPiggyBankPng</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/piggybank.png -DSYMBOL=kPiggyBankPng -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/piggybank_png.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\piggybank.png;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\piggybank_png.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
     <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\page_lua.cpp.rule">
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kPageLua</Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
@@ -1225,6 +1337,8 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\friends2_natives_lua.cpp" />
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\stella_natives_lua.cpp" />
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\achievements_page_lua.cpp" />
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\coins_language_lua.cpp" />
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\piggybank_png.cpp" />
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\page_lua.cpp" />
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\item_lua.cpp" />
   </ItemGroup>

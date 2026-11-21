@@ -8,6 +8,7 @@
 #include <ws2tcpip.h>
 #else
 #include <sys/socket.h>
+#include <arpa/inet.h>
 #include <sys/select.h>
 #include <netdb.h>
 #include <unistd.h>
@@ -41,6 +42,8 @@ extern "C" {
 }
 
 namespace ab {
+extern const unsigned char kPiggyBankPng[];          // the picture of the purchase window (piggybank.png)
+extern const unsigned int kPiggyBankPngSize;
 extern const unsigned char kCompoImageLua[];
 extern const unsigned int kCompoImageLuaSize;
 extern const unsigned char kEditorJointPageLua[];
@@ -1372,6 +1375,8 @@ int l_createPolygonSprite(lua_State* L) {
     if (n < 0) lua_pushnil(L); else lua_pushinteger(L, n);
     return 1;
 }
+// loadPiggyBank(name): the green dollar piggy bank of Angry Birds Social (the purchase window's picture) as a sprite called `name` (224 x 200, pivot at the top left corner)
+int l_loadPiggyBank(lua_State* L) { lua_pushboolean(L, P(L)->CanvasLoadSpriteFromMemory(S(L, 1), kPiggyBankPng, kPiggyBankPngSize)); return 1; }
 int l_loadCanvasSprite(lua_State* L) { lua_pushboolean(L, P(L)->CanvasLoadSprite(S(L, 1), S(L, 2), (int)N(L, 3), (int)N(L, 4))); return 1; }
 
 // ---- physics
@@ -2453,7 +2458,7 @@ int l_getThemeLayers(lua_State* L) {
         num("index", i + 1);
         lua_pushstring(L, t.sprite.c_str()); lua_setfield(L, -2, "sprite");
         num("speed", t.speed); num("scale", t.scale); num("scaleX", t.scaleX); num("scaleY", t.scaleY); num("offset", t.offset);
-        num("offX", t.offX); num("offY", t.offY); num("dx", t.dx); num("dy", t.dy); num("velX", t.velX); num("velY", t.velY); num("angle", t.angle);
+        num("offX", t.offX); num("offY", t.offY); num("posX", t.posX); num("posY", t.posY); num("dx", t.dx); num("dy", t.dy); num("velX", t.velX); num("velY", t.velY); num("angle", t.angle);
         lua_pushboolean(L, t.looping); lua_setfield(L, -2, "looping");
         lua_pushboolean(L, t.hidden); lua_setfield(L, -2, "hidden");
         lua_rawseti(L, -2, i + 1);
@@ -2472,7 +2477,7 @@ int l_setThemeLayer(lua_State* L) {
     auto flag = [&](const char* k, bool& v) { lua_getfield(L, 2, k); if (lua_isboolean(L, -1)) v = lua_toboolean(L, -1) != 0; lua_pop(L, 1); };
     lua_getfield(L, 2, "sprite"); if (lua_isstring(L, -1)) t.sprite = lua_tostring(L, -1); lua_pop(L, 1);
     num("speed", t.speed); num("scale", t.scale); num("scaleX", t.scaleX); num("scaleY", t.scaleY); num("offset", t.offset);
-    num("offX", t.offX); num("offY", t.offY); num("dx", t.dx); num("dy", t.dy); num("velX", t.velX); num("velY", t.velY); num("angle", t.angle);
+    num("offX", t.offX); num("offY", t.offY); num("posX", t.posX); num("posY", t.posY); num("dx", t.dx); num("dy", t.dy); num("velX", t.velX); num("velY", t.velY); num("angle", t.angle);
     flag("looping", t.looping); flag("hidden", t.hidden);
     P(L)->SetThemeLayer(which, idx, t);
     return 0;
@@ -2526,6 +2531,25 @@ int l_drawLine2D(lua_State* L) {
     P(L)->DrawLine2D(N(L, 1), N(L, 2), N(L, 3), N(L, 4), N(L, 5), N(L, 6), N(L, 7), N(L, 8), N(L, 9));
     return 0;
 }
+// drawRoundRect(left, top, right, bottom, radius, r, g, b, a): a filled rectangle with round corners (colours 0 to 1 as in drawRect). Cut into strips as tall as a pixel
+// or two so that nothing overlaps (a translucent panel keeps one even shade); a radius of half the shorter side makes a pill or a circle.
+int l_drawRoundRect(lua_State* L) {
+    float x1 = N(L, 1), y1 = N(L, 2), x2 = N(L, 3), y2 = N(L, 4), rad = N(L, 5), r = N(L, 6), g = N(L, 7), b = N(L, 8), a = N(L, 9);
+    if (x2 < x1) std::swap(x1, x2);
+    if (y2 < y1) std::swap(y1, y2);
+    rad = std::max(0.0f, std::min(rad, std::min(x2 - x1, y2 - y1) * 0.5f));
+    if (rad < 1.0f) { P(L)->DrawRect(r, g, b, a, x1, y1, x2, y2, false); return 0; }
+    float step = rad > 40.0f ? 2.0f : 1.0f;
+    P(L)->DrawRect(r, g, b, a, x1, y1 + rad, x2, y2 - rad, false);                      // the middle band
+    for (float d = 0; d < rad; d += step) {                                              // rows of the two round ends: d is the distance from the straight part
+        float h = std::min(step, rad - d);
+        float yc = d + h * 0.5f;                                                         // the row's middle, measured up from the corner circle's centre
+        float inset = rad - std::sqrt(std::max(0.0f, rad * rad - yc * yc));
+        P(L)->DrawRect(r, g, b, a, x1 + inset, y1 + rad - d - h, x2 - inset, y1 + rad - d, false);
+        P(L)->DrawRect(r, g, b, a, x1 + inset, y2 - rad + d, x2 - inset, y2 - rad + d + h, false);
+    }
+    return 0;
+}
 // drawRectLines(left, top, right, bottom, width, r, g, b, a): the four edges of a rectangle
 int l_drawRectLines(lua_State* L) {
     float x1 = N(L, 1), y1 = N(L, 2), x2 = N(L, 3), y2 = N(L, 4), w = N(L, 5), r = N(L, 6), g = N(L, 7), b = N(L, 8), a = N(L, 9);
@@ -2540,7 +2564,7 @@ int l_osName(lua_State* L) { lua_pushstring(L, "Windows"); return 1; }
 int l_osVersion(lua_State* L) { lua_pushstring(L, "6.1"); return 1; }
 int l_deviceModel(lua_State* L) { lua_pushstring(L, "PC"); return 1; }
 int l_deviceManufacturer(lua_State* L) { lua_pushstring(L, "PC"); return 1; }
-int l_currentLocale(lua_State* L) { lua_pushstring(L, "en"); return 1; }
+int l_currentLocale(lua_State* L) { std::string l = P(L)->ResGetLocale(); lua_pushstring(L, l == "en_US" ? "en" : l.substr(0, 2).c_str()); return 1; }   // the short name ("en", "fr")
 
 // ---- 2.0.0 additions
 // drawBoxNative(components, x, y, width, height, hanchor, vanchor): a 3x3 (or 3x1) box of sprites. The
@@ -3043,6 +3067,41 @@ static bool HttpGetText(const std::string& url, double seconds, std::string& bod
     body = reply.substr(headEnd + 4);
     return true;
 }
+// (4.1) isNetworkConnected() -> true and this computer's address when it is on a network (Wi-Fi or cable): it has an address from which an outside address can be reached. No packet
+// is sent (a UDP socket is only "connected", which picks the route), so it answers at once. A computer with no network, or only a loopback, answers false.
+int l_isNetworkConnected(lua_State* L) {
+#ifdef _WIN32
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) { lua_pushboolean(L, 0); return 1; }
+#endif
+    bool connected = false;
+    std::string address;
+    HttpSocket s = socket(AF_INET, SOCK_DGRAM, 0);
+    if (s != kNoSocket) {
+        sockaddr_in to; std::memset(&to, 0, sizeof to);
+        to.sin_family = AF_INET; to.sin_port = htons(53); to.sin_addr.s_addr = inet_addr("1.1.1.1");
+        if (connect(s, (const sockaddr*)&to, sizeof to) == 0) {
+            sockaddr_in me; std::memset(&me, 0, sizeof me);
+#ifdef _WIN32
+            int len = sizeof me;
+#else
+            socklen_t len = sizeof me;
+#endif
+            if (getsockname(s, (sockaddr*)&me, &len) == 0) {
+                unsigned long a = ntohl(me.sin_addr.s_addr);
+                connected = a != 0 && (a >> 24) != 127;
+                if (connected) address = inet_ntoa(me.sin_addr);
+            }
+        }
+        HttpClose(s);
+    }
+#ifdef _WIN32
+    WSACleanup();
+#endif
+    lua_pushboolean(L, connected);
+    if (connected) { lua_pushstring(L, address.c_str()); return 2; }
+    return 1;
+}
 int l_httpGet(lua_State* L) {
     std::string body, error;
     double seconds = lua_isnumber(L, 2) ? lua_tonumber(L, 2) : 3.0;
@@ -3167,8 +3226,14 @@ int r_useFont(lua_State* L) { P(L)->ResUseFont(S(L, 1)); return 0; }
 int r_createTextGroupSet(lua_State* L) { P(L)->ResCreateTextGroupSet(S(L, 1)); return 0; }
 int r_loadLocale(lua_State* L) { P(L)->ResLoadLocale(S(L, 1), S(L, 2)); return 0; }
 int r_nothing3(lua_State*) { return 0; }   // res.releaseFont(file) / res.releaseAudio(name): the PC engine keeps what it loaded
-int r_getLocale(lua_State* L) { lua_pushstring(L, "en_US"); return 1; }   // res.getLocale(): the 3.x scripts read the country from characters 4 and 5
+int r_getLocale(lua_State* L) { lua_pushstring(L, P(L)->ResGetLocale().c_str()); return 1; }   // res.getLocale(): the 3.x scripts read the country from characters 4 and 5
 int r_useLocale(lua_State* L) { P(L)->ResUseLocale(S(L, 1)); return 0; }
+int r_getLocales(lua_State* L) {     // res.getLocales(): the languages the text files have
+    std::vector<std::string> n = P(L)->ResLocaleNames();
+    lua_newtable(L);
+    for (size_t i = 0; i < n.size(); i++) { lua_pushstring(L, n[i].c_str()); lua_rawseti(L, -2, (int)i + 1); }
+    return 1;
+}
 int r_getString(lua_State* L) { lua_pushstring(L, P(L)->ResGetString(S(L, 1), S(L, 2)).c_str()); return 1; }
 // An anchor word sets the vertical or the horizontal anchor, whichever it names (game::parseAnchorString, 0x43b4b0).
 void ParseAnchor(const char* word, int& v, int& h) {
@@ -3455,7 +3520,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"requireFile", l_requireFile}, {"loadLuaFileToObject", l_loadLuaFileToObject}, {"loadLuaFile", l_loadLuaFileToObject},   // 2.0.0: the same without an object
         {"loadLevel", l_loadLevel}, {"loadLevelEditor", l_loadLevelEditor}, {"saveLevel", l_saveLevel}, {"saveLevelForReload", l_saveLevelForReload}, {"saveLuaFile", l_saveLuaFile}, {"checkForPersistentFile", l_checkForPersistentFile}, {"loadPersistentFileWrapper", l_loadPersistentFileWrapper},
         {"initializePainter", l_initializePainter}, {"clearCanvas", l_clearCanvas}, {"paintToCanvas", l_paintToCanvas}, {"drawCanvasWithMask", l_drawCanvasWithMask},
-        {"getDominantCanvasColors", l_getDominantCanvasColors}, {"createSpriteFromCanvas", l_createSpriteFromCanvas}, {"loadCanvasSprite", l_loadCanvasSprite}, {"createSilhouette", l_createSilhouette}, {"createPolygonSprite", l_createPolygonSprite}, {"createShapeWithHoles", l_createShapeWithHoles}, {"registerHoles", l_registerHoles}, {"predictCollision", l_predictCollision}, {"setObjectGravity", l_setObjectGravity}, {"setObjectGravityScale", l_setObjectGravityScale}, {"resetObjectGravity", l_resetObjectGravity}, {"getObjectGravity", l_getObjectGravity}, {"setupCompoObject", l_setupCompoObject},
+        {"getDominantCanvasColors", l_getDominantCanvasColors}, {"createSpriteFromCanvas", l_createSpriteFromCanvas}, {"loadCanvasSprite", l_loadCanvasSprite}, {"loadPiggyBank", l_loadPiggyBank}, {"createSilhouette", l_createSilhouette}, {"createPolygonSprite", l_createPolygonSprite}, {"createShapeWithHoles", l_createShapeWithHoles}, {"registerHoles", l_registerHoles}, {"predictCollision", l_predictCollision}, {"setObjectGravity", l_setObjectGravity}, {"setObjectGravityScale", l_setObjectGravityScale}, {"resetObjectGravity", l_resetObjectGravity}, {"getObjectGravity", l_getObjectGravity}, {"setupCompoObject", l_setupCompoObject},
         {"createDirectory", l_createDirectory}, {"checkDirectory", l_checkDirectory}, {"checkForLuaFile", l_checkForLuaFile},
         {"createBox", l_createBox}, {"createCircle", l_createCircle}, {"createPolygon", l_createPolygon}, {"createLineShape", l_createLineShape},
         {"clearVertices", l_clearVertices}, {"addVertex", l_addVertex},
@@ -3467,9 +3532,9 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"getRenderZ", l_getRenderZ}, {"setColliderType", l_setColliderType}, {"getColliderType", l_getColliderType}, {"setColliderRule", l_setColliderRule}, {"getColliderRule", l_getColliderRule},
         {"setPolygonRadius", l_setPolygonRadius}, {"getPolygonRadius", l_getPolygonRadius}, {"removeJointsFromObject", l_removeJointsFromObject},
         {"getIntersectingObjects", l_getIntersectingObjects},
-        {"setParticleSystemLimits", l_nothing}, {"clearParticleCache", l_clearParticleCache}, {"getGroundColor", l_getGroundColor}, {"setGroundColor", l_setGroundColor}, {"enableInGameParticlesNative", l_nothing},
+        {"setParticleSystemLimits", l_nothing}, {"clearParticleCache", l_clearParticleCache}, {"getGroundColor", l_getGroundColor}, {"setGroundColor", l_setGroundColor},
         {"updateBackgroundAndForegroundScrollingNative", l_updateBackgroundAndForegroundScrollingNative}, {"rotateThemeSprites", l_rotateThemeSprites},
-        {"setThemeSprite", l_setThemeSprite}, {"drawMenuParticlesNative", l_nothing}, {"updateMenuParticlesNative", l_nothing},
+        {"setThemeSprite", l_setThemeSprite}, {"drawMenuParticlesNative", l_drawParticlesNative}, {"updateMenuParticlesNative", l_retailNoop},
         {"createJoint", l_createJoint}, {"createJoints", l_createJoints}, {"setJointParameters", l_setJointParameters},
         {"checkJointLimits", l_checkJointLimits}, {"destroyJoint", l_destroyJoint},
         {"removeObject", l_removeObject}, {"savePersistentLuaFile", l_savePersistentLuaFile}, {"applyImpulse", l_applyImpulse}, {"applyForce", l_applyForce}, {"applyForceNative", l_applyForce}, {"setObjectDecoration", l_setObjectDecoration}, {"setNormalTrailSprite", l_setNormalTrailSprite}, {"setSpecialTrailSprite", l_setSpecialTrailSprite}, {"setSpriteRotation", l_setSpriteRotation}, {"setPivotOffset", l_setPivotOffset}, {"setTextureScale", l_setTextureScale}, {"setRecordVelocity", l_setRecordVelocity},
@@ -3488,7 +3553,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"drawTexturedRect", l_nothing}, {"drawSome", l_nothing},
         {"drawGameNative", l_drawGameNative}, {"drawBackgroundNative", l_drawBackgroundNative},
         {"drawForegroundNative", l_drawForegroundNative}, {"drawParticlesFiltered", l_drawParticlesFiltered}, {"readDataFile", l_readDataFile}, {"listDataFolder", l_listDataFolder}, {"setObjectDensity", l_setObjectDensity}, {"setDensity", l_setObjectDensity}, {"setFriction", l_setFriction}, {"resizeCircle", l_resizeCircle}, {"setVisible", l_setVisible}, {"isVisible", l_isVisible}, {"inheritTeleportation", l_retailNoop}, {"setRestitution", l_setRestitution}, {"handleJointLimits", l_handleJointLimits}, {"getFullScreenWidth", l_getFullScreenWidth}, {"getFullScreenHeight", l_getFullScreenHeight}, {"performBitwiseOr", l_performBitwiseOr}, {"setWaterForceMultiplier", l_setWaterForceMultiplier}, {"getWaterForceMultiplier", l_getWaterForceMultiplier}, {"setBirdWaterDrag", l_setBirdWaterDrag}, {"setObjectWaterDrag", l_setObjectWaterDrag}, {"fileExistsInAppData", l_fileExistsInAppData}, {"loadTextFileToString", l_loadTextFileToString}, {"isGameOverlayActive", l_isGameOverlayActive}, {"clearScreen", l_retailNoop}, {"isEditing", l_false}, {"setRollingSound", l_retailNoop}, {"setRovioShelfAllowed", l_retailNoop}, {"setChannelCountLimit", l_retailNoop}, {"setOffsetedViewport", l_retailNoop}, {"refreshCurrentLocale", l_retailNoop}, {"recoverRenderObjects", l_retailNoop}, {"drawParticlesNative", l_drawParticlesNative}, {"drawMenuParticlesInAdvance", l_drawMenuParticlesInAdvance},
-        {"setSprite", l_setSprite}, {"setMaterial", l_setMaterial}, {"setTexture", l_setTexture}, {"httpGet", l_httpGet}, {"playLevelText", l_playLevelText}, {"setTheme", l_setTheme},
+        {"setSprite", l_setSprite}, {"setMaterial", l_setMaterial}, {"setTexture", l_setTexture}, {"httpGet", l_httpGet}, {"isNetworkConnected", l_isNetworkConnected}, {"playLevelText", l_playLevelText}, {"setTheme", l_setTheme},
         {"clipText", l_clipText},
         {"startNewTrajectory", l_startNewTrajectory}, {"addToTrajectory", l_addToTrajectory},
         {"addPuffToTrajectory", l_addPuffToTrajectory}, {"setCustomTrajectorySprites", l_setCustomTrajectorySprites},
@@ -3510,7 +3575,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"removeThemeSprite", l_removeThemeSprite},
         {"updateThemeSprite", l_updateThemeSprite},
         {"drawLayer", l_nothing},
-        {"drawRectLines", l_drawRectLines}, {"drawBoxNative", l_drawBoxNative}, {"getCurrentTime", l_getCurrentTime}, {"rewind", l_rewind}, {"getRewindDepth", l_getRewindDepth}, {"getRewindState", l_getRewindState}, {"setRewindLimit", l_setRewindLimit},
+        {"drawRectLines", l_drawRectLines}, {"drawRoundRect", l_drawRoundRect}, {"drawBoxNative", l_drawBoxNative}, {"getCurrentTime", l_getCurrentTime}, {"rewind", l_rewind}, {"getRewindDepth", l_getRewindDepth}, {"getRewindState", l_getRewindState}, {"setRewindLimit", l_setRewindLimit},
         {"getTimeDifference", l_getTimeDifference}, {"setAlpha", l_setAlpha}, {"setDrawZRange", l_setDrawZRange}, {"setBlendMode", l_setBlendMode}, {"setShader", l_setShader}, {"setTintChannel", l_setTintChannel}, {"setVisualRotation", l_setVisualRotation}, {"setOffset", l_setOffset}, {"getOffset", l_getOffset}, {"setLayoutScale", l_setLayoutScale}, {"setMirror", l_setMirror}, {"createShader", l_createShader}, {"setShaderParam", l_setShaderParam}, {"getShaderError", l_getShaderError}, {"listShaders", l_listShaders}, {"resetRenderOverrides", l_resetRenderOverrides}, {"setTint", l_setTint}, {"getTint", l_getTint}, {"resetTint", l_resetTint}, {"setSkew", l_setSkew}, {"setBend", l_setBend}, {"setRenderZ", l_setRenderZ}, {"setBlur", l_setBlur}, {"setPixelate", l_setPixelate}, {"resetBlur", l_resetBlur}, {"resetPixelate", l_resetPixelate}, {"drawUITextNative", l_drawUITextNative},
         {"getTImeDifferenceInSeconds", l_getTimeDifferenceInSeconds}, {"getTimeDifferenceInSeconds", l_getTimeDifferenceInSeconds}, {"checkRegistrationResult", l_false}, {"getClipboardText", l_emptyString},
         {"canOpenProgram", l_false}, {"openProgram", l_nothing}, {"hasLocationCapability", l_false}, {"drawLevelParticlesNative", l_drawLevelParticlesNative},
@@ -3556,7 +3621,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"setPath", r_setPath}, {"createSpriteSheet", r_createSpriteSheet}, {"abPeekSprite", r_abPeekSprite}, {"releaseSpriteSheet", r_releaseSpriteSheet},
         {"createCompoSpriteSet", r_createCompoSpriteSet}, {"releaseCompoSpriteSet", r_releaseCompoSpriteSet},
         {"createBitmapFont", r_createBitmapFont}, {"useFont", r_useFont},
-        {"createTextGroupSet", r_createTextGroupSet}, {"loadLocale", r_loadLocale}, {"useLocale", r_useLocale}, {"getLocale", r_getLocale}, {"releaseFont", r_nothing3}, {"releaseAudio", r_nothing3},
+        {"createTextGroupSet", r_createTextGroupSet}, {"loadLocale", r_loadLocale}, {"useLocale", r_useLocale}, {"getLocales", r_getLocales}, {"getLocale", r_getLocale}, {"releaseFont", r_nothing3}, {"releaseAudio", r_nothing3},
         {"getString", r_getString}, {"drawSprite", r_drawSprite}, {"drawCompoSprite", r_drawCompoSprite}, {"drawTexturedLine2D", r_drawTexturedLine2D},
         {"drawString", r_drawString}, {"setClipRect", r_setClipRect}, {"getClipRect", r_getClipRect},
         {"getSpriteBounds", r_getSpriteBounds}, {"getSpritePivot", r_getSpritePivot},

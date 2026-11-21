@@ -43,22 +43,36 @@ function env.checkInstalledAppsOnline() end
 function env.checkInstalledAppsOffline() end
 function env.exportLuaTableAsJSON() return "[]" end
 -- analytics: nothing is sent
-for _, n in ipairs({"logFlurryTimerEvent", "logFlurryEvent", "logFlurryEventWithParam", "logFlurryEventWithParams"}) do env[n] = function() end end
+for _, n in ipairs({"logFlurryTimerEvent", "logFlurryEvent", "logFlurryEventWithParam", "logFlurryEventWithParams"}) do if env[n] == nil or env.abServices == nil then env[n] = function() end end end
 function env.resetTimer() end   -- zeroes the frame timer after a long load
 -- TODO natives found missing while bringing Space up: stubbed so the scripts keep running, each needs a real implementation
 env.setChannelCountLimit = function() end
-env.storePersistentData = function() end
 
 -- ---- Angry Birds Space natives that only matter to a device or to the editor: harmless answers (each is also registered in the exe)
 local function ifMissing(name, fn) if env[name] == nil then env[name] = fn end end
 for _, n in ipairs({"createAudioOutput", "createAudioInput", "startAudioOutput", "stopAudioOutput", "startAudioInput",
-                    "stopAudioInput", "setMasterVolume", "setTrackVolume", "openBarnesAndNobleShop", "drawRubberband", "checkMainMenuAd",
+                    "stopAudioInput", "setMasterVolume", "setTrackVolume", "openBarnesAndNobleShop", "checkMainMenuAd",
                     "iapSetItemDescription", "iapRestoreItems", "native_startURLThread", "removeAllNotifications", "loadBlocksForEditing",
                     "hideExpandableAd", "activateGameOverlayToStore", "setStat", "setStatFloat", "releaseFont",
-                    "releaseTextGroupSet", "releaseCompoSpriteSet", "releaseSpriteSheet", "setPath", "captureSprite", "setMenuParticlesScale",
-                    "setThemeOffsetY", "ClearSimulationTrajectory", "setSelectedBirdDuringSimulation",
+                    "releaseTextGroupSet", "releaseCompoSpriteSet", "releaseSpriteSheet", "setPath", "captureSprite", "ClearSimulationTrajectory",
                     "updateBirdTrajectoryTable",
                     }) do ifMissing(n, function() end) end
+-- Star Wars particle natives (the scripts bind addParticles, addMultipleParticles, addParticlesToPosition and
+-- addParticlesFromDefinitionToPosition from the exe): emit a particle type at an object, or at a point; a type may be a name or a list of names
+local function particleTypes(t) if type(t) == "table" then return t end if t == nil or t == "" then return {} end return {t} end
+local function defaultAmount(t)
+    local d = env.particleTable and env.particleTable.particles and env.particleTable.particles[t]
+    return d and d.amount or 10
+end
+local function emitAtObject(name, t, amount)
+    local o = env.objects and env.objects.world and env.objects.world[name]
+    if o == nil or o.x == nil then return end
+    particles.addParticles(t, amount, o.x, o.y, o.width or 1, o.height or 1, env.getAngle and env.getAngle(name) or 0)
+end
+ifMissing("addParticles", function(name, t, amount) for _, v in ipairs(particleTypes(t)) do emitAtObject(name, v, amount or defaultAmount(v)) end end)
+ifMissing("addMultipleParticles", function(name, t, amount) for _, v in ipairs(particleTypes(t)) do emitAtObject(name, v, amount or defaultAmount(v)) end end)
+ifMissing("addParticlesToPosition", function(x, y, t, amount) for _, v in ipairs(particleTypes(t)) do particles.addParticles(v, amount or defaultAmount(v), x, y, 0, 0, 0) end end)
+ifMissing("addParticlesFromDefinitionToPosition", function(x, y, t) for _, v in ipairs(particleTypes(t)) do particles.addParticles(v, defaultAmount(v), x, y, 0, 0, 0) end end)
 -- setRevoluteJointSpeed(jointName, speed) (0x465f50): the motor speed of every joint with that name
 -- natives of the Star Wars exe that no shipped script calls (0x40d880 / 0x40d8a0 keep the rendering flag, 0x421c50 is the toy-code checksum for a server that is gone)
 local renderingDisabled = false
@@ -188,9 +202,43 @@ ifMissing("renderGravityVisualsNative", function(sen, sx, sy, zoom)
     end
 end)
 
+-- ---- Star Wars natives that were stubs, now matched against AngryBirdsStarWars.exe (documented in docs/SCRIPTING.md)
+-- linkSensor(name) (thunk 0x4241f0): the function behind it (0x4edf60) only frees the string it is handed, so it does nothing
+ifMissing("linkSensor", function() end)
+-- storePersistentData() (0x40d450): a bare `ret`
+env.storePersistentData = function() end
+-- setThemeOffsetY(layer, foreground, x, y) (0x40e560): writes the layer's position (+0x78 posX, +0x7c posY) in the background (false) or foreground (true) list; layer counts from 1.
+-- Space and Stella have another native of the same name, (theme, offset) at 0x466e40; the boolean second argument tells the two apart
+local spaceSetThemeOffsetY = env.setThemeOffsetY
+env.setThemeOffsetY = function(a, b, x, y)
+    if type(b) == "boolean" then
+        if env.setThemeLayer then env.setThemeLayer(a, {posX = x, posY = y}, b and 1 or 0) end
+    elseif spaceSetThemeOffsetY then
+        return spaceSetThemeOffsetY(a, b, x, y)
+    end
+end
+-- setMenuParticlesScale(scale) (0x40da80): scales the menu particle system
+ifMissing("setMenuParticlesScale", function(scale)
+    env.tuning = env.tuning or {}
+    env.tuning["menuParticles.scale"] = scale
+end)
+-- setSelectedBirdDuringSimulation(name) (0x41ea00): remembers which bird the trajectory simulation launches (the exe stores the bird's index at +0x50)
+ifMissing("setSelectedBirdDuringSimulation", function(name) env.simulationSelectedBird = name end)
+-- enableInGameParticlesNative(on) (0x40daa0): a flag the exe's particle drawing reads; false hides the level's particles (the animated tutorial does this)
+env.enableInGameParticlesNative = function(on)
+    env.tuning = env.tuning or {}
+    env.tuning["particles.inGame"] = on and 1 or 0
+end
+-- drawMenuParticlesNative() (0x40d9e0) draws the menu particles; updateMenuParticlesNative(dt) (0x40da20) steps them (the engine steps every particle each frame already)
+-- enableSmoothZooming(on) (0x40d240) sets a flag on the camera object (+0x4b0); setStat(...) and setStatFloat(...) (0x412a10) only free their string arguments
+env.enableSmoothZooming = function(on) env.smoothZooming = on and true or false end
+-- drawRubberband(x1, y1, x2, y2, width, sprite) (0x425c20, the Android path of the sling): the sprite stretched between two points
+ifMissing("drawRubberband", function(x1, y1, x2, y2, width, sprite)
+    if env.drawTexturedLine2D then env.drawTexturedLine2D(sprite, x1, y1, x2, y2, width, 255, 255, 255, 255) end
+end)
+
 -- TODO (Space bring-up): placeholders that keep the scripts running; each needs the exe's behaviour
 for _, n in ipairs({"drawForeground", "renderMaskedImageNative",
-                    "linkSensor",
                     "drawSelectedTexturizedObject", "loadPreviousLevel",
                    
                     "setFontPlaceholder", "getFontPlaceholder"}) do ifMissing(n, function() end) end

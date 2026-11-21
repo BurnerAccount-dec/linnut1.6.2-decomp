@@ -64,6 +64,12 @@
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\achievements_page_lua.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\coins_language_lua.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\piggybank_png.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="C:\Users\Hugofritz\Downloads\engine\build\generated\page_lua.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -112,6 +118,12 @@
       <Filter>CMake Rules</Filter>
     </CustomBuild>
     <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\achievements_page_lua.cpp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\coins_language_lua.cpp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\piggybank_png.cpp.rule">
       <Filter>CMake Rules</Filter>
     </CustomBuild>
     <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\page_lua.cpp.rule">

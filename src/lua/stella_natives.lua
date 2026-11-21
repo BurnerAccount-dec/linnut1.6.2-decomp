@@ -105,6 +105,19 @@ env.native_setDensity = function(name, density)
     if type(w) == "table" and type(w[name]) == "table" then w[name].density = density end
     if env.setObjectDensity then env.setObjectDensity(name, density) end
 end
+-- native_resizeRadius(name, radius, density, friction, restitution), matched against the exe (0x53d1c): the object's circle gets the new radius and the
+-- values are stored in its native data (the exe stores them at +0x10c, +0xe4, +0xec ... and builds the circle again); the potion of the Inflate
+-- power-up calls it with the definition's radius times the multiplier, and again with the original radius and values to shrink the pig back.
+env.native_resizeRadius = function(name, radius, density, friction, restitution)
+    local w = type(env.objects) == "table" and env.objects.world
+    if type(w) == "table" and type(w[name]) == "table" then
+        w[name].density, w[name].friction, w[name].restitution = density, friction, restitution
+    end
+    if env.resizeCircle then env.resizeCircle(name, radius) end
+    if env.setObjectDensity and density then env.setObjectDensity(name, density) end
+    if env.setFriction and friction then env.setFriction(name, friction) end
+    if env.setRestitution and restitution then env.setRestitution(name, restitution) end
+end
 -- native_setSprite(name, sprite): the object is drawn with that sprite (utils.lua setSprite, which keeps the name it last set)
 -- native_getLevelLimits (0x54468) returns the four floats the scene keeps at +0x360 (minX, minY, maxX, maxY), which setLevelLimits (0x4c850) stores
 local levelLimits = {0, 0, 0, 0}

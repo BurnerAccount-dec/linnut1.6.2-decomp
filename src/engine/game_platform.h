@@ -119,6 +119,11 @@ public:
     }
     void ResUseFont(const std::string& name) override;
     void ResCreateTextGroupSet(const std::string& path) override;
+    void ResLoadLocale(const std::string& group, const std::string& locale) override;
+    bool CanvasLoadSpriteFromMemory(const std::string& name, const unsigned char* png, size_t size) override;
+    void ResUseLocale(const std::string& locale) override;
+    std::string ResGetLocale() override { return language_.empty() ? "en_US" : language_; }
+    std::vector<std::string> ResLocaleNames() override;
     std::string ResGetString(const std::string& group, const std::string& key) override;
     void ResSetString(const std::string& group, const std::string& key, const std::string& text) override { textGroups_[group].strings[key] = text; }
     void ResDrawString(const std::string& group, const std::string& text, float x, float y,
@@ -673,6 +678,7 @@ private:
     AudioMixer audio_;
     std::map<std::string, BitmapFont> fonts_;          // by file name without folder and extension
     std::map<std::string, TextGroup> textGroups_;
+    std::string language_;                       // the language picked (res.useLocale, F9, language.txt in the user data); empty = the first one in each file
     std::string current_;                               // useFont
     std::map<std::string, float> fontScale_;            // v3.1: createSystemFont aliases are a bitmap font drawn smaller (Friends)
     float FontScale() const { auto it = fontScale_.find(current_); return it == fontScale_.end() ? 1.0f : it->second; }

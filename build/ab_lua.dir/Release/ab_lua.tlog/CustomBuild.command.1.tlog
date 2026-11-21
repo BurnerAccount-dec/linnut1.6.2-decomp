@@ -138,6 +138,26 @@ endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
 exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\COINS_LANGUAGE_LUA.CPP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/coins_language.lua -DSYMBOL=kCoinsLanguageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/coins_language_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\PIGGYBANK_PNG.CPP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/piggybank.png -DSYMBOL=kPiggyBankPng -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/piggybank_png.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
 ^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\PAGE_LUA.CPP.RULE
 setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/page.luac -DSYMBOL=kPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake

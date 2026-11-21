@@ -132,6 +132,65 @@ addVertex(-10, 0); addVertex(0, 1); addVertex(10, 0)
 createLineShape("ground", "", 0, 5, 1, 1, 0, 0.5, 0, true, false, 1)
 ```
 
+### Star Wars natives for particles, theme layers and the sling
+
+Ported from `AngryBirdsStarWars.exe`; the address is the function in that executable.
+
+| Function | What it does |
+|---|---|
+| `addParticles(object, type, amount)` | Emits `amount` particles of definition `type` over the object (its position, size and angle). `type` may be a name or a list of names; without `amount` the definition's own `amount` is used. |
+| `addMultipleParticles(object, types, amount)` | The same for a list of types. |
+| `addParticlesToPosition(x, y, type, amount)` | Emits at a world point. |
+| `addParticlesFromDefinitionToPosition(x, y, type)` | Emits at a world point with the definition's own amount. |
+| `setThemeOffsetY(layer, foreground, x, y)` (0x40e560) | Sets the position of a theme layer (`posX`, `posY`; layer 1 is the first). `foreground` false is the background list, true the foreground list. `getThemeLayers` now also returns `posX` and `posY`, and `setThemeLayer` accepts them. Space and Stella keep their own two-argument `setThemeOffsetY(theme, offset)`; the boolean second argument tells them apart. |
+| `setMenuParticlesScale(scale)` (0x40da80) | Scales the menu particle system. |
+| `setSelectedBirdDuringSimulation(name)` (0x41ea00) | Names the bird the trajectory simulation launches; the script can read it back as `simulationSelectedBird`. |
+| `drawRubberband(x1, y1, x2, y2, width, sprite)` (0x425c20) | The sling's rubber band as the Android build draws it: the sprite stretched between two points. The other platforms call `drawTexturedLine2D`. |
+| `enableInGameParticlesNative(on)` (0x40daa0) | Switches the level's particles off (`false`) or on. The animated tutorial hides them while it plays. |
+| `drawMenuParticlesNative()` (0x40d9e0) / `updateMenuParticlesNative(dt)` (0x40da20) | Draw and step the menu particle system. The engine already steps every particle each frame, so `update` has nothing left to do; `draw` draws the menu particles at the call. |
+| `enableSmoothZooming(on)` (0x40d240) | Sets a flag on the camera (`smoothZooming` here); the retail scripts call `enableSmoothZooming(true)` when a level starts. |
+| `setStat(...)`, `setStatFloat(...)` (0x412a10) | Do nothing in the executable (they only free their string arguments). |
+| `linkSensor(name)` (0x4241f0) | Does nothing in the executable (the function behind it only frees the string). |
+| `storePersistentData()` (0x40d450) | Does nothing in the executable (a bare `ret`). |
+
+Not implemented yet: `renderMaskedImageNative` (0x4244c0) and `drawSelectedTexturizedObject` (0x424830); no Star Wars script calls either.
+
+## Device services answered locally
+
+The calls that a phone game sends to Game Center, notifications or analytics are answered on this machine. Nothing leaves it.
+
+| Call | What it does here |
+|---|---|
+| `postHighscore(id, score)` | Keeps the best score per board in `leaderboards.lua` (user data) and marks it posted |
+| `getLeaderboardScoresForPlayers` / `getLeaderboardScoresForRange` | Answer with the local entries |
+| `showLeaderboards()` | Opens the achievements page as a list of the boards (games that have the page) |
+| `addNotificationAfter(name, seconds, text)` | Timer that runs while the game is open; at the end the function named in `setNotificationCallback("globalFunction")` is called with `name` |
+| `removeNotification(name)` / `removeAllNotifications()` | Cancel timers |
+| Flurry / Medio event calls | Counted in `analytics.lua` (name = count, last parameters); read it with `loadPersistentFileWrapper` |
+| `checkForUpdates` and other updater calls | Answer that nothing is pending |
+
+Ads and in-app purchases stay no-ops on purpose.
+
+## Round pop-ups
+
+`drawRoundRect(left, top, right, bottom, radius, r, g, b, a)` fills a rectangle with round corners (colours 0 to 1, as in `drawRect`; a radius of half the shorter side gives a pill or a circle). The pop-ups of the engine (leaving a level, the level spawner, the Social levels, the coin and language windows) use it with the green of the pause menu (0.13, 0.42, 0.36) and a pale yellow rim (0.97, 0.95, 0.59); `extras/extra_scripts.lua` has `popupBox(x1, y1, x2, y2)` and `popupButton(x1, y1, x2, y2, r, g, b)` for scripts that want the same look.
+
+## Languages, coins and the fake ad
+
+| Call | What it does |
+|---|---|
+| `res.getLocales()` | The languages the loaded text files carry (`{"en_EN", "fr_FR", ...}`) |
+| `res.useLocale(name)` | Switches every text group to that language and saves it in `language.txt` |
+| `res.loadLocale(group, name)` | Switches one text group |
+| `res.getLocale()` / `getCurrentLocale()` | `"fr_FR"` / `"fr"` (`"en_US"` / `"en"` until one is picked) |
+| `showLanguages()` | Opens the language list (also F9) |
+| `getCoins()`, `addCoins(n)`, `spendCoins(n)` | The wallet (`wallet.lua`); `spendCoins` answers `false` when there are too few |
+| `buyWithCoins(price [, callback [, item]])` | The in-app purchase: opens the "You are about to buy the <item> feature" window (the golden egg's turning shine behind a pig with a dollar sign, cancel / BUY). `callback(true)` after BUY with enough coins (the price is taken), `callback(false)` on cancel or when there are too few (the window then offers the coin window). It answers later, not at once; `spendCoins(price)` is the silent version |
+| `watchAd([callback])` | The fake ad: a placeholder screen for three seconds, then `callback(10)` and +10 coins. It plays only while the Social stand-in server answers (the engine is "online"); otherwise a window says "You must be connected to the internet to do that!" and `callback(0)` is called. `showCoins()` or F10 opens the coin window |
+| `loadPiggyBank(name)` | Makes the green dollar piggy bank of Angry Birds Social (224 x 200, the picture of the purchase window) a sprite called `name`; answers `true` |
+
+The wallet is shared with the Social stand-in server (`socialLevels.server`, and the account named in `socialLevels.player`) whenever it answers; see the Social server's README. The ad calls of the phone games (`showAd`, `hideAd`, `showAdvertisement`, `requestAd`) stay silent: an ad only plays when the player or a script asks for one.
+
 ## New script functions in 2.4 (modding)
 
 Every one of these is native, so it works in every game and version the engine runs. The graphics setters take an optional **target** as their last argument (see "Graphics settings for one target").

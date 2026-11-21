@@ -34,7 +34,9 @@ bool ParseBitmapFont(const std::vector<uint8_t>& bytes, BitmapFont& out, std::st
 
 // A text group: id -> string for the locale in the file.
 struct TextGroup {
-    std::map<std::string, std::string> strings;
+    std::map<std::string, std::string> strings;                               // the language in use (English until another is picked)
+    std::vector<std::string> localeNames;                                     // the languages in the file, in order ("en_EN", "fr_FR", ...)
+    std::map<std::string, std::map<std::string, std::string>> locales;        // the texts of each of them
 };
 bool ParseTextGroup(const std::vector<uint8_t>& bytes, TextGroup& out, std::string* error);
 

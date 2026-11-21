@@ -32,4 +32,5 @@ episodes = {
 
 -- style = "popup"  (Angry Birds 1.6.2 / 1.6.3.1) draws the episode screen with pop-up boxes (names as text, four episodes and the Golden Eggs, the way the mobile
 -- versions draw it) instead of picture tiles. The boxes grow a little under the cursor. "tile" and "order" only apply to the picture tiles. Leave it out for the tiles.
+-- In pop-up style each episode can also have a name, the title of its box:  episodes[2] = { name = "2. My Pack" }
 -- episodes = { style = "popup" }

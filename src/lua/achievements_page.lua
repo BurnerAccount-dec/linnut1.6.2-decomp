@@ -15,6 +15,103 @@ local math, string, table, pairs, ipairs, type, tostring, next, rawget, pcall = 
 
 if env.abAchPage then return end
 
+-- ---------------------------------------------------------------------------------------------------------------------------------
+-- The other device services, answered on this machine. Nothing leaves it.
+--   * Game Center leaderboards: postHighscore(id, score) keeps the best score for each board in leaderboards.lua (in the user data) and
+--     marks it posted for the scripts; getLeaderboardScoresForPlayers / ForRange answer with the local entries; showLeaderboards opens
+--     the achievement page as a list of the boards (in the games that have it).
+--   * notifications: addNotificationAfter(name, seconds, text) is a timer that runs while the game is open; when it ends the callback
+--     given to setNotificationCallback is called with the name. removeNotification(name) and removeAllNotifications cancel.
+--   * Flurry and Medio: every event is counted in analytics.lua (name = count, with the last parameters; a save file like highscores.lua, read with loadPersistentFileWrapper) so a modder can see what a
+--     game reports and when.
+--   * checkForUpdates and the other updater calls: this engine is updated from its releases, so they answer that nothing is pending.
+local os, tostring2 = _G.os, _G.tostring
+local services = {boards = nil, events = nil, timers = {}, dirty = {}, clock = 0, callback = nil}
+env.abServices = services
+
+local function load(file, name)
+    local ok, t = pcall(function() return env.loadPersistentFileWrapper and env.loadPersistentFileWrapper(file) end)
+    if ok and type(t) == "table" and type(t[name]) == "table" then return t[name] end
+    return {}
+end
+local function save(file, name, t)
+    env[name] = t
+    if env.savePersistentLuaFile then pcall(env.savePersistentLuaFile, file, name) end
+end
+local function boards() if not services.boards then services.boards = load("leaderboards.lua", "abLeaderboards") end return services.boards end
+
+env.postHighscore = function(id, score)
+    id = tostring2(id)
+    score = _G.tonumber(score) or 0
+    local b = boards()
+    local e = b[id] or {score = score, plays = 0}
+    e.plays = (e.plays or 0) + 1
+    if score >= (e.score or 0) then e.score = score e.time = os.time() end
+    b[id] = e
+    save("leaderboards.lua", "abLeaderboards", b)
+    local gc = env.gameCenter
+    if type(gc) == "table" and type(gc.leaderboards) == "table" and type(gc.leaderboards[id]) == "table" then gc.leaderboards[id].posted = true end
+end
+env.abLeaderboardList = function()
+    local l = {}
+    for id, e in pairs(boards()) do l[#l + 1] = {name = id, title = id, score = e.score or 0, text = (e.plays or 0) .. " scores posted"} end
+    table.sort(l, function(a, b) return a.title < b.title end)
+    return l
+end
+local function entries(id)
+    local e = id ~= nil and boards()[tostring2(id)]
+    return e and {{rank = 1, name = "You", score = e.score}} or {}
+end
+env.getLeaderboardScoresForPlayers = function(id) return entries(id) end
+env.getLeaderboardScoresForRange = function(id) return entries(id) end
+env.showLeaderboards = function() if env.abAchPage and env.abAchPage.showLeaderboards then env.abAchPage.showLeaderboards() end end
+
+env.setNotificationCallback = function(name) services.callback = name end
+env.addNotificationAfter = function(name, seconds, text)
+    services.timers[tostring2(name)] = {left = _G.tonumber(seconds) or 0, text = text}
+end
+env.removeNotification = function(name) services.timers[tostring2(name)] = nil end
+env.removeAllNotifications = function() services.timers = {} end
+
+local function count(event, a, b)
+    local e = services.events
+    if not e then e = load("analytics.lua", "abAnalytics") services.events = e end
+    local r = e[tostring2(event)] or {count = 0}
+    r.count = r.count + 1
+    if a ~= nil then r.last = type(a) == "table" and a or {[tostring2(a)] = b} end
+    e[tostring2(event)] = r
+    services.dirty.events = true
+end
+env.logFlurryEvent = function(event) count(event) end
+env.logFlurryEventWithParam = function(event, k, v) count(event, k, v) end
+env.logFlurryEventWithParams = function(event, params) count(event, params) end
+env.logMedioEvent = function(event, params) count(event, params) end
+env.logMedioAnonymousIDtoFlurry = function() end
+env.flushMedioEvents = function() services.dirty.events = true end
+env.checkForUpdates = function() end
+env.requestLatestVersionNumber = function() end
+env.callVersionUpdater = function() end
+
+-- called every frame by abAchievementInput: runs the notification timers and writes the event counts now and then
+env.abServicesTick = function(dt)
+    services.clock = services.clock + dt
+    for name, t in pairs(services.timers) do
+        t.left = t.left - dt
+        if t.left <= 0 then
+            services.timers[name] = nil
+            local cb = services.callback and env[services.callback]
+            if type(cb) ~= "function" and services.callback then cb = _G[services.callback] end
+            if type(cb) == "function" then pcall(cb, name, t.text) end
+        end
+    end
+    if services.dirty.events and services.clock - (services.saved or 0) > 5 then
+        services.saved = services.clock
+        services.dirty.events = nil
+        save("analytics.lua", "abAnalytics", services.events)
+    end
+end
+
+
 -- v3.2: the Android data (Google Play's list is the iPhone's, or scripts/achievements.lua) and the Seasons 4.x PC data (its Xbox Live list) too
 local phone = env.iOS or env.deviceModel == "iphone" or env.deviceModel == "ipad" or env.deviceModel == "android" or (env.deviceModel == "windows" and env.commonScriptPath ~= nil)
 if phone and type(env.loadLuaFile) == "function" and env.fileExists and env.scriptPath and (type(env.achievements) ~= "table" or next(env.achievements) == nil) then
@@ -32,7 +129,11 @@ if phone and type(env.loadLuaFile) == "function" and env.fileExists and env.scri
         env.achievements = env.g_achievements
     end
 end
-if type(env.achievements) ~= "table" or next(env.achievements) == nil then return end
+if type(env.achievements) ~= "table" or next(env.achievements) == nil then
+    -- no achievements in this game: the services still need their per-frame step
+    env.abAchievementInput = function() env.abServicesTick(math.min(env.abFrameDt or 1 / 60, 0.1)) end
+    return
+end
 
 -- ---------------------------------------------------------------------------------------------------------------------------------
 -- how to get each one. {P:field|default} is a limit of the achievement processor (Classic / Seasons), {L:name|default} one of
@@ -541,8 +642,16 @@ end
 
 page.show = function()
     page.open = true
+    page.mode = nil
     page.scroll, page.target, page.vel, page.drag = 0, 0, 0, nil
     page.items = list()
+end
+-- the same page as a list of the leaderboards with the best score on each (showLeaderboards, below)
+page.showLeaderboards = function()
+    page.open = true
+    page.mode = "leaderboards"
+    page.scroll, page.target, page.vel, page.drag = 0, 0, 0, nil
+    page.items = env.abLeaderboardList()
 end
 page.close = function()
     if not page.open then return end
@@ -559,6 +668,7 @@ env.userEnabledCrystal = function() return true end
 
 env.abAchievementInput = function()
     clock = clock + math.min(env.abFrameDt or 1 / 60, 0.1)
+    if env.abServicesTick then env.abServicesTick(math.min(env.abFrameDt or 1 / 60, 0.1)) end
     nextPopup()
     local kp, kr, kh = env.keyPressed, env.keyReleased, env.keyHold
     if not page.open then
@@ -610,6 +720,7 @@ env.abDrawAchievements = function()
     local sw, sh, x, w, head, row = geometry()
     local got = 0
     for _, it in ipairs(page.items) do if unlocked(it.name) then got = got + 1 end end
+    local boards = page.mode == "leaderboards"
     env.drawRect(0.03, 0.2, 0.24, 1, 0, 0, sw, sh, false)
     -- rows
     local first = math.max(1, math.floor(page.scroll / row) + 1)
@@ -617,12 +728,15 @@ env.abDrawAchievements = function()
         local it = page.items[i]
         local ry = head + (i - 1) * row - page.scroll
         if ry > sh then break end
-        local when = unlocked(it.name)
+        local when = (not boards) and unlocked(it.name)
         local shade = i % 2 == 0 and 0.08 or 0
         env.drawRect(0.1 + shade, 0.52 + shade, 0.58 + shade, 1, x, ry, x + w, ry + row - 2, false)
         local size = row * 0.7
         local ix = x + row * 0.25
-        if not (when and (icon(it.icon, ix, ry + (row - size) / 2, size) or stamp(it.name, ix, ry + (row - size) / 2, size))) then
+        if boards then
+            font(true)
+            text("#" .. i, ix + size / 2, ry + row / 2, size * 0.6, "VCENTER", "HCENTER")
+        elseif not (when and (icon(it.icon, ix, ry + (row - size) / 2, size) or stamp(it.name, ix, ry + (row - size) / 2, size))) then
             font(true)
             text("?", ix + size / 2, ry + row / 2, size * 0.8, "VCENTER", "HCENTER", 0.45)
         end
@@ -632,8 +746,9 @@ env.abDrawAchievements = function()
         font(false)
         if it.text ~= "" then text(it.text, tx, ry + row * 0.72, row * 0.2, "VCENTER", "LEFT", 0.85) end
         local status = "Locked"
-        if type(when) == "number" then status = _G.os.date("%Y-%m-%d", when) elseif when then status = "Unlocked" end
-        text(status, x + w - row * 0.3, ry + row * 0.5, row * 0.2, "VCENTER", "RIGHT", when and 1 or 0.6)
+        if boards then status = it.score
+        elseif type(when) == "number" then status = _G.os.date("%Y-%m-%d", when) elseif when then status = "Unlocked" end
+        text(status, x + w - row * 0.3, ry + row * 0.5, boards and row * 0.3 or row * 0.2, "VCENTER", "RIGHT", (when or boards) and 1 or 0.6)
     end
     -- scroll bar
     local m = most()
@@ -679,8 +794,9 @@ env.abDrawAchievements = function()
     end
     end
     font(true)
-    text("ACHIEVEMENTS", sw / 2, head * 0.36, head * 0.3, "VCENTER", "HCENTER")
+    text(boards and "LEADERBOARDS" or "ACHIEVEMENTS", sw / 2, head * 0.36, head * 0.3, "VCENTER", "HCENTER")
     font(false)
-    text(got .. " / " .. #page.items .. " achieved", sw / 2, head * 0.72, head * 0.2, "VCENTER", "HCENTER")
+    text(boards and (#page.items .. " on this device") or (got .. " / " .. #page.items .. " achieved"), sw / 2, head * 0.72, head * 0.2, "VCENTER", "HCENTER")
     env.setRenderState()
 end
+

@@ -11,7 +11,7 @@ if "%VER%"=="" (
 set "ZIP=AngryBirdsEngine-%VER%.zip"
 rem Builds a release exe from a clean copy of the committed repository in C:\abbuild,
 rem so no personal folder name ends up inside the exe, then zips it with the licences.
-rem The zip holds the exe, the licences, the README, the CHANGELOG, the docs folder, tools (unluac) and extras. The exe opens PC games from their folder and Android .apk / iPhone .ipa files dropped onto it.
+rem The zip holds the exe, the licences, the README, the CHANGELOG, the docs folder, tools (unluac), extras and the social-server folder. The exe opens PC games from their folder and Android .apk / iPhone .ipa files dropped onto it.
 rem Run it from the x64 Native Tools prompt, inside the engine folder, after committing your changes (git add -A & git commit).
 
 if exist C:\abbuild rmdir /s /q C:\abbuild
@@ -47,6 +47,7 @@ copy CHANGELOG.md dist\CHANGELOG.md || goto fail
 xcopy /e /i /y docs dist\docs || goto fail
 xcopy /e /i /y tools dist\tools || goto fail
 xcopy /e /i /y extras dist\extras || goto fail
+xcopy /e /i /y social-server dist\social-server || goto fail
 powershell -NoProfile -Command "Compress-Archive -Force -Path dist\* -DestinationPath %ZIP%" || goto fail
 
 echo.

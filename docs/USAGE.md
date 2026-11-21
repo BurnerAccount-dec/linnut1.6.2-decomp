@@ -55,6 +55,7 @@ Instead of starting the engine from a shortcut or a copy next to the game, the e
 - Hold Alt: the game runs at twice the speed.
 - Hold Shift while turning the mouse wheel: the zoom moves in much smaller steps.
 - Ctrl+minus / Ctrl+plus: slow down / speed up in 0.25x steps (0.25x to 8x) until the game closes.
+- F9: the language list (the languages the game's text files have; Up / Down and Return, or a click). F10: the coin window (the wallet, "Watch an ad" for 10 coins, "Sync now" with the Social stand-in server). Esc closes both.
 - F7 (in the games that list achievements): the achievement page. A drag (it carries on after a flick), the wheel or the arrow / Page Up / Page Down / Home / End keys scroll it; Esc, F7, Backspace or the back arrow close it; T or the "Test pop-up" button shows the pop-up of a made-up achievement (nothing is saved).
 
 Set the environment variable `AB_SLOWFRAMES=1` to print a line for every frame that took over 25 ms (a debugging aid for stutter).
@@ -221,5 +222,7 @@ Before 2.0.0 the episodes of the menu are written out in `gamelogic.lua`; from 2
 - Leave out what should stay as it is. The names printed on the tiles are part of their pictures.
 
 ### Seasons 2.3.0 and before
+
+For an `.apk` or `.ipa`, put `episodes.lua` next to the `extra_scripts.lua` that is dragged onto the engine with the game (4.1); `style = "popup"` does nothing there. `style = "popup"` draws the episode screen with the pop-up boxes of the mobile versions (names as text, four episodes and the Golden Eggs) instead of picture tiles; the boxes grow under the cursor. `episodes[n] = { name = "2. My Pack" }` sets the title of a box. `tile` and `order` only apply to picture tiles.
 
 Seasons keeps its worlds as packs (`pack1` to `pack15`, listed in the comments of `extras/episodes.lua`) and builds the season and episode pages from them. The engine reads `episodes.lua` from the folder of `gamelogic.lua` by itself (no extra script needed) and `episodes.packs = { pack2 = { "LevelX_39", "LevelV_3" } }` makes a pack hold exactly those levels, in that order. The level files are read from that pack's folder in `data/levels/`. Only the pack lists are changed in Seasons; the order and pictures of the season and episode buttons are the game's own.

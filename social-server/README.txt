@@ -16,8 +16,7 @@ Set-up (once)
          127.0.0.1 jachren.angry-birds-social.appspot.com
          127.0.0.1 dev.angrybirds.com
      (only the first two are needed to play; the others make the domain buttons at the top of every page work)
-  3. This folder holds the server and its pages only. The game's own files (the .swf files and external_assets) and the Poached Eggs
-     level list (poached-eggs.json) are not part of it; bring them from your own copy of the game. Put the game files into the "www" folder next to server.js: the patched
+  3. Put the game files into the "www" folder next to server.js: the patched
      AngryBirdsSocial_fp11_001.swf, index.html and the external_assets folder.
 
 Every time
@@ -64,3 +63,9 @@ Sign-in is shared by every Social page and domain (per computer). The page bar s
 Players page: /classic/players (also "Players" in the page bar) lists every profile with its avatar and every level, open to anybody who can reach the server. E-mail addresses, passwords and tokens are never shown.
 
 Hosting it for others, the limits it keeps and the PUBLIC_HOST setting: see HOSTING.txt.
+
+Coins of the engine
+-------------------
+The engine (F10) keeps a wallet of coins and shares it with this server through /classic/wallet. The server keeps every wallet in social-data.json, so nothing is lost when it is
+stopped, and a wallet that was made before any account existed waits here: as soon as an account with the name the engine uses (socialLevels.player in extras/extra_scripts.lua) is made, the
+wallet's coins are added to the account once. After that the account's coins and the engine's coins are the same.
