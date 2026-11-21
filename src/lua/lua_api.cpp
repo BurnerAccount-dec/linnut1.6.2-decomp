@@ -21,6 +21,10 @@
 #include <fstream>
 #include <iterator>
 #include <vector>
+#include <memory>
+#include <thread>
+#include <mutex>
+#include <map>
 #include "lua/aes.h"
 #include "lua/dec_folder.h"
 #include <cstring>
@@ -3077,8 +3081,8 @@ static bool HttpGetText(const std::string& url, double seconds, std::string& bod
     if (colon != std::string::npos) { host = rest.substr(0, colon); port = rest.substr(colon + 1); }
     if (host.empty()) { error = "no host"; return false; }
 #ifdef _WIN32
-    static bool started = false;
-    if (!started) { WSADATA wsa; if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) { error = "network not available"; return false; } started = true; }
+    static const bool started = [] { WSADATA wsa; return WSAStartup(MAKEWORD(2, 2), &wsa) == 0; }();   // once, and safe from the threads of httpGetAsync
+    if (!started) { error = "network not available"; return false; }
 #endif
     addrinfo hints; std::memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
@@ -3283,6 +3287,50 @@ int l_httpGet(lua_State* L) {
     double seconds = lua_isnumber(L, 2) ? lua_tonumber(L, 2) : 3.0;
     if (HttpGetText(S(L, 1), seconds, body, error)) { lua_pushlstring(L, body.data(), body.size()); return 1; }
     lua_pushnil(L); lua_pushstring(L, error.c_str());
+    return 2;
+}
+// (4.1.2.1) httpGetAsync(url [, seconds]) -> id and httpPoll(id) -> nothing while the answer is on its way, then body, or nil and the reason. The request runs on its own thread,
+// so a server that does not answer cannot hold the game still (httpGet waits for up to the given time, with the frame). Scripts that ask often use this one.
+namespace {
+struct AsyncGet { bool done = false; bool ok = false; std::string body, error; };
+std::mutex g_asyncMutex;
+std::map<int, std::shared_ptr<AsyncGet>> g_asyncGets;
+int g_asyncNext = 1;
+}
+int l_httpGetAsync(lua_State* L) {
+    std::string url = S(L, 1);
+    double seconds = lua_isnumber(L, 2) ? lua_tonumber(L, 2) : 3.0;
+    bool forget = lua_toboolean(L, 3) != 0;      // nobody will ask for the answer: it is dropped when it comes
+    auto job = std::make_shared<AsyncGet>();
+    int id;
+    {
+        std::lock_guard<std::mutex> lock(g_asyncMutex);
+        id = g_asyncNext++;
+        g_asyncGets[id] = job;
+    }
+    std::thread([job, url, seconds, forget, id] {
+        std::string body, error;
+        bool ok = HttpGetText(url, seconds, body, error);
+        std::lock_guard<std::mutex> lock(g_asyncMutex);
+        job->ok = ok; job->body = std::move(body); job->error = std::move(error); job->done = true;
+        if (forget) g_asyncGets.erase(id);
+    }).detach();
+    lua_pushinteger(L, id);
+    return 1;
+}
+int l_httpPoll(lua_State* L) {
+    int id = (int)lua_tointeger(L, 1);
+    std::shared_ptr<AsyncGet> job;
+    {
+        std::lock_guard<std::mutex> lock(g_asyncMutex);
+        auto it = g_asyncGets.find(id);
+        if (it == g_asyncGets.end()) { lua_pushnil(L); lua_pushstring(L, "no such request"); return 2; }
+        if (!it->second->done) return 0;
+        job = it->second;
+        g_asyncGets.erase(it);
+    }
+    if (job->ok) { lua_pushlstring(L, job->body.data(), job->body.size()); return 1; }
+    lua_pushnil(L); lua_pushstring(L, job->error.c_str());
     return 2;
 }
 // playLevelText(text): starts a level given as the text of a level file, like a level file dropped on the window; false when the game has no level loader
@@ -3729,7 +3777,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"drawTexturedRect", l_nothing}, {"drawSome", l_nothing},
         {"drawGameNative", l_drawGameNative}, {"drawBackgroundNative", l_drawBackgroundNative},
         {"drawForegroundNative", l_drawForegroundNative}, {"drawParticlesFiltered", l_drawParticlesFiltered}, {"readDataFile", l_readDataFile}, {"listDataFolder", l_listDataFolder}, {"setObjectDensity", l_setObjectDensity}, {"setDensity", l_setObjectDensity}, {"setFriction", l_setFriction}, {"resizeCircle", l_resizeCircle}, {"setVisible", l_setVisible}, {"isVisible", l_isVisible}, {"inheritTeleportation", l_retailNoop}, {"setRestitution", l_setRestitution}, {"handleJointLimits", l_handleJointLimits}, {"getFullScreenWidth", l_getFullScreenWidth}, {"getFullScreenHeight", l_getFullScreenHeight}, {"performBitwiseOr", l_performBitwiseOr}, {"setWaterForceMultiplier", l_setWaterForceMultiplier}, {"getWaterForceMultiplier", l_getWaterForceMultiplier}, {"setBirdWaterDrag", l_setBirdWaterDrag}, {"setObjectWaterDrag", l_setObjectWaterDrag}, {"fileExistsInAppData", l_fileExistsInAppData}, {"loadTextFileToString", l_loadTextFileToString}, {"isGameOverlayActive", l_isGameOverlayActive}, {"clearScreen", l_retailNoop}, {"isEditing", l_false}, {"setRollingSound", l_retailNoop}, {"setRovioShelfAllowed", l_retailNoop}, {"setChannelCountLimit", l_retailNoop}, {"setOffsetedViewport", l_retailNoop}, {"refreshCurrentLocale", l_retailNoop}, {"recoverRenderObjects", l_retailNoop}, {"drawParticlesNative", l_drawParticlesNative}, {"drawMenuParticlesInAdvance", l_drawMenuParticlesInAdvance},
-        {"setSprite", l_setSprite}, {"setMaterial", l_setMaterial}, {"setTexture", l_setTexture}, {"httpGet", l_httpGet}, {"listTuning", l_listTuning}, {"getTuning", l_getTuning}, {"isNetworkConnected", l_isNetworkConnected}, {"playLevelText", l_playLevelText}, {"setTheme", l_setTheme},
+        {"setSprite", l_setSprite}, {"setMaterial", l_setMaterial}, {"setTexture", l_setTexture}, {"httpGet", l_httpGet}, {"httpGetAsync", l_httpGetAsync}, {"httpPoll", l_httpPoll}, {"listTuning", l_listTuning}, {"getTuning", l_getTuning}, {"isNetworkConnected", l_isNetworkConnected}, {"playLevelText", l_playLevelText}, {"setTheme", l_setTheme},
         {"clipText", l_clipText},
         {"startNewTrajectory", l_startNewTrajectory}, {"addToTrajectory", l_addToTrajectory},
         {"addPuffToTrajectory", l_addPuffToTrajectory}, {"setCustomTrajectorySprites", l_setCustomTrajectorySprites},

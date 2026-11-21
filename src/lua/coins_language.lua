@@ -12,6 +12,7 @@ local env = ...
 if env.abCoins then return end
 
 local floor, max, min = math.floor, math.max, math.min
+local select = select
 -- the numbers a script can change (abCoinsConfig.adReward = 25, ...): coins for one ad, how long the placeholder screen stays, the seconds between two syncs with the server,
 -- and the wait after one that failed
 local cfg = {adReward = 10, adSeconds = 3, syncEvery = 30, retryAfter = 120}
@@ -48,14 +49,12 @@ local function social()
     if name == "Player" or name == "" then name = nil end        -- the default name is nobody's account
     return s.server or "http://localhost", name
 end
-local function sync()
-    if type(env.httpGet) ~= "function" then return end
+local function syncQuery()
     local server, player = social()
-    local query = "/classic/wallet?id=" .. wallet.id .. "&player=" .. urlEncode(player or "") .. "&delta=" .. floor(wallet.pending) .. "&coins=" .. floor(wallet.coins)
-    local body, why = env.httpGet(server .. query, 1.5)
-    if not body and string.find(server, "//localhost", 1, true) then         -- "localhost" may lead to an address the server does not listen on
-        body, why = env.httpGet((string.gsub(server, "//localhost", "//127.0.0.1", 1)) .. query, 1.5)
-    end
+    return server, "/classic/wallet?id=" .. wallet.id .. "&player=" .. urlEncode(player or "") .. "&delta=" .. floor(wallet.pending) .. "&coins=" .. floor(wallet.coins), floor(wallet.pending)
+end
+-- what the server said (or why it did not): true when the wallet was synced. sent is the change that was sent with the question; coins earned since stay pending
+local function syncDone(server, body, why, sent)
     state.why = nil
     local coins, account
     if body then coins, account = string.match(body, "^ok\t(%d+)\t([^\n]*)") end
@@ -64,11 +63,43 @@ local function sync()
         state.status, state.nextSync = "offline", state.clock + cfg.retryAfter
         return false
     end
-    wallet.coins, wallet.pending = tonumber(coins), 0
+    wallet.pending = wallet.pending - sent
+    wallet.coins = tonumber(coins) + wallet.pending
     wallet.account = account ~= "" and account or nil
     state.status, state.nextSync = "online", state.clock + cfg.syncEvery
     save()
     return true
+end
+local asked                                -- the question that is on its way (4.1.2.1: the regular check never waits for the answer, a server that does not answer used to hold the game still for seconds)
+local function sync()                      -- asked for by the player (watching an ad, S in the coin window): waits for the answer, a second and a half at most
+    asked = nil
+    if type(env.httpGet) ~= "function" then return end
+    local server, query, sent = syncQuery()
+    local body, why = env.httpGet(server .. query, 1.5)
+    if not body and string.find(server, "//localhost", 1, true) then         -- "localhost" may lead to an address the server does not listen on
+        body, why = env.httpGet((string.gsub(server, "//localhost", "//127.0.0.1", 1)) .. query, 1.5)
+    end
+    return syncDone(server, body, why, sent)
+end
+local function syncInBackground()          -- the regular check: asks on its own thread and looks at the answer in the frames that follow
+    if type(env.httpGetAsync) ~= "function" then return sync() end
+    if asked == nil then
+        local server, query, sent = syncQuery()
+        asked = {server = server, query = query, sent = sent, id = env.httpGetAsync(server .. query, 1.5)}
+        state.nextSync = state.clock + 1e9                     -- not again before this one is answered
+        return
+    end
+    local function pack(...) return select("#", ...), ... end
+    local n, body, why = pack(env.httpPoll(asked.id))
+    if n == 0 then return end                                  -- still on its way
+    if not body and not asked.second and string.find(asked.server, "//localhost", 1, true) then
+        asked.second = true
+        asked.id = env.httpGetAsync((string.gsub(asked.server, "//localhost", "//127.0.0.1", 1)) .. asked.query, 1.5)
+        return
+    end
+    local a = asked
+    asked = nil
+    syncDone(a.server, body, why, a.sent)
 end
 
 -- ---------------------------------------------------------------------------------------------------------------- the script functions
@@ -122,8 +153,12 @@ env.showCoins = function() page.mode = "coins" end
 -- answers (the coins come from it). Both are checked when the ad is asked for (a second at most); the window says which is missing.
 env.isSocialServerReachable = function() return sync() and true or false end
 env.isOnline = function() return (env.isNetworkConnected == nil or env.isNetworkConnected()) and env.isSocialServerReachable() end
+local networkAt, networkIs = -1e9, false
 env.getWalletInfo = function()
-    return {coins = wallet.coins, pending = wallet.pending, id = wallet.id, account = wallet.account, server = state.status, network = env.isNetworkConnected and env.isNetworkConnected() or false}
+    if state.clock - networkAt > 10 then                       -- trying a connection takes a moment: not on every call
+        networkIs, networkAt = env.isNetworkConnected and env.isNetworkConnected() or false, state.clock
+    end
+    return {coins = wallet.coins, pending = wallet.pending, id = wallet.id, account = wallet.account, server = state.status, network = networkIs}
 end
 env.watchAd = function(callback)
     local from = page.mode
@@ -347,7 +382,7 @@ local previousInput = env.abAchievementInput
 env.abAchievementInput = function()
     local dt = min(env.abFrameDt or 1 / 60, 0.1)
     state.clock = state.clock + dt
-    if state.clock >= state.nextSync then sync() end
+    if asked ~= nil or state.clock >= state.nextSync then syncInBackground() end
     local kp, kr, kh = env.keyPressed, env.keyReleased, env.keyHold
     if not page.mode then
         if type(kp) == "table" and (kp.F9 or kp.F10) then

@@ -669,6 +669,8 @@ saveLuaFile("mymod.lua", "myMod", true)
 | Function | What it does |
 |---|---|
 | `httpGet(url [, seconds])` | One blocking request to a plain `http://` address (not `https://`); returns the body as a string, or `nil` and a reason (`"cannot connect to localhost:80"`, `"status 404"`). `seconds` (default 3) is how long to wait. |
+| `httpGetAsync(url [, seconds [, forget]])` | (4.1.2.1) The same request on its own thread: returns an id at once and the game does not wait. With `forget = true` nobody asks for the answer. |
+| `httpPoll(id)` | Gives nothing while the request is on its way, then the body, or `nil` and the reason (once; the id is used up). Use `select("#", httpPoll(id))` to tell "not yet" from a `nil` answer. |
 | `playLevelText(text)` | Starts a level given as the text of a level file, the way dropping the file on the window does (the game's own loading mode, then the birds, the physics and the keys). Returns `false` when the game has no level loader. |
 
 `extras/extra_scripts.lua` (section 9, table `socialLevels`) uses both for the Social levels list: `socialLevels.server` is the address of the server, `socialLevels.key` the key that opens the list.

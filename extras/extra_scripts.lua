@@ -249,7 +249,7 @@ end
 --   gravityZone: a sensor ball in front of the slingshot. Whatever flies in gets its own upwards gravity and a violet tint until it leaves again. Right click anywhere in a level to move the zone there.
 laserMod = {
 	laserBird = true,
-	waveShader = true,
+	waveShader = false,   -- (4.1.2.1) off: the shimmer is a full-screen pass over the background and took about half of the frame rate; set it to true for the shimmer
 	gravityZone = true,
 
 	birdNames = { "RedBigBird", "BIRD_BIG_BROTHER" },   -- a bird whose name or definition contains one of these can fire the laser (4.1.2: the Big Brother Bird; the Red Bird has Stella's ricochet, section 10)
@@ -1537,7 +1537,7 @@ do
 		if not ok then _G.print("Social levels: this game cannot start a level from text\n") return end
 		current, sentScore = entry, 0
 		if highscores ~= nil then highscores["dropped.temp"] = nil end        -- the score of the level before is not this level's
-		if socialLevels.sendScores then httpGet(socialLevels.server .. "/classic/play?key=" .. entry.key .. "&player=" .. urlEncode(socialLevels.player), 1) end
+		if socialLevels.sendScores then (httpGetAsync or httpGet)(socialLevels.server .. "/classic/play?key=" .. entry.key .. "&player=" .. urlEncode(socialLevels.player), 1, true) end
 	end
 
 	local function anyKey(keys, pressed)
@@ -1551,7 +1551,8 @@ do
 		local entry = highscores["dropped.temp"]
 		if type(entry) ~= "table" or type(entry.score) ~= "number" or entry.score <= sentScore then return end
 		sentScore = entry.score
-		httpGet(socialLevels.server .. "/classic/score?key=" .. current.key .. "&player=" .. urlEncode(socialLevels.player) .. "&score=" .. _G.string.format("%d", entry.score), 1)
+		local fire = httpGetAsync or httpGet
+		fire(socialLevels.server .. "/classic/score?key=" .. current.key .. "&player=" .. urlEncode(socialLevels.player) .. "&score=" .. _G.string.format("%d", entry.score), 1, true)
 	end
 
 	local function handle()
