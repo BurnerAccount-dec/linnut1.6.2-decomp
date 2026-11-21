@@ -2325,12 +2325,34 @@ int l_setObjectParameter(lua_State* L) {
 // ---- v2.4 natives, every game
 // setScale(name, sx [, sy]) / getScale(name) -> sx, sy: the scale the sprite of an object is drawn with (what setObjectParameter(name, 5, v) sets; a missing sy
 // means sy = sx). Turns scaled drawing on in the games that need it. It scales the picture only: the shape stays as it is (resizeCircle changes the shape).
+// (4.1) setRenderScale(sx [, sy [, cx, cy]]) / getRenderScale() -> sx, sy, cx, cy: the scale of everything drawn after it, grown from the point (cx, cy) (the middle of the
+// screen when they are left out), so the pictures stay where their positions say. setRenderState scales from the corner (0, 0): positions then have to be divided by the scale.
+// setRenderScale replaces the translation of the render state; a later setRenderState replaces the scale. setScale(sx, ...) and getScale() with numbers or nothing do the same.
+int l_setRenderScale(lua_State* L) {
+    float sx = N(L, 1), sy = lua_isnumber(L, 2) ? N(L, 2) : sx, cx, cy;
+    if (lua_isnumber(L, 3) && lua_isnumber(L, 4)) { cx = N(L, 3); cy = N(L, 4); }
+    else {
+        lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+        lua_getfield(L, -1, "screenWidth"); cx = lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) * 0.5f : 0; lua_pop(L, 1);
+        lua_getfield(L, -1, "screenHeight"); cy = lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) * 0.5f : 0; lua_pop(L, 2);
+    }
+    P(L)->SetRenderScaleAround(sx, sy, cx, cy);
+    return 0;
+}
+int l_getRenderScale(lua_State* L) {
+    float sx, sy, cx, cy;
+    P(L)->GetRenderScaleAround(sx, sy, cx, cy);
+    lua_pushnumber(L, sx); lua_pushnumber(L, sy); lua_pushnumber(L, cx); lua_pushnumber(L, cy);
+    return 4;
+}
 int l_setScale(lua_State* L) {
+    if (lua_isnumber(L, 1)) return l_setRenderScale(L);          // setScale(2): the whole render state, around the middle of the screen
     float sx = N(L, 2), sy = lua_isnumber(L, 3) ? N(L, 3) : sx;
     P(L)->SetObjectScale(S(L, 1), sx, sy);
     return 0;
 }
 int l_getScale(lua_State* L) {
+    if (lua_gettop(L) == 0 || lua_isnumber(L, 1)) return l_getRenderScale(L);
     float sx = 1, sy = 1;
     if (!P(L)->GetObjectScale(S(L, 1), sx, sy)) { lua_pushnil(L); return 1; }
     lua_pushnumber(L, sx); lua_pushnumber(L, sy);
@@ -3544,7 +3566,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"getGravityForceMultiplier", l_getGravityForceMultiplier}, {"setAngularDamping", l_setAngularDamping},
         {"setFixedRotation", l_setFixedRotation}, {"setActive", l_setActive}, {"multiplyVelocity", l_multiplyVelocity}, {"setAsSensor", l_setAsSensor}, {"setSensor", l_setAsSensor}, {"setFilterMask", l_setFilterMask}, {"setFilterCategory", l_setFilterCategory},
         {"getAngularVelocity", l_getAngularVelocity}, {"setSleeping", l_setSleeping},
-        {"getAngle", l_getAngle}, {"getWorldPoint", l_getWorldPoint}, {"setObjectParameter", l_setObjectParameter}, {"setBodyType", l_setBodyType}, {"getBodyType", l_getBodyType}, {"setScale", l_setScale}, {"getScale", l_getScale}, {"setSpeedCap", l_setSpeedCap}, {"getSpeedCap", l_getSpeedCap}, {"clearSpeedCap", l_clearSpeedCap}, {"getTouchingObjects", l_getTouchingObjects}, {"rayCast", l_rayCast}, {"fileExists", l_fileExists},
+        {"getAngle", l_getAngle}, {"getWorldPoint", l_getWorldPoint}, {"setObjectParameter", l_setObjectParameter}, {"setBodyType", l_setBodyType}, {"getBodyType", l_getBodyType}, {"setScale", l_setScale}, {"setRenderScale", l_setRenderScale}, {"getRenderScale", l_getRenderScale}, {"getScale", l_getScale}, {"setSpeedCap", l_setSpeedCap}, {"getSpeedCap", l_getSpeedCap}, {"clearSpeedCap", l_clearSpeedCap}, {"getTouchingObjects", l_getTouchingObjects}, {"rayCast", l_rayCast}, {"fileExists", l_fileExists},
         {"setPhysicsSimulationScale", l_setPhysicsSimulationScale}, {"setPhysicsEnabled", l_setPhysicsEnabled}, {"setThemeOffsetY", l_setThemeOffsetY}, {"setStartingCameraValue", l_setStartingCameraValue},
         {"isPhysicsEnabled", l_isPhysicsEnabled}, {"setLevelLimits", l_setLevelLimits},
         {"setTopLeft", l_setTopLeft}, {"getCamera", l_getCamera}, {"getThemeLayers", l_getThemeLayers}, {"setThemeLayer", l_setThemeLayer}, {"setWorldScale", l_setWorldScale}, {"setMaxWorldScale", l_setMaxWorldScale}, {"resetMouseWheelScale", l_resetMouseWheelScale},

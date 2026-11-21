@@ -186,7 +186,13 @@ Ads and in-app purchases stay no-ops on purpose.
 | `showLanguages()` | Opens the language list (also F9) |
 | `getCoins()`, `addCoins(n)`, `spendCoins(n)` | The wallet (`wallet.lua`); `spendCoins` answers `false` when there are too few |
 | `buyWithCoins(price [, callback [, item]])` | The in-app purchase: opens the "You are about to buy the <item> feature" window (the golden egg's turning shine behind a pig with a dollar sign, cancel / BUY). `callback(true)` after BUY with enough coins (the price is taken), `callback(false)` on cancel or when there are too few (the window then offers the coin window). It answers later, not at once; `spendCoins(price)` is the silent version |
-| `watchAd([callback])` | The fake ad: a placeholder screen for three seconds, then `callback(10)` and +10 coins. It plays only while the Social stand-in server answers (the engine is "online"); otherwise a window says "You must be connected to the internet to do that!" and `callback(0)` is called. `showCoins()` or F10 opens the coin window |
+| `watchAd([callback])` | The fake ad: a placeholder screen for `abCoinsConfig.adSeconds` seconds, then `callback(reward)` and the coins. It plays only while the computer is on a network (`isNetworkConnected()`) and the Social stand-in server answers; otherwise a window says "You must be connected to the internet to do that!" (no network) or "The Social server does not answer." and `callback(0)` is called. `showCoins()` or F10 opens the coin window |
+| `isNetworkConnected()` | `true` and this computer's address when it is on a network (Wi-Fi or cable), else `false`. Nothing is sent, so it answers at once |
+| `isSocialServerReachable()` | Asks the Social stand-in server (`socialLevels.server`, a second at most); also syncs the wallet |
+| `isOnline()` | Both of the above |
+| `getWalletInfo()` | `{coins, pending, id, account, server = "never" / "online" / "offline", network}` |
+| `abCoinsConfig` | A table of numbers that can be changed: `adReward` (10), `adSeconds` (3), `syncEvery` (30), `retryAfter` (120) |
+| `onCoinsChanged(balance, change)`, `onAdWatched(reward)`, `onLanguageChanged(code)` | Functions a script can define (global) to hear about those events |
 | `loadPiggyBank(name)` | Makes the green dollar piggy bank of Angry Birds Social (224 x 200, the picture of the purchase window) a sprite called `name`; answers `true` |
 
 The wallet is shared with the Social stand-in server (`socialLevels.server`, and the account named in `socialLevels.player`) whenever it answers; see the Social server's README. The ad calls of the phone games (`showAd`, `hideAd`, `showAdvertisement`, `requestAd`) stay silent: an ad only plays when the player or a script asks for one.

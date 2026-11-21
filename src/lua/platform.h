@@ -211,6 +211,8 @@ public:
     // writes translation when it got at least 2 values, scale with 4, angle with 5, pivot with 7. Values
     // that were not passed keep their previous setting. argc is the number of Lua arguments.
     virtual void SetRenderState(int argc, const float* args) { (void)argc; (void)args; }
+    virtual void SetRenderScaleAround(float sx, float sy, float cx, float cy) { (void)sx; (void)sy; (void)cx; (void)cy; }   // setRenderScale: the render state scales around (cx, cy)
+    virtual void GetRenderScaleAround(float& sx, float& sy, float& cx, float& cy) { sx = sy = 1; cx = cy = 0; }
     virtual void GetRenderTranslation(float& tx, float& ty) { tx = ty = 0; }   // where the scripts last moved the render state (drawUITextNative keeps it, as the exe does)
     virtual void SetAlpha(float a) { (void)a; }
     // the optional pivot arguments of the drawing functions: while on, the render state's scale grows from this point (in the coordinates the function draws in) and not from the origin

@@ -268,6 +268,14 @@ public:
     void SetFullScreen(bool on) override { Platform::SetFullScreen(on); fullScreenReq_ = true; }
     void SetRenderState(int argc, const float* args) override;
     void GetRenderTranslation(float& tx, float& ty) override { tx = state_.tx; ty = state_.ty; }
+    // setRenderScale(sx, sy, cx, cy): the render state's transform is (p + t) * s, so scaling around the point c without moving it needs t = c * (1 / s - 1)
+    float scaleCx_ = 0, scaleCy_ = 0;
+    void SetRenderScaleAround(float sx, float sy, float cx, float cy) override {
+        if (std::fabs(sx) < 1e-4f) sx = sx < 0 ? -1e-4f : 1e-4f;
+        if (std::fabs(sy) < 1e-4f) sy = sy < 0 ? -1e-4f : 1e-4f;
+        state_.sx = sx; state_.sy = sy; state_.tx = cx * (1 / sx - 1); state_.ty = cy * (1 / sy - 1); scaleCx_ = cx; scaleCy_ = cy;
+    }
+    void GetRenderScaleAround(float& sx, float& sy, float& cx, float& cy) override { sx = state_.sx; sy = state_.sy; cx = scaleCx_; cy = scaleCy_; }
     bool levelParticlesByScript_ = false;
     bool pauseGuard_ = false;
 
