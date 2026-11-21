@@ -502,8 +502,8 @@ function updateEditor(dt, time)
 	end
 
 	if editorJointPage and #selectedObjects == 2 then
-		local jointType = (keyPressed["F1"] and 1) or (keyPressed["F2"] and 2) or (keyPressed["F3"] and 3) or (keyPressed["F4"] and 4) or (keyPressed["F5"] and 5)
-		if jointType then      -- F1 distance, F2 weld, F3 revolute, F4 prismatic, F5 "destroy attached"
+		local jointType = (keyPressed["F1"] and 1) or (keyPressed["F2"] and 2) or (keyPressed["F3"] and 3) or (keyPressed["F4"] and 4) or (keyPressed["F5"] and 5) or (keyPressed["F6"] and 6) or (keyPressed["F7"] and 7) or (keyPressed["F8"] and 8) or (keyPressed["F9"] and 9) or (keyPressed["F10"] and 10) or (keyPressed["F11"] and 11)
+		if jointType then      -- F1 distance, F2 weld, F3 revolute, F4 prismatic, F5 "destroy attached", F6 pulley, F7 gear, F8 mouse, F9 line / wheel, F10 friction, F11 rope
 			editor.newJoint = { name = selectedObjects[1].name .. selectedObjects[2].name,
 								end1 = selectedObjects[1].name, end2 = selectedObjects[2].name, type = jointType,
 								coordType = 2, x1 = 0, y1 = 0, x2 = 0, y2 = 0 }

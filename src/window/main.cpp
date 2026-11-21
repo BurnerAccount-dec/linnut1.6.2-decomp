@@ -10,6 +10,7 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <io.h>
+#include <direct.h>
 #include <dbghelp.h>
 #include <crtdbg.h>
 #pragma comment(lib, "dbghelp.lib")
@@ -20,6 +21,7 @@
 #include <cmath>
 #include <cstdio>
 #include <exception>
+#include <iostream>
 #include <cstdlib>
 #include <cstring>
 #include <cctype>
@@ -114,6 +116,8 @@ struct WindowConfig {
     std::string publisher = "Rovio";
     int width = 1280, height = 720;
     bool fullscreen = false, showCursor = true;
+    bool debugTools = true;                         // 3.9: config.lua debugTools = false: no command prompt, no debug keys, no Ctrl + minus / plus speed keys (the game as the retail exe plays)
+    std::string floatingScoreFont = "FONT_SCORE";   // 3.9: config.lua floatingScoreFont (see GamePlatform::ResUseFont)
     bool console = true;                            // 3.7.1: config.lua console = false closes the command prompt window the exe opens (Windows)
     std::string deviceModel = "windows";            // v2.5: config.lua deviceModel / isLiteVersion pick the asset folder in the scripts (for example "meego" + lite = 864x480_lite)
     bool isLiteVersion = false, isBetaVersion = false;
@@ -141,6 +145,8 @@ static void ReadConfigLua(const std::string& path, WindowConfig& out) {
         lua_getglobal(L, "height"); if (lua_isnumber(L, -1)) out.height = (int)lua_tonumber(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "fullscreen"); if (lua_isboolean(L, -1)) out.fullscreen = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
         lua_getglobal(L, "showCursor"); if (lua_isboolean(L, -1)) out.showCursor = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
+        lua_getglobal(L, "debugTools"); if (lua_isboolean(L, -1)) out.debugTools = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
+        lua_getglobal(L, "floatingScoreFont"); if (lua_isstring(L, -1)) out.floatingScoreFont = lua_tostring(L, -1); lua_pop(L, 1);
         lua_getglobal(L, "console"); if (lua_isboolean(L, -1)) out.console = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
         lua_getglobal(L, "box2d");                  // 21, 22, "2.1.1", "2.2.0" ...
         if (lua_isstring(L, -1)) {
@@ -156,6 +162,56 @@ static void ReadConfigLua(const std::string& path, WindowConfig& out) {
 }
 
 #ifdef _WIN32
+// 3.9: the exe is a window program, so a command prompt only exists when one is asked for. It joins the prompt the exe was started from, else opens its own and
+// connects the C streams to it (unless the output is redirected to a file or a pipe, which is left alone).
+static void EnsureConsole() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    // Redirected output (a file, a pipe) is left alone. The check is made before the console exists: AllocConsole gives the process console handles,
+    // but the C streams of a window program are not connected to anything until they are reopened here.
+    HANDLE out0 = GetStdHandle(STD_OUTPUT_HANDLE), in0 = GetStdHandle(STD_INPUT_HANDLE);
+    const bool outRedirected = out0 && out0 != INVALID_HANDLE_VALUE && GetFileType(out0) != FILE_TYPE_UNKNOWN;
+    const bool inRedirected = in0 && in0 != INVALID_HANDLE_VALUE && GetFileType(in0) != FILE_TYPE_UNKNOWN;
+    if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
+        if (!AllocConsole()) return;
+        SetConsoleTitleA("Angry Birds engine");
+    }
+    FILE* f = nullptr;
+    if (!outRedirected) { freopen_s(&f, "CONOUT$", "w", stdout); freopen_s(&f, "CONOUT$", "w", stderr); }
+    if (!inRedirected) freopen_s(&f, "CONIN$", "r", stdin);
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    std::setvbuf(stderr, nullptr, _IONBF, 0);
+    std::ios::sync_with_stdio();
+}
+
+// config.lua beside the exe says console = false or debugTools = false: no prompt is opened at all (a quick look at the text, the real reading comes later)
+static bool ConfigWantsNoConsole() {
+    const std::string self = ab::SelfExePath();
+    size_t cut = self.find_last_of("/\\");
+    FILE* f = std::fopen(((cut == std::string::npos ? std::string() : self.substr(0, cut + 1)) + "config.lua").c_str(), "rb");
+    if (!f) return false;
+    std::string text; char buf[4096]; size_t n;
+    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) text.append(buf, n);
+    std::fclose(f);
+    size_t pos = 0;
+    while (pos < text.size()) {
+        size_t end = text.find('\n', pos); if (end == std::string::npos) end = text.size();
+        std::string line = text.substr(pos, end - pos); pos = end + 1;
+        size_t b = line.find_first_not_of(" \t"); if (b == std::string::npos) continue;
+        line = line.substr(b);
+        for (const char* key : {"console", "debugTools"}) {
+            const size_t k = std::strlen(key);
+            if (line.compare(0, k, key) != 0) continue;
+            size_t e = line.find_first_not_of(" \t", k);
+            if (e == std::string::npos || line[e] != '=') continue;
+            e = line.find_first_not_of(" \t", e + 1);
+            if (e != std::string::npos && line.compare(e, 5, "false") == 0) return true;
+        }
+    }
+    return false;
+}
+
 // The title bar and the taskbar show the icon of the game's own exe (AngryBirds.exe / AngryBirdsSeasons.exe
 // in the game folder; nothing is shipped with the engine). The icon is built from the exe's icon group at
 // the exact size the title bar (small) and the taskbar (big) ask for.
@@ -176,9 +232,11 @@ static HICON IconOfSize(HMODULE module, LPSTR group, int size) {
 static void SetGameIcon(SDL_Window* window, const std::string& gameName) {
     std::string name;
     for (char c : gameName) if (c != ' ') name += c;
-    const std::string candidates[] = {name + ".exe", "AngryBirds.exe", "AngryBirdsSeasons.exe"};
+    // the engine's own exe first (after a replacement it carries the icon of the exe it replaced), then the saved originals and the game's exes
+    const std::string candidates[] = {ab::SelfExePath(), name + ".exe.original", "AngryBirds.exe.original", name + ".exe", "AngryBirds.exe", "AngryBirdsSeasons.exe"};
     HICON large = nullptr, small = nullptr;
     for (const std::string& file : candidates) {
+        if (file.empty()) continue;
         HMODULE module = LoadLibraryExA(file.c_str(), nullptr, LOAD_LIBRARY_AS_DATAFILE);
         if (!module) continue;
         LPSTR group = nullptr;
@@ -248,6 +306,11 @@ static int strcasecmp_ab(const char* a, const char* b) {
 }
 
 static int GameMain(int argc, char** argv) {
+    if (const char* logFile = std::getenv("AB_LOGFILE")) {       // 3.9: everything the engine prints goes to this file (no command prompt needed)
+        std::freopen(logFile, "w", stdout);
+        std::freopen(logFile, "a", stderr);
+        std::setvbuf(stdout, nullptr, _IONBF, 0);
+    }
     std::string scripts, data, shot, configPath, userData;
     int shotFrames = 0; int testW = 0, testH = 0;
     bool retinaOn = false, decryptOnly = false, useDec = false;      // --decrypt / --use-dec: the dec folder (see lua/dec_folder.h)
@@ -261,6 +324,7 @@ static int GameMain(int argc, char** argv) {
     std::vector<std::string> extraLua;            // v3.0: .lua files named on the command line (dragged onto the exe with an .apk / .ipa / the game): loaded like extra_scripts.lua
     std::vector<std::string> exeTargets;           // v3.3: .exe files named on the command line (dragged onto the engine): the engine takes their place (--restore-exe: gives them back)
     bool restoreExe = false, askNo = false;
+    int debugToolsAsk = -1;                        // 3.9: --debug-tools on|off for --replace-exe: the config.lua of the replaced exe gets debugTools = true / false (-1: ask)
     std::vector<std::string> startupCmds;          // v2.2: --cmd "<command>" (repeatable), --startup <file> (one command per line), --prompt (type them before the game starts)
     std::vector<std::pair<int, std::string>> timedCmds;
     struct TimedResize { int frame, w, h; };
@@ -290,6 +354,9 @@ static int GameMain(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--restore-exe") && i + 1 < argc) { exeTargets.push_back(argv[++i]); restoreExe = true; }
         else if (!std::strcmp(argv[i], "--yes")) askNo = true;           // no questions asked (for --replace-exe / --restore-exe)
         else if (argv[i][0] != '-' && std::strlen(argv[i]) > 4 && !strcasecmp_ab(argv[i] + std::strlen(argv[i]) - 4, ".exe")) exeTargets.push_back(argv[i]);
+        else if (argv[i][0] != '-' && std::strlen(argv[i]) > 13 && (!strcasecmp_ab(argv[i] + std::strlen(argv[i]) - 13, ".apk.original") || !strcasecmp_ab(argv[i] + std::strlen(argv[i]) - 13, ".ipa.original"))) { exeTargets.push_back(std::string(argv[i], std::strlen(argv[i]) - 9)); restoreExe = true; }
+        else if (argv[i][0] != '-' && std::strlen(argv[i]) > 13 && !strcasecmp_ab(argv[i] + std::strlen(argv[i]) - 13, ".exe.original")) { exeTargets.push_back(std::string(argv[i], std::strlen(argv[i]) - 9)); restoreExe = true; }   // 3.9: the saved original dropped on the engine puts itself back
+        else if (!std::strcmp(argv[i], "--debug-tools") && i + 1 < argc) { const char* v = argv[++i]; debugToolsAsk = (!std::strcmp(v, "on") || !std::strcmp(v, "1") || !std::strcmp(v, "yes")) ? 1 : 0; }
         else if (argv[i][0] != '-' && std::strlen(argv[i]) > 4 && !strcasecmp_ab(argv[i] + std::strlen(argv[i]) - 4, ".lua")) extraLua.push_back(argv[i]);
         else if (argv[i][0] != '-' && std::strlen(argv[i]) > 4 && (!strcasecmp_ab(argv[i] + std::strlen(argv[i]) - 4, ".apk") || !strcasecmp_ab(argv[i] + std::strlen(argv[i]) - 4, ".ipa"))) apkPath = argv[i];
         else if (!std::strcmp(argv[i], "--fps") && i + 1 < argc) startFps = std::atoi(argv[++i]);
@@ -299,14 +366,39 @@ static int GameMain(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--resize-at") && i + 3 < argc) { resizes.push_back({std::atoi(argv[i + 1]), std::atoi(argv[i + 2]), std::atoi(argv[i + 3])}); i += 3; }
         else if (!std::strcmp(argv[i], "--size") && i + 2 < argc) { testW = std::atoi(argv[++i]); testH = std::atoi(argv[++i]); }
     }
+    if (!apkPath.empty() && !askNo && shot.empty() && exeTargets.empty()) {      // 3.9: a package dropped on the engine: play it, or let the engine take its place (the same question as for an .exe)
+        const int what = ab::AskPackageAction(apkPath);
+        if (what == 2) return 0;
+        if (what == 1) { const int r = restoreExe ? 0 : ab::ReplaceOrRestoreExe(apkPath, true, -1); return r == 2 ? 2 : 0; }
+    }
     if (!exeTargets.empty()) {       // v3.3: an .exe was dragged onto the engine (or named with --replace-exe / --restore-exe): the engine takes its place, or gives it back, and ends
         int worst = 0;
         for (const std::string& target : exeTargets) {
-            int r = restoreExe ? ab::RestoreExe(target, !askNo) : ab::ReplaceOrRestoreExe(target, !askNo);
+            int r = restoreExe ? ab::RestoreExe(target, !askNo) : ab::ReplaceOrRestoreExe(target, !askNo, debugToolsAsk);
             if (r == 2) worst = 2; else if (r == 1 && worst == 0) worst = 1;
         }
         return worst == 2 ? 2 : 0;
     }
+#ifdef _WIN32
+    // 3.9: the prompt is opened first, so every line prints, unless config.lua says it is not wanted (or the output goes to AB_LOGFILE / a --screenshot test)
+    if (!std::getenv("AB_LOGFILE") && !ConfigWantsNoConsole()) { bool test = false; for (int i = 1; i < argc; i++) if (!std::strcmp(argv[i], "--screenshot")) test = true; if (!test) EnsureConsole(); }
+#endif
+    // 3.9: started from another folder (a prompt that was opened elsewhere, a shortcut without a "start in" folder, the replaced exe run by its full path): the game's
+    // files are looked for beside the exe, so the working folder is changed to it when the game is not found where the exe was started
+    if (scripts.empty() && data.empty() && apkPath.empty()) {
+        auto has = [](const char* f) { FILE* t = std::fopen(f, "rb"); if (t) std::fclose(t); return t != nullptr; };
+        const bool here = has("data/scripts/gamelogic.lua") || has("data/scripts_common/gamelogic.lua") || has("data/gamelogic.lua") || has("scripts/gamelogic.lua");
+        const std::string self = ab::SelfExePath();
+        const size_t cut = self.find_last_of("/\\");
+        if (!here && cut != std::string::npos) {
+#ifdef _WIN32
+            if (_chdir(self.substr(0, cut).c_str()) == 0) std::printf("working folder: %s (where the exe is)\n", self.substr(0, cut).c_str());
+#else
+            if (chdir(self.substr(0, cut).c_str()) == 0) std::printf("working folder: %s (where the exe is)\n", self.substr(0, cut).c_str());
+#endif
+        }
+    }
+
     if (promptFirst && !shotFrames) {        // v2.2: the commands are typed before the game starts; they run on the first frame, when the scripts are loaded
         std::printf("Startup prompt: type console commands (help lists them); an empty line or start runs the game.\n");
         char b[1024];
@@ -483,10 +575,18 @@ static int GameMain(int argc, char** argv) {
         if (f) { std::fclose(f); configPath = beside; } else configPath = "config.lua";
     }
     ReadConfigLua(configPath, wc);
+    if (!wc.debugTools) {              // 3.9: the developers' tools are off: no command prompt, no debug keys (the same switch as AB_NODEBUGKEYS)
+        wc.console = false;
 #ifdef _WIN32
-    // 3.7.1: config.lua console = false: the command prompt window is closed (the game runs without it; the typed console commands and the printed lines are gone with it).
-    // It stays when the prompt was asked for (--prompt) or the exe was started from a prompt that is already open and its output is redirected.
-    if (!wc.console && !promptFirst && !shotFrames) FreeConsole();
+        _putenv_s("AB_NODEBUGKEYS", "1");
+#else
+        setenv("AB_NODEBUGKEYS", "1", 1);
+#endif
+    }
+#ifdef _WIN32
+    // 3.9: the exe has no console of its own (it is a window program, so nothing flashes up when the prompt is off). config.lua console = true (the default) opens one now;
+    // it is not opened when the exe was started from a prompt (the output goes there) or when the output is redirected.
+    if ((wc.console || promptFirst) && !std::getenv("AB_LOGFILE")) EnsureConsole();
 #endif
     if (shotFrames) { WindowConfig keep = wc; wc = WindowConfig(); if (testW > 0) { wc.width = testW; wc.height = testH; } wc.product = keep.product; wc.imagePath = keep.imagePath; wc.fontPath = keep.fontPath; wc.deviceModel = keep.deviceModel; wc.isLiteVersion = keep.isLiteVersion; wc.isBetaVersion = keep.isBetaVersion; wc.audioPath = keep.audioPath; wc.localizationPath = keep.localizationPath; wc.levelPath = keep.levelPath; wc.showCursor = keep.showCursor; wc.box2d = keep.box2d; }   // test runs use the default window
 
@@ -542,6 +642,7 @@ static int GameMain(int argc, char** argv) {
     cfg.screenHeight = (float)ph;
     GamePlatform platform(data);
     platform.extraScriptFiles = extraLua;
+    platform.floatingScoreFont = wc.floatingScoreFont;
     // playVideo and openURL: the system opens the file or address (the default video player, the browser)
     platform.openExternal = [](const std::string& target) {
         std::string url = target;
@@ -558,7 +659,7 @@ static int GameMain(int argc, char** argv) {
         }
         if (SDL_OpenURL(url.c_str()) != 0) std::printf("could not open %s: %s\n", url.c_str(), SDL_GetError());
     };
-    if (!shotFrames || std::getenv("AB_CONSOLE")) StartConsole();   // AB_CONSOLE=1 also in a --screenshot run (tests)
+    if ((!shotFrames || std::getenv("AB_CONSOLE")) && wc.debugTools && wc.console) StartConsole();   // AB_CONSOLE=1 also in a --screenshot run (tests)
     // --userdata <folder> keeps settings.lua / highscores.lua there; "original" is the folder the game itself
     // uses, %APPDATA%\Rovio\<product>, whose encrypted files are read and written in their own format
     if (userData.empty() && !shotFrames) userData = "original";     // like the game itself; --userdata . keeps saves in the working folder
@@ -666,7 +767,7 @@ static int GameMain(int argc, char** argv) {
                         break;
                     }
                     // Ctrl+minus / Ctrl+plus slow down / speed up the game until it is closed
-                    if (e.key.keysym.mod & KMOD_CTRL) {
+                    if ((e.key.keysym.mod & KMOD_CTRL) && wc.debugTools) {
                         SDL_Keycode k = e.key.keysym.sym;
                         if (k == SDLK_MINUS || k == SDLK_KP_MINUS) platform.AddSpeed(-0.25f);
                         else if (k == SDLK_EQUALS || k == SDLK_PLUS || k == SDLK_KP_PLUS) platform.AddSpeed(0.25f);
@@ -761,7 +862,7 @@ static int GameMain(int argc, char** argv) {
         for (const std::string& l : TakeConsoleLines()) platform.ConsoleCommand(l);
         { bool v; if (platform.TakeVsyncChange(v)) SDL_GL_SetSwapInterval(v ? 1 : 0); }
         platform.BeginFrame();
-        platform.SetSpeedBoost((SDL_GetModState() & KMOD_ALT) != 0);     // holding Alt doubles the speed (Shift is the games' own zoom / editor key)
+        platform.SetSpeedBoost(wc.debugTools && (SDL_GetModState() & KMOD_ALT) != 0);     // holding Alt doubles the speed (Shift is the games' own zoom / editor key)
         platform.RunFrame(dt);
         SDL_ShowCursor((wc.showCursor || platform.NeedsSystemCursor()) ? SDL_ENABLE : SDL_DISABLE);   // editors whose scripts draw no hand cursor
         platform.EndFrame();

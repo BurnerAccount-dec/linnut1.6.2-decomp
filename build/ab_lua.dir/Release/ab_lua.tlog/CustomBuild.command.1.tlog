@@ -1,3 +1,163 @@
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\EDITOR_CLASSIC_LUA.CPP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/editor_classic.lua -DSYMBOL=kEditorClassicLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/editor_classic_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\HATCHERY_NATIVES_LUA.CPP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/hatchery_natives.lua -DSYMBOL=kHatcheryNativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/hatchery_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\SPACE_NATIVES_LUA.CPP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/space_natives.lua -DSYMBOL=kSpaceNativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/space_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\SPACE_EDITOR_LUA.CPP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/space_editor.lua -DSYMBOL=kSpaceEditorLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/space_editor_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\MOTION_LUA.CPP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/motion.lua -DSYMBOL=kMotionLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/motion_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\COMPO_IMAGE_LUA.CPP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/CompoImage.lua -DSYMBOL=kCompoImageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/compo_image_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\INVISIBLE_BUTTON_LUA.CPP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/InvisibleButton.lua -DSYMBOL=kInvisibleButtonLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/invisible_button_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\EDITOR_JOINT_PAGE_LUA.CPP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/editorjointPage.luac -DSYMBOL=kEditorJointPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/editor_joint_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\OVERLAY_PAGE_LUA.CPP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/overlayPage.luac -DSYMBOL=kOverlayPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/overlay_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\JOINT_PAGE_LUA.CPP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/joint_page.lua -DSYMBOL=kJointPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/joint_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\FRIENDS_SERVER_LUA.CPP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/friends_server.lua -DSYMBOL=kFriendsServerLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/friends_server_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\FRIENDS2_NATIVES_LUA.CPP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/friends2_natives.lua -DSYMBOL=kFriends2NativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/friends2_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\STELLA_NATIVES_LUA.CPP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/stella_natives.lua -DSYMBOL=kStellaNativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/stella_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\ACHIEVEMENTS_PAGE_LUA.CPP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/achievements_page.lua -DSYMBOL=kAchievementsPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/achievements_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\PAGE_LUA.CPP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/page.luac -DSYMBOL=kPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\BUILD\CMAKEFILES\4B833BA4255D54C1B7265E6DC7DD62A4\ITEM_LUA.CPP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/item.luac -DSYMBOL=kItemLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/item_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
 ^C:\USERS\HUGOFRITZ\DOWNLOADS\ENGINE\CMAKELISTS.TXT
 setlocal
 "C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/Hugofritz/Downloads/engine -BC:/Users/Hugofritz/Downloads/engine/build --check-stamp-file C:/Users/Hugofritz/Downloads/engine/build/CMakeFiles/generate.stamp

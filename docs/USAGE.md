@@ -24,19 +24,27 @@ Drop `.lua` files onto the exe together with it (select the `.apk`/`.ipa` and th
 
 "Play Tournament" logs in as a guest on a stand-in server inside the engine. The `.apk` has no tournament levels (the server sent them). If you have opened Friends 1.0.0's `.ipa` with this engine, or that `.ipa` is in the same folder as the `.apk`, its 30 tournament levels are copied to `data\levels\friends_1.0.0` and used. To play other levels instead, put level files in `%LOCALAPPDATA%\AngryBirdsEngine\apk\Angry Birds Friends 2.0.0\data\levels\tournament` (make the `tournament` folder); while that folder has levels, they replace Friends 1.0.0's. Each file is a level in the game's format named `Level<code>.lua`; the 30 `Level2000-*.lua` files from Friends 1.0.0's `levels\pack57` folder work as they are. With up to six files, all of them are the tournament; with more, six are played each week, in turn, the week ending on Monday at midnight. Star scores: a `starLimits.lua` in the same folder (`Level2000-1 = {silverScore = 96000, goldScore = 110000}`) if there is one, else the level file's own scores (Friends 1.0.0's levels have them), else 40000 / 60000. Coins, bought power-ups and slingshots, the week's scores, trophies and the daily wheel are kept in `settings.lua`.
 
-### Replacing the game's own exe with the engine (3.3)
+### Replacing the game's own exe with the engine (3.3; icons, tools question and `.original` drop 3.9)
 
 Instead of starting the engine from a shortcut or a copy next to the game, the engine can take the place of the game's exe, so the original `AngryBirds.exe` (its shortcuts, its Start menu entry, its Steam or desktop icon) starts the engine.
 
 * **Drag the game's `.exe` onto the engine exe.** A question appears ("Replace this exe with the engine?"); on Yes the original is saved as `AngryBirds.exe.original` in the same folder and the engine is copied over `AngryBirds.exe`. The engine starts from the folder of the exe it was started as, the way it always looks for `data` and `scripts` beside it, so nothing else is needed. This works for any `.exe`, not only the game's (a game from the Seasons, Space or Rio folders works the same way).
+
+**.apk and .ipa:** dragging a mobile package onto the engine asks "Play it / Replace with the engine / Cancel" (`--yes` skips the question and plays it; `--replace-exe <package>` replaces it directly). On replace the package takes the engine's contents under its own name, the original is saved as `<name>.apk.original` (or `.ipa.original`), and dropping the package again puts it back. There is no icon or tools question for packages, and the result runs only where a Windows program runs.
+* **The replaced exe looks like the original (3.9).** The engine copies the icons and the version information of the original exe into its copy, so Explorer, the taskbar and the title bar show the retail icon (the small one left of the window title too). If the original has no icon, there is none to copy.
+* **The question about the tools (3.9).** After the Yes, the engine asks whether to keep the command prompt and the developers' tools (debug keys, Ctrl + minus / plus and Alt speed, the console) on or turn them off, so the game plays like the retail one. The answer is written to `config.lua` beside the exe as `debugTools = true / false` (and `console` with it); edit those lines to change it later. `--debug-tools on|off` answers it on the command line; with `--yes` and no `--debug-tools` the file is left alone.
+* **Drag the saved original (`AngryBirds.exe.original`) onto the engine (3.9)** to put it back; it is the same as dragging the replaced exe.
 * **Drag the replaced exe onto the engine again to undo it.** The engine notices that the file already is the engine and that a saved original is beside it, and offers to put the original back (the `.original` file is then removed). If the file is the engine but no `.original` is there, nothing is changed and you are told so.
 * **Command line:** `AngryBirdsEngine.exe --replace-exe "C:\Games\AngryBirds\AngryBirds.exe"` does the same as the drop (and the undo when it is already replaced), `--restore-exe "..."` only puts the original back, and `--yes` leaves out the questions (for scripts). The exit code is 0 when it was done, 1 when nothing was to be done or you said no, 2 on an error.
+* **Protected folders (3.9).** In `C:\Program Files (x86)` Windows only lets an administrator change files. The engine then shows the usual Windows "Run as administrator" question and does the replace or the restore in that run; answer Yes. (There is no way around that question, and the engine does not try: it is Windows' own protection.)
 * **Safe by design:** the original is copied first and the engine is written to a temporary file beside the target and moved over it, so if the game is still running (Windows will not let its exe be overwritten) or the disk is full, nothing is changed and you get a message. The exe being dragged cannot be the engine itself. A game that updates itself will put its own exe back; drop it again.
 
 ### Options
 
 - `--scripts <folder>`, `--data <folder>`: where the scripts and data are.
-- `console = false` in `config.lua` (3.7.1): the command prompt window the engine opens beside the game is closed, so only the game window shows. The printed lines and the typed console commands are gone with it; `--prompt` keeps the window. The default is `true`.
+- `console = false` in `config.lua` (3.7.1): no command prompt window opens beside the game, so only the game window shows. Since 3.9 the exe is a window program, so the prompt no longer flashes up for a few frames first. The printed lines and the typed console commands are gone with it; `--prompt` keeps the window. The default is `true`. Started from a command prompt, the exe prints into that prompt and the prompt does not wait for it to end.
+- `debugTools = false` in `config.lua` (3.9): the engine runs without the developers' tools: no command prompt, no debug keys or editor button (the same as `AB_NODEBUGKEYS=1`), no Ctrl + minus / plus and Alt speed keys. The default is `true`. Dropping an exe on the engine asks for it (see above).
+- `floatingScoreFont = "FONT_INGAME_SCORE"` in `config.lua` (3.9): the font of the floating scores, the numbers that rise from a destroyed pig or block. The 1.0.0 and 1.6.x PC scripts ask for `FONT_INGAME_SCORE`, which has a brown outline, while the other releases use `FONT_SCORE` with the black outline; the engine uses `FONT_SCORE` unless this line names another font. `"FONT_INGAME_SCORE"` brings the brown one back.
 - `--config <file>`: window settings (title, size, fullscreen, cursor); by default the `config.lua` above `--data`.
 - `--size <width> <height>`: window size for `--screenshot` test renders.
 - `--userdata <folder>`: keep saves in this folder instead (`.` is the working folder). The default, `original`, uses `%APPDATA%\<publisher>\<product>` (from `config.lua`) and shares progress with the original game. The first overwrite of a file keeps a copy as `<file>.original-backup`.
@@ -53,7 +61,7 @@ Set the environment variable `AB_SLOWFRAMES=1` to print a line for every frame t
 
 ### Debug keys and the level editor
 
-The developers' tools in the scripts are switched on in every game (set `AB_NODEBUGKEYS=1` to run without them). `releaseBuild` itself stays on, because turning it off unlocks every level and the whole game; only the code that reads the debug keys is told it is off.
+The developers' tools in the scripts are switched on in every game (set `AB_NODEBUGKEYS=1` or `debugTools = false` in `config.lua` to run without them). `releaseBuild` itself stays on, because turning it off unlocks every level and the whole game; only the code that reads the debug keys is told it is off.
 
 - 8: draw the hit boxes (sleeping objects in another colour; since 3.6 the engine draws them itself in the games whose scripts have no such drawing, 1.0.0 among them), 9: hide / show the background, 0 or F: frames per second.
 - C (or K in the older versions): clear the level. G (Rio): fail the level. Space (Rio): single step. Shift+Left / Shift+Right: previous / next level (where the scripts have it, for example 2.0.0).
@@ -81,8 +89,9 @@ Two editors exist. The **classic editor** is Rovio's own (the 1.6.2 editor, whic
 | R | Rotate the selected objects |
 | Ctrl + C, then click | Copy the selection and place the copy |
 | Delete | Remove the selection (and its joints) |
-| F1 (in a level, nothing selected in the editor) | Level spawner: a picture of the level, Left / Right pick another level, Up / Down another folder, Return puts its blocks, pigs, joints and birds (they join the line-up) at the cursor; a click on the picture lets you move it about as a half-transparent copy first (Return puts it down), a level file dropped on the window does the same |
-| J, or F1 .. F5 (two objects selected; Shift + J in 1.6.x, where J is a block key) | Open the joint window (F1 distance, F2 weld, F3 revolute, F4 prismatic, F5 "destroy attached"); 1.6.x games without one get the window of Seasons 2.3.0 |
+| F12 (Angry Birds 1.6.2, in a menu or in a level) | Social levels: a list of the levels of a stand-in Angry Birds Social server (`socialLevels.server` in `extras/extra_scripts.lua`, `http://localhost` by default); Up / Down choose, Left / Right turn the page, Return or a click plays the level, Escape closes; the list shows each level's best score, and the score of a cleared level is sent to the server (`socialLevels.player` is the name, `socialLevels.sendScores = false` stops it) |
+| F1 (in a level, nothing selected in the editor) | Level spawner: a picture of the level, Left / Right pick another level, Up / Down another folder, Return puts its blocks, pigs, joints and birds (they join the line-up) at the cursor; a click on the picture lets you move it about as a half-transparent copy first (Return puts it down), a level file dropped on the window does the same (dropped while no level is running, in the menus, it is played like a level picked from the menu) |
+| J, or F1 .. F5 (two objects selected; Shift + J in 1.6.x, where J is a block key) | Open the joint window (F1 distance, F2 weld, F3 revolute, F4 prismatic, F5 "destroy attached", and in the 1.6.x window F6 pulley, F7 gear, F8 mouse, F9 line / wheel, F10 friction, F11 rope; the type button in the window cycles through all eleven); 1.6.x games without one get the window of Seasons 2.3.0 |
 | Tab | Physics on / off (the level is restored when it is switched off) |
 | Shift + P | Play the level, Escape (also on the clear / failed page) comes back to the editor |
 | Ctrl + S | Save the level |
@@ -156,7 +165,9 @@ Environment variables, set in the command prompt before starting the engine (`se
 | `AB_JOINTDBG=<text>` | print the joints created for objects whose name contains the text |; also logs the entry count of every `createJoints` call
 | `AB_DUMPLEVEL=<prefix>` | writes the decrypted text of every loaded level to `<prefix>.<level>.lua` (compiled levels stay bytecode; `unluac` reads them) |
 | `AB_CONSOLE=1` | keep the typed console on in a `--screenshot` run (tests) |
-| `AB_NODEBUGKEYS=1` | run without the developers' keys and the editor button |
+| `AB_TRACK=<object>` or `AB_TRACK=all` (3.9) | the same as the console command `track`: prints the object's position and angle twice a second, or with `all` every object that moved or turned (about once a second); with `AB_LOGFILE` this is a physics log without a prompt |
+| `AB_LOGFILE=<file>` (3.9) | everything the engine prints (including `AB_DMGDBG` lines) goes to this file instead of a command prompt; read it afterwards or with `type` |
+| `AB_NODEBUGKEYS=1` | run without the developers' keys and the editor button (`debugTools = false` in `config.lua` does this and more) |
 | `AB_SLOWFRAMES=1` | print every frame that took over 25 ms |
 | `AB_CONTACTDBG=<text>`, `AB_PHYSDBG=1`, `AB_BODYDUMP=n` | physics debugging: contacts whose names contain the text, general physics log, positions of every body every n steps |
 | `AB_DMGDBG=1` | prints every contact that damages or destroys a block (`DMG`, `DESTROYED`) |
@@ -197,3 +208,18 @@ These variables print what the engine does to the command prompt window, for bug
 | `AB_SLOWFRAMES=1` | every frame that took over 25 ms |
 
 When you report a problem, the last 40 lines of this output plus the name of the level are usually enough to find it.
+
+
+## Episodes file (Angry Birds 1.6.2 and 1.6.3.1)
+
+Before 2.0.0 the episodes of the menu are written out in `gamelogic.lua`; from 2.0.0 on they are one table in `episodes.lua`. The engine's `extras/extra_scripts.lua` (version 19 or newer, which Classic 1.6.2 loads by itself) reads an `episodes.lua` from the same folder as `gamelogic.lua` and builds the old menu from it. Copy `extras/extra_scripts.lua` and `extras/episodes.lua` into the game's `data/scripts` folder, then edit `episodes.lua`:
+
+- The menu has six episode pages: episode 1 holds worlds 1 to 3, episode 2 worlds 4 and 5, episodes 3 to 5 three worlds each, episode 6 worlds 15 to 17.
+- `episodes[n].worlds` lists the worlds of episode n, in order: `{ folder = "pack1", levels = { "Level1", "Level57" } }`. `folder` is the folder under `data/levels/` the level files are read from (a folder of your own works), `levels` the file names without `.lua`. A world may hold fewer levels than its page: the other places stay empty.
+- `episodes[n].tile` is the picture on the episode's tile (1 to 6, the stock episodes' pictures, names included).
+- `episodes.order` is the order of the tiles on the episode screen, as episode numbers: `{ 2, 1, 3, 4, 5, 6 }` shows episode 2 first. Its score, stars and lock move with it.
+- Leave out what should stay as it is. The names printed on the tiles are part of their pictures.
+
+### Seasons 2.3.0 and before
+
+Seasons keeps its worlds as packs (`pack1` to `pack15`, listed in the comments of `extras/episodes.lua`) and builds the season and episode pages from them. The engine reads `episodes.lua` from the folder of `gamelogic.lua` by itself (no extra script needed) and `episodes.packs = { pack2 = { "LevelX_39", "LevelV_3" } }` makes a pack hold exactly those levels, in that order. The level files are read from that pack's folder in `data/levels/`. Only the pack lists are changed in Seasons; the order and pictures of the season and episode buttons are the game's own.

@@ -563,7 +563,7 @@ ab_engine_SOURCE_DIR:STATIC=C:/Users/Hugofritz/Downloads/engine
 ab_input_LIB_DEPENDS:STATIC=general;lua51;
 
 //Dependencies for the target
-ab_lua_LIB_DEPENDS:STATIC=general;lua51;general;ab_game;
+ab_lua_LIB_DEPENDS:STATIC=general;lua51;general;ab_game;general;ws2_32;
 
 //Dependencies for the target
 ab_physics_LIB_DEPENDS:STATIC=general;ab_physics_b2v21;general;ab_physics_b2v22;general;ab_game;

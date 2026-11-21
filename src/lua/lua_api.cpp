@@ -4,6 +4,15 @@
 #include <winsock2.h>
 #include <iphlpapi.h>
 #pragma comment(lib, "iphlpapi.lib")
+#pragma comment(lib, "ws2_32.lib")
+#include <ws2tcpip.h>
+#else
+#include <sys/socket.h>
+#include <sys/select.h>
+#include <netdb.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <cerrno>
 #endif
 #include <algorithm>
 #include <ctime>
@@ -2673,6 +2682,7 @@ int l_getTimeDifference(lua_State* L) {
 // "foreground" / "trajectory" / "particles". Without a target it changes the render state, exactly as before (a convenience for one value of setRenderState).
 std::string TargetArg(lua_State* L, int i) { return lua_type(L, i) == LUA_TSTRING ? std::string(lua_tostring(L, i)) : std::string(); }
 int GfxNumbers(lua_State* L) { int n = lua_gettop(L); return (n > 0 && lua_type(L, n) == LUA_TSTRING) ? n - 1 : n; }   // how many arguments are not the target
+int l_setDrawZRange(lua_State* L) { P(L)->SetDrawZRange((int)N(L, 1), (int)N(L, 2)); return 0; }
 int l_setAlpha(lua_State* L) {
     std::string t = TargetArg(L, 2);
     if (t.empty()) P(L)->SetAlpha(N(L, 1));
@@ -2949,6 +2959,99 @@ int l_drawParticlesNative(lua_State* L) { P(L)->DrawParticles(false); return 0; 
 int l_drawMenuParticlesInAdvance(lua_State* L) { P(L)->DrawMenuParticlesInAdvance(); (void)L; return 0; }
 int l_setSprite(lua_State* L) { P(L)->SetSprite(S(L, 1), S(L, 2)); return 0; }
 int l_setMaterial(lua_State* L) { P(L)->SetMaterial(S(L, 1), S(L, 2)); return 0; }
+
+// (3.9) httpGet(url [, seconds]) -> the body of a plain http:// page, or nil and a reason. One blocking request (HTTP/1.0, the server closes the connection),
+// for the stand-in servers of the games that went offline (the Social levels list of the extra scripts). https is not supported.
+#ifdef _WIN32
+typedef SOCKET HttpSocket;
+static void HttpClose(HttpSocket s) { closesocket(s); }
+static const HttpSocket kNoSocket = INVALID_SOCKET;
+#else
+typedef int HttpSocket;
+static void HttpClose(HttpSocket s) { close(s); }
+static const HttpSocket kNoSocket = -1;
+#endif
+static bool HttpGetText(const std::string& url, double seconds, std::string& body, std::string& error) {
+    if (url.compare(0, 7, "http://") != 0) { error = "only http:// addresses"; return false; }
+    std::string rest = url.substr(7), host, path = "/", port = "80";
+    size_t slash = rest.find('/');
+    if (slash != std::string::npos) { path = rest.substr(slash); rest = rest.substr(0, slash); }
+    host = rest;
+    size_t colon = rest.rfind(':');
+    if (colon != std::string::npos) { host = rest.substr(0, colon); port = rest.substr(colon + 1); }
+    if (host.empty()) { error = "no host"; return false; }
+#ifdef _WIN32
+    static bool started = false;
+    if (!started) { WSADATA wsa; if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) { error = "network not available"; return false; } started = true; }
+#endif
+    addrinfo hints; std::memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
+    addrinfo* list = nullptr;
+    if (getaddrinfo(host.c_str(), port.c_str(), &hints, &list) != 0 || !list) { error = "cannot find " + host; return false; }
+    HttpSocket sock = kNoSocket;
+    for (addrinfo* a = list; a && sock == kNoSocket; a = a->ai_next) {
+        HttpSocket s = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
+        if (s == kNoSocket) continue;
+#ifdef _WIN32
+        u_long nonBlocking = 1; ioctlsocket(s, FIONBIO, &nonBlocking);
+#else
+        fcntl(s, F_SETFL, fcntl(s, F_GETFL, 0) | O_NONBLOCK);
+#endif
+        int r = connect(s, a->ai_addr, (int)a->ai_addrlen);
+        bool ok = r == 0;
+        if (!ok) {
+            fd_set w; FD_ZERO(&w); FD_SET(s, &w);
+            timeval tv; tv.tv_sec = (long)seconds; tv.tv_usec = (long)((seconds - (long)seconds) * 1e6);
+            if (select((int)s + 1, nullptr, &w, nullptr, &tv) > 0) {
+                int err = 0;
+#ifdef _WIN32
+                int len = sizeof err; getsockopt(s, SOL_SOCKET, SO_ERROR, (char*)&err, &len);
+#else
+                socklen_t len = sizeof err; getsockopt(s, SOL_SOCKET, SO_ERROR, &err, &len);
+#endif
+                ok = err == 0;
+            }
+        }
+        if (!ok) { HttpClose(s); continue; }
+#ifdef _WIN32
+        nonBlocking = 0; ioctlsocket(s, FIONBIO, &nonBlocking);
+        DWORD ms = (DWORD)(seconds * 1000); setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&ms, sizeof ms); setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, (const char*)&ms, sizeof ms);
+#else
+        fcntl(s, F_SETFL, fcntl(s, F_GETFL, 0) & ~O_NONBLOCK);
+        timeval tv; tv.tv_sec = (long)seconds; tv.tv_usec = (long)((seconds - (long)seconds) * 1e6);
+        setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv); setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
+#endif
+        sock = s;
+    }
+    freeaddrinfo(list);
+    if (sock == kNoSocket) { error = "cannot connect to " + host + ":" + port; return false; }
+    std::string request = "GET " + path + " HTTP/1.0\r\nHost: " + host + "\r\nConnection: close\r\n\r\n";
+    if (send(sock, request.data(), (int)request.size(), 0) != (int)request.size()) { HttpClose(sock); error = "send failed"; return false; }
+    std::string reply;
+    char buf[8192];
+    for (;;) {
+        int n = (int)recv(sock, buf, sizeof buf, 0);
+        if (n <= 0) break;
+        reply.append(buf, (size_t)n);
+        if (reply.size() > 64u * 1024 * 1024) break;
+    }
+    HttpClose(sock);
+    size_t headEnd = reply.find("\r\n\r\n");
+    if (reply.compare(0, 5, "HTTP/") != 0 || headEnd == std::string::npos) { error = "no answer"; return false; }
+    int status = std::atoi(reply.c_str() + reply.find(' ') + 1);
+    if (status != 200) { error = "status " + std::to_string(status); return false; }
+    body = reply.substr(headEnd + 4);
+    return true;
+}
+int l_httpGet(lua_State* L) {
+    std::string body, error;
+    double seconds = lua_isnumber(L, 2) ? lua_tonumber(L, 2) : 3.0;
+    if (HttpGetText(S(L, 1), seconds, body, error)) { lua_pushlstring(L, body.data(), body.size()); return 1; }
+    lua_pushnil(L); lua_pushstring(L, error.c_str());
+    return 2;
+}
+// playLevelText(text): starts a level given as the text of a level file, like a level file dropped on the window; false when the game has no level loader
+int l_playLevelText(lua_State* L) { lua_pushboolean(L, P(L)->PlayLevelText(S(L, 1))); return 1; }
 int l_setTexture(lua_State* L) { P(L)->SetTexture(S(L, 1), S(L, 2)); return 0; }
 int l_setTheme(lua_State* L) { P(L)->SetTheme(S(L, 1)); return 0; }
 int l_startNewTrajectory(lua_State* L) { P(L)->StartNewTrajectory(); return 0; }
@@ -3385,7 +3488,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"drawTexturedRect", l_nothing}, {"drawSome", l_nothing},
         {"drawGameNative", l_drawGameNative}, {"drawBackgroundNative", l_drawBackgroundNative},
         {"drawForegroundNative", l_drawForegroundNative}, {"drawParticlesFiltered", l_drawParticlesFiltered}, {"readDataFile", l_readDataFile}, {"listDataFolder", l_listDataFolder}, {"setObjectDensity", l_setObjectDensity}, {"setDensity", l_setObjectDensity}, {"setFriction", l_setFriction}, {"resizeCircle", l_resizeCircle}, {"setVisible", l_setVisible}, {"isVisible", l_isVisible}, {"inheritTeleportation", l_retailNoop}, {"setRestitution", l_setRestitution}, {"handleJointLimits", l_handleJointLimits}, {"getFullScreenWidth", l_getFullScreenWidth}, {"getFullScreenHeight", l_getFullScreenHeight}, {"performBitwiseOr", l_performBitwiseOr}, {"setWaterForceMultiplier", l_setWaterForceMultiplier}, {"getWaterForceMultiplier", l_getWaterForceMultiplier}, {"setBirdWaterDrag", l_setBirdWaterDrag}, {"setObjectWaterDrag", l_setObjectWaterDrag}, {"fileExistsInAppData", l_fileExistsInAppData}, {"loadTextFileToString", l_loadTextFileToString}, {"isGameOverlayActive", l_isGameOverlayActive}, {"clearScreen", l_retailNoop}, {"isEditing", l_false}, {"setRollingSound", l_retailNoop}, {"setRovioShelfAllowed", l_retailNoop}, {"setChannelCountLimit", l_retailNoop}, {"setOffsetedViewport", l_retailNoop}, {"refreshCurrentLocale", l_retailNoop}, {"recoverRenderObjects", l_retailNoop}, {"drawParticlesNative", l_drawParticlesNative}, {"drawMenuParticlesInAdvance", l_drawMenuParticlesInAdvance},
-        {"setSprite", l_setSprite}, {"setMaterial", l_setMaterial}, {"setTexture", l_setTexture}, {"setTheme", l_setTheme},
+        {"setSprite", l_setSprite}, {"setMaterial", l_setMaterial}, {"setTexture", l_setTexture}, {"httpGet", l_httpGet}, {"playLevelText", l_playLevelText}, {"setTheme", l_setTheme},
         {"clipText", l_clipText},
         {"startNewTrajectory", l_startNewTrajectory}, {"addToTrajectory", l_addToTrajectory},
         {"addPuffToTrajectory", l_addPuffToTrajectory}, {"setCustomTrajectorySprites", l_setCustomTrajectorySprites},
@@ -3408,7 +3511,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"updateThemeSprite", l_updateThemeSprite},
         {"drawLayer", l_nothing},
         {"drawRectLines", l_drawRectLines}, {"drawBoxNative", l_drawBoxNative}, {"getCurrentTime", l_getCurrentTime}, {"rewind", l_rewind}, {"getRewindDepth", l_getRewindDepth}, {"getRewindState", l_getRewindState}, {"setRewindLimit", l_setRewindLimit},
-        {"getTimeDifference", l_getTimeDifference}, {"setAlpha", l_setAlpha}, {"setBlendMode", l_setBlendMode}, {"setShader", l_setShader}, {"setTintChannel", l_setTintChannel}, {"setVisualRotation", l_setVisualRotation}, {"setOffset", l_setOffset}, {"getOffset", l_getOffset}, {"setLayoutScale", l_setLayoutScale}, {"setMirror", l_setMirror}, {"createShader", l_createShader}, {"setShaderParam", l_setShaderParam}, {"getShaderError", l_getShaderError}, {"listShaders", l_listShaders}, {"resetRenderOverrides", l_resetRenderOverrides}, {"setTint", l_setTint}, {"getTint", l_getTint}, {"resetTint", l_resetTint}, {"setSkew", l_setSkew}, {"setBend", l_setBend}, {"setRenderZ", l_setRenderZ}, {"setBlur", l_setBlur}, {"setPixelate", l_setPixelate}, {"resetBlur", l_resetBlur}, {"resetPixelate", l_resetPixelate}, {"drawUITextNative", l_drawUITextNative},
+        {"getTimeDifference", l_getTimeDifference}, {"setAlpha", l_setAlpha}, {"setDrawZRange", l_setDrawZRange}, {"setBlendMode", l_setBlendMode}, {"setShader", l_setShader}, {"setTintChannel", l_setTintChannel}, {"setVisualRotation", l_setVisualRotation}, {"setOffset", l_setOffset}, {"getOffset", l_getOffset}, {"setLayoutScale", l_setLayoutScale}, {"setMirror", l_setMirror}, {"createShader", l_createShader}, {"setShaderParam", l_setShaderParam}, {"getShaderError", l_getShaderError}, {"listShaders", l_listShaders}, {"resetRenderOverrides", l_resetRenderOverrides}, {"setTint", l_setTint}, {"getTint", l_getTint}, {"resetTint", l_resetTint}, {"setSkew", l_setSkew}, {"setBend", l_setBend}, {"setRenderZ", l_setRenderZ}, {"setBlur", l_setBlur}, {"setPixelate", l_setPixelate}, {"resetBlur", l_resetBlur}, {"resetPixelate", l_resetPixelate}, {"drawUITextNative", l_drawUITextNative},
         {"getTImeDifferenceInSeconds", l_getTimeDifferenceInSeconds}, {"getTimeDifferenceInSeconds", l_getTimeDifferenceInSeconds}, {"checkRegistrationResult", l_false}, {"getClipboardText", l_emptyString},
         {"canOpenProgram", l_false}, {"openProgram", l_nothing}, {"hasLocationCapability", l_false}, {"drawLevelParticlesNative", l_drawLevelParticlesNative},
         {"loadDATFileToTable", l_loadDATFileToTable}, {"getGameTimerMillis", l_getGameTimerMillis}, {"loadParticleFile", l_loadParticleFile}, {"setDeltaTimeMultiplier", l_setDeltaTimeMultiplier}, {"getDeltaTimeMultiplier", l_getDeltaTimeMultiplier}, {"setWorldGravity", l_setWorldGravity}, {"getWorldGravity", l_getWorldGravity},

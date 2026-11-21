@@ -72,9 +72,60 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\editor_classic_lua.cpp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\hatchery_natives_lua.cpp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\space_natives_lua.cpp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\space_editor_lua.cpp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\motion_lua.cpp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\compo_image_lua.cpp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\invisible_button_lua.cpp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\editor_joint_page_lua.cpp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\overlay_page_lua.cpp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\joint_page_lua.cpp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\friends_server_lua.cpp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\friends2_natives_lua.cpp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\stella_natives_lua.cpp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\achievements_page_lua.cpp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\page_lua.cpp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\item_lua.cpp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
     <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\CMakeLists.txt" />
   </ItemGroup>
   <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{3DBFEB72-B5F3-38B1-B766-E117AFF16743}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files">
       <UniqueIdentifier>{CB8B5693-A90E-3E83-A5DF-6CA5C706BF13}</UniqueIdentifier>
     </Filter>

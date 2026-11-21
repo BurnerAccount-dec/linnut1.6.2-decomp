@@ -43,6 +43,7 @@ public:
 
     void Attach(ScriptHost& scripts);
     void RunFrame(float dt);
+    bool PlayLevelText(const std::string& text) override;   // v3.9: a level file's text, started like a dropped level
     void FileDropped(const std::string& path);   // v3.1: a file dropped on the window
     // Speed: the time step of every frame is multiplied by the speed (Ctrl+minus / Ctrl+plus change it
     // until the game is closed) and by 2 while Shift is held.
@@ -168,6 +169,7 @@ public:
     void ResCreateSpriteSheet(const std::string& path) override;
     bool ResPeekSprite(const std::string& file, const std::string& sprite, float& w, float& h, float& px, float& py) override;
     std::map<std::string, SpriteSheet> peekedSheets_;   // ResPeekSprite: sheet files read for their sprite list only
+    std::string trackName_;                             // 3.9: console track <name>
     std::set<std::string> missingFonts_;                // fonts looked for once (ResUseFont)
     void ResCreateCompoSpriteSet(const std::string& path) override;
     void ResReleaseCompoSpriteSet(const std::string& path) override { sprites_.ReleaseCompoSet(path); }
@@ -266,6 +268,8 @@ public:
 
     bool editing_ = false;
     bool cursorDrawn_ = false;
+    int zRangeLo_ = -1, zRangeHi_ = -1;   // Stella: scene +0x380 / +0x384 (-1 = 170 for the upper end)
+    void SetDrawZRange(int lo, int hi) override { zRangeLo_ = lo; zRangeHi_ = hi; }
     bool gameDrawn_ = false, gameDrawnLast_ = false;   // Rio: drawGameNative ran this / the last frame (the particles of a level end with it)
     bool menuDrawnAhead_ = false, drawingAhead_ = false;   // drawMenuParticlesInAdvance this frame
     bool menuParticlesByScript_ = false;      // 2.0.0 draws the level's particles itself, in two layers (drawLevelParticlesNative)
@@ -327,6 +331,7 @@ public:
     void ScrollWaterLayers(float dt) override { for (size_t i = 0; i < fgWater_.size() && i < fgOffset_.size() && i < fgAuto_.size(); i++) if (fgWater_[i].water) fgOffset_[i] += fgAuto_[i] * dt * 60.0f; waterTime_ += dt; }
     float waterTime_ = 0;
     bool IsSeasonsScripts();
+    std::string floatingScoreFont = "FONT_SCORE";   // 3.9: config.lua floatingScoreFont, the font that replaces FONT_INGAME_SCORE for the floating scores ("FONT_INGAME_SCORE" keeps the brown one)
     std::vector<std::string> extraScriptFiles;     // .lua files from the command line (drag and drop), loaded once the game scripts are up
     void ResSetClipRect(float x, float y, float w, float h) override;
     void ResGetClipRect(float& x, float& y, float& w, float& h) override { if (clipW_ > 0) { x = clipX_; y = clipY_; w = clipW_; h = clipH_; } else { x = 0; y = 0; w = (float)screenWidth_; h = (float)screenHeight_; } }

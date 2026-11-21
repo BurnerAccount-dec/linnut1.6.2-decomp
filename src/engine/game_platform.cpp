@@ -29,6 +29,10 @@ extern "C" {
 }
 
 namespace ab {
+// (3.9) the round static rocks: sizes and places of the three discs in the picture the engine makes (MakeDiscAtlas)
+static const int kDiscSize[3] = {41, 103, 207};
+static const int kDiscX[3] = {0, 48, 160};
+
 
 class GamePlatform::Host : public LuaFrameHost {
 public:
@@ -448,6 +452,64 @@ void GamePlatform::AddSpeed(float step) {
     Print("speed: " + std::to_string(speed_) + "x");
 }
 
+// (3.9) starts a level given as text (a level file's contents) the way a dropped level file starts: in memory as "dropped.temp", through the game's loading mode.
+// Returns false when this game has no level loader.
+bool GamePlatform::PlayLevelText(const std::string& text) {
+    if (!scripts_) return false;
+    lua_State* L = scripts_->State();
+    int top = lua_gettop(L);
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    int env = lua_gettop(L);
+    lua_getfield(L, env, "loadLevelInternal");
+    if (lua_isfunction(L, -1)) {
+        lua_getfield(L, env, "levelFolder");
+        std::string folder = lua_isstring(L, -1) ? lua_tostring(L, -1) : "levels/";
+        lua_pop(L, 1);
+        savedLevels_[folder + "dropped.temp.lua"] = text;      // loadLevel reads a .temp level from memory (the editor's TAB copy)
+        // (3.9) start it like a level picked from the menu: the game's own loading mode loads levelFolder .. levelName, then the level plays
+        // (the bare loadLevelInternal below only put the blocks on the screen: no birds, no physics, no keys)
+        lua_getfield(L, env, "setGameMode");
+        lua_getfield(L, env, "updateLoading");
+        if (lua_isfunction(L, -2) && lua_isfunction(L, -1)) {
+            lua_pop(L, 2);
+            lua_pushstring(L, folder.c_str());
+            lua_setfield(L, env, "levelFolder");
+            lua_pushstring(L, "dropped.temp");
+            lua_setfield(L, env, "levelName");
+            // (3.9) the level-complete screen reads starTable[levelName].silverScore / goldScore: a dropped level has no entry (the game stopped there when the level was cleared)
+            lua_getfield(L, env, "starTable");
+            if (lua_istable(L, -1)) {
+                lua_getfield(L, -1, "dropped.temp");
+                if (!lua_istable(L, -1)) {
+                    lua_pop(L, 1);
+                    lua_newtable(L);
+                    lua_pushnumber(L, 25000); lua_setfield(L, -2, "silverScore");
+                    lua_pushnumber(L, 75000); lua_setfield(L, -2, "goldScore");
+                    lua_pushnumber(L, 100000); lua_setfield(L, -2, "eagleScore");
+                    lua_setfield(L, -2, "dropped.temp");
+                } else lua_pop(L, 1);
+            }
+            lua_pop(L, 1);
+            lua_getfield(L, env, "numberOfAttemptsInLevel");   // the level-complete screen writes it into the statistics: a game that has not started a level yet has none
+            if (lua_isnil(L, -1)) { lua_pushnumber(L, 0); lua_setfield(L, env, "numberOfAttemptsInLevel"); }
+            lua_pop(L, 1);
+            lua_getfield(L, env, "setGameMode");
+            lua_getfield(L, env, "updateLoading");
+            if (lua_pcall(L, 1, 0, 0) != 0) Print(std::string("dropped level: ") + lua_tostring(L, -1));
+            lua_settop(L, top);
+            return true;
+        }
+        lua_settop(L, env);
+        lua_getfield(L, env, "loadLevelInternal");
+        lua_pushstring(L, (folder + "dropped.temp").c_str());
+        if (lua_pcall(L, 1, 0, 0) != 0) Print(std::string("dropped level: ") + lua_tostring(L, -1));
+        lua_settop(L, top);
+        return true;
+    }
+    lua_settop(L, top);
+    return false;
+}
+
 // v3.1: the later PC exes (Space, Star Wars) take files dropped on their window. What they did with them is not known (no script asks), so:
 // engine.on("fileDropped", fn) and a script function onFileDropped(path) get the path first (onFileDropped returning true ends it there);
 // otherwise a dropped level file (a .lua with a world table) is loaded as the current level, and any other .lua runs in the game's scripts
@@ -471,17 +533,7 @@ void GamePlatform::FileDropped(const std::string& path) {
     if (!lua || !ab::ReadLuaFile(path, bytes) || bytes.empty()) { lua_settop(L, top); return; }
     std::string text(bytes.begin(), bytes.end());
     const bool level = text.find("world") != std::string::npos && bytes[0] != 0x1b;
-    lua_getfield(L, env, "loadLevelInternal");
-    if (level && lua_isfunction(L, -1)) {
-        lua_getfield(L, env, "levelFolder");
-        std::string folder = lua_isstring(L, -1) ? lua_tostring(L, -1) : "levels/";
-        lua_pop(L, 1);
-        savedLevels_[folder + "dropped.temp.lua"] = text;      // loadLevel reads a .temp level from memory (the editor's TAB copy)
-        lua_pushstring(L, (folder + "dropped.temp").c_str());
-        if (lua_pcall(L, 1, 0, 0) != 0) Print(std::string("dropped level: ") + lua_tostring(L, -1));
-        lua_settop(L, top);
-        return;
-    }
+    if (level && PlayLevelText(text)) { lua_settop(L, top); return; }
     lua_settop(L, env);
     if (luaL_loadbuffer(L, (const char*)bytes.data(), bytes.size(), path.c_str()) == 0) {
         lua_pushvalue(L, env);
@@ -668,6 +720,43 @@ void GamePlatform::RunFrame(float dt) {
             extraScriptFiles.clear();
         }
     }
+    // (3.9) Classic 1.6.2: round static rocks (Social's gravel circles). The sprites are made here, and StaticBlockThemeNN_07 / _08 / _09 (41, 103 and 207 pixels
+    // across) are the theme's square rock (_06) as a circle, so the theme's ground texture is drawn through the disc.
+    if (scripts_ && execFrame == 5 && !scripts_->IsSpace() && !IsSeasonsScripts()) {
+        SpriteSheet discs;
+        discs.image = "ab_builtin_discs.png"; discs.directory = "builtin";
+        for (int d = 0; d < 3; d++) {
+            Sprite sp; sp.name = std::string("GROUND_CIRCLE_") + char('1' + d);
+            sp.x = kDiscX[d]; sp.y = 0; sp.w = kDiscSize[d]; sp.h = kDiscSize[d]; sp.pivotX = kDiscSize[d] / 2; sp.pivotY = kDiscSize[d] / 2;
+            discs.sprites.push_back(sp);
+        }
+        sprites_.Add("builtin:discs", std::move(discs));
+    }
+    // The game builds an object with createObject(blockTable, definition, ...): a round rock's definition is made from its theme's square rock (_06) the first
+    // time the game asks for it (the game can load its block table again, so it is not made ahead).
+    if (scripts_ && !scripts_->IsSpace() && !IsSeasonsScripts() && execFrame % 60 == 6)
+        scripts_->RunString("local env = _G.getfenv(1)\n"
+            "if _G.type(env.createObject) == 'function' and not _G.rawget(env, '__abRoundRocks') then\n"
+            "  local original = env.createObject\n"
+            "  env.__abRoundRocks = true\n"
+            "  env.createObject = function(definitions, definition, ...)\n"
+            "    if _G.type(definition) == 'string' and _G.type(definitions) == 'table' and _G.type(definitions.blocks) == 'table' and _G.rawget(definitions.blocks, definition) == nil then\n"
+            "      local n, k = _G.string.match(definition, '^StaticBlockTheme(%d+)_0([789])$')\n"
+            "      local square = n and _G.rawget(definitions.blocks, 'StaticBlockTheme' .. n .. '_06')\n"
+            "      if square then\n"
+            "        local c = {}\n"
+            "        for key, value in _G.pairs(square) do c[key] = value end\n"
+            "        c.type = 'circle' c.sprite = 'GROUND_CIRCLE_' .. (k - 6) c.groupIndex = k + 0\n"
+            "        _G.rawset(definitions.blocks, definition, c)\n"
+            "      end\n"
+            "    end\n"
+            "    return original(definitions, definition, ...)\n"
+            "  end\n"
+            "end\n");
+    // (3.9) the hit-box debug view (key 8) of Classic 1.6.2 reads blockTable.blocks[v.definition].strength for every object, and an object with no
+    // block definition (a bird, a pig, a prop) made it fail with "attempt to index field '?'". A definition that is not there now reads as an empty one.
+    if (scripts_ && execFrame % 60 == 7)
+        scripts_->RunString("local env = _G.getfenv(1)\nlocal bt = env.blockTable\nif _G.type(bt) == 'table' and _G.type(bt.blocks) == 'table' and not _G.getmetatable(bt.blocks) then local none = {} _G.setmetatable(bt.blocks, {__index = function() return none end}) end\n");
     // Classic 1.6.2: an extra_scripts.lua next to gamelogic.lua (Star Wars' screen wipe between scenes, see extras/) is loaded once the scripts are up
     if (scripts_ && execFrame == 3 && !scripts_->IsSpace() && !IsSeasonsScripts() && !std::getenv("AB_NOSCREENWIPE"))
         scripts_->RunString(
@@ -676,6 +765,55 @@ void GamePlatform::RunFrame(float dt) {
             "  local f = _G.io.open(env.scriptPath .. '/extra_scripts.lua', 'rb')\n"
             "  if f then f:close(); _G.pcall(env.loadLuaFile, env.scriptPath .. '/extra_scripts.lua', '', false, false) end\n"
             "end\n");
+    // 3.9: Seasons (the menus before 2.4): an episodes.lua next to gamelogic.lua sets the levels of the packs (episodes.packs = { pack2 = { "LevelX_39", ... } }); the lists are changed in place
+    // before the menu pages are made from them (the extras/episodes.lua of Classic 1.6.2 does the same for its worlds)
+    if (scripts_ && execFrame == 3 && !scripts_->IsSpace() && IsSeasonsScripts())
+        scripts_->RunString(
+            "local env = _G.getfenv(1)\n"
+            "if env.episodesLoaded == nil and _G.type(env.createMenuPages) == 'function' and env.scriptPath and _G.loadfile then\n"
+            "  env.episodesLoaded = true\n"
+            "  local f = _G.loadfile(env.scriptPath .. '/episodes.lua')\n"
+            "  if f then _G.setfenv(f, env) end\n"
+            "  if f and _G.pcall(f) and _G.type(env.episodes) == 'table' and _G.type(env.episodes.packs) == 'table' then\n"
+            "    local original = env.createMenuPages\n"
+            "    env.createMenuPages = function(...)\n"
+            "      for name, levels in _G.pairs(env.episodes.packs) do\n"
+            "        local list = env.levelOrder[name]\n"
+            "        if _G.type(list) == 'table' then\n"
+            "          for i = #list, 1, -1 do list[i] = nil end\n"
+            "          for i = 1, #levels do list[i] = levels[i] end\n"
+            "        end\n"
+            "      end\n"
+            "      return original(...)\n"
+            "    end\n"
+            "  end\n"
+            "end\n");
+    // 3.9: console `track <name>` (or AB_TRACK=<name> in the environment) prints the object's position and angle twice a second, `track all` every object that moved or turned
+    // since the last line (about once a second, the first line lists every object), `track` alone stops: a slow creep or tilt, which no contact reports
+    if (trackName_.empty() && execFrame == 1) if (const char* t = std::getenv("AB_TRACK")) trackName_ = t;
+    if (scripts_ && !trackName_.empty() && execFrame % 15 == 0) {
+        if (trackName_ == "all")
+            scripts_->RunString(
+                "local env = _G.getfenv(1)\n"
+                "local w = env.objects and env.objects.world\n"
+                "if w then\n"
+                "  env._abTrack = env._abTrack or {}\n"
+                "  local t, n = env._abTrack, 0\n"
+                "  for name, o in _G.pairs(w) do\n"
+                "    if _G.type(o) == 'table' and o.x then\n"
+                "      local a = o.angle or 0\n"
+                "      local p = t[name]\n"
+                "      if not p or _G.math.abs(p[1] - o.x) > 0.002 or _G.math.abs(p[2] - o.y) > 0.002 or _G.math.abs(p[3] - a) > 0.0005 then\n"
+                "        _G.print(_G.string.format('track %s: x %.3f y %.3f angle %.4f', name, o.x, o.y, a))\n"
+                "        t[name] = {o.x, o.y, a}; n = n + 1\n"
+                "      end\n"
+                "    end\n"
+                "  end\n"
+                "  if n > 0 then _G.print('track ---- ' .. n .. ' object(s) changed') end\n"
+                "end\n");
+        else
+            scripts_->RunString(("local o = _G.getfenv(1).objects.world['" + trackName_ + "'] if o then _G.print(_G.string.format('track %s: x %.3f y %.3f angle %.4f', '" + trackName_ + "', o.x, o.y, o.angle or 0)) else _G.print('track " + trackName_ + ": gone') end").c_str());
+    }
     // Space: the scripts' debug keys (fps, background, hit boxes, level skip, ...) sit behind `not releaseBuild`, and options.lua sets releaseBuild
     // (so the retail game has none). They are switched on the way the other games' are: cheats on, and the functions that read the keys run in a
     // view where releaseBuild reads false (the real flag stays true: false would unlock every level). AB_NODEBUGKEYS=1 turns this off.
@@ -1580,6 +1718,21 @@ const GamePlatform::TextureInfo* GamePlatform::TextureFor(const SpriteSheet& she
     return TextureFile(sheet.directory + "/" + sheet.image, false);
 }
 
+// (3.9) the round static rocks: a picture of three discs (41, 103 and 207 pixels across: Social's 2x2, 5x5 and 10x10 gravel circles), made here.
+// Like the square static rocks the disc is only a mask: the theme's ground texture is drawn through it.
+static void MakeDiscAtlas(Image& image) {
+    image.width = 512; image.height = 256;
+    image.rgba.assign((size_t)image.width * image.height * 4, 0);
+    for (int d = 0; d < 3; d++) {
+        const float r = kDiscSize[d] / 2.0f;
+        for (int y = 0; y < kDiscSize[d]; y++) for (int x = 0; x < kDiscSize[d]; x++) {
+            float dist = std::sqrt((x + 0.5f - r) * (x + 0.5f - r) + (y + 0.5f - r) * (y + 0.5f - r));
+            float cover = std::min(1.0f, std::max(0.0f, r - dist + 0.5f));
+            image.rgba[((size_t)y * image.width + kDiscX[d] + x) * 4 + 3] = (uint8_t)(cover * 255.0f + 0.5f);   // black, premultiplied: only the alpha matters
+        }
+    }
+}
+
 const GamePlatform::TextureInfo* GamePlatform::TextureFile(const std::string& path, bool repeat) {
     // a file used both as a sprite sheet image and as a tiling texture needs one texture for each wrap mode
     const std::string key = repeat ? path + "|repeat" : path;
@@ -1588,7 +1741,9 @@ const GamePlatform::TextureInfo* GamePlatform::TextureFile(const std::string& pa
     TextureInfo info;
     Image image;
     std::string error;
-    bool loaded = LoadPngFile(path, image, &error);
+    const bool discs = path.size() >= 20 && path.compare(path.size() - 20, 20, "ab_builtin_discs.png") == 0;
+    if (discs) MakeDiscAtlas(image);
+    bool loaded = discs || LoadPngFile(path, image, &error);
     if (!loaded && path.size() > 4 && path.compare(path.size() - 4, 4, ".png") == 0) {   // the Android builds keep their images as .pvr (a tiling texture is asked for as .png)
         std::string alt = path.substr(0, path.size() - 4) + ".pvr", altError;
         if (LoadPngFile(alt, image, &altError)) loaded = true; else if (altError.find("cannot open") == std::string::npos) error = altError;
@@ -2267,7 +2422,11 @@ void GamePlatform::ResCreateBitmapFont(const std::string& path) {
 // A font the scripts use without having made it (the exe made every font of the fonts folder): Seasons 4.1.0's achievement pop-up asks
 // for FONT_GAMECENTER_BASIC, which its iPad data has only in fonts/960x640 and fonts/480x320. It is read from the folder of the fonts
 // already made, or else from the nearest-sized sibling folder; until then the pop-up's text came out in the big basic font
-void GamePlatform::ResUseFont(const std::string& name) {
+void GamePlatform::ResUseFont(const std::string& requested) {
+    // 3.9: the floating scores (the numbers that rise from a destroyed pig or block) ask for FONT_INGAME_SCORE in the 1.0.0 and 1.6.x PC scripts, a font with
+    // a brown outline that the other releases do not use for them; they use FONT_SCORE (black outline). config.lua floatingScoreFont names the font to use instead.
+    std::string name = requested;
+    if (requested == "FONT_INGAME_SCORE" && !floatingScoreFont.empty() && floatingScoreFont != requested && fonts_.count(floatingScoreFont)) name = floatingScoreFont;
     if (!fonts_.count(name) && !name.empty() && !missingFonts_.count(name) && !fonts_.empty()) {
         missingFonts_.insert(name);
         std::string dir = fonts_.begin()->second.directory;
@@ -3352,6 +3511,31 @@ void GamePlatform::DrawForeground() {
 // One object: its sprite rotated about its pivot at the interpolated position (physics units * 20).
 void GamePlatform::DrawPhysObject(PhysObject& o) {
     TagScope tag(this, o.name);
+    // 3.9: engine.drawObjectAfter(name), when a script has one, runs once the object is drawn (Stella's post-draw functions: the pig's pupils, costume fronts)
+    struct After {
+        GamePlatform* self; const std::string& name;
+        ~After() {
+            if (!self->scripts_) return;
+            lua_State* L = self->scripts_->State();
+            int top = lua_gettop(L);
+            lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+            if (lua_istable(L, -1)) {
+                lua_getfield(L, -1, "engine");
+                if (lua_istable(L, -1)) {
+                    lua_getfield(L, -1, "drawObjectAfter");
+                    if (lua_isfunction(L, -1)) {
+                        lua_pushstring(L, name.c_str());
+                        RenderState keep = self->state_;
+                        lua_pcall(L, 1, 0, 0);
+                        const int effect = self->state_.effect;      // (the script switches the object's shader off here)
+                        self->state_ = keep;
+                        self->state_.effect = effect;
+                    }
+                }
+            }
+            lua_settop(L, top);
+        }
+    } after{this, o.name};
     if (scripts_) {   // engine.drawObject(name): return false to leave the object undrawn (draw it yourself with res.drawSprite if you like)
         lua_State* L = scripts_->State();
         int top = lua_gettop(L);
@@ -3365,7 +3549,9 @@ void GamePlatform::DrawPhysObject(PhysObject& o) {
                     lua_pushstring(L, o.name.c_str());
                     RenderState keep = state_;
                     if (lua_pcall(L, 1, 1, 0) == 0) skip = lua_isboolean(L, -1) && !lua_toboolean(L, -1);
+                    const int effect = state_.effect;      // (a script that gives the object a shader sets it here, for the object's own draw)
                     state_ = keep;
+                    state_.effect = effect;
                 }
             }
         }
@@ -3429,7 +3615,12 @@ void GamePlatform::DrawPhysObject(PhysObject& o) {
     float x = o.interpX * 20.0f, y = o.interpY * 20.0f;
     state_.angle = o.interpAngle + o.spriteAngle;   // Space: 0x48d2a9 adds setSpriteRotation's angle
     if (!o.texture.empty() && sp) {
-        const TextureInfo* t = TextureFile(sheet->directory + "/" + o.texture + ".png", true);
+        std::string texDir = sheet->directory;
+        if (sheet->image == "ab_builtin_discs.png") {          // the round static rocks: their theme textures sit with the square ones
+            const SpriteSheet* groundSheet = nullptr;
+            if (sprites_.Find("GROUND_BLOCK_01", &groundSheet) && groundSheet) texDir = groundSheet->directory;
+        }
+        const TextureInfo* t = TextureFile(texDir + "/" + o.texture + ".png", true);
         if (t) tileTexture_ = t;
     }
     // 0x4165xx: a scaled sprite shrinks about its pivot, the pivot stays where it was on the screen
@@ -3525,6 +3716,21 @@ std::vector<PhysObject*> GamePlatform::DrawGroup(int which) {
         for (auto& up : Physics().Objects()) {
             int z = (int)up->zOrder;
             if (z >= 0 && z < 170) group.push_back(up.get());
+        }
+        std::sort(group.begin(), group.end(), [](PhysObject* a, PhysObject* b) {
+            int za = (int)a->zOrder, zb = (int)b->zOrder;
+            return za != zb ? za < zb : a->name < b->name; });
+        return group;
+    }
+    if (scripts_ && scripts_->IsStella() && !std::getenv("AB_ZOFF")) {
+        // Stella (drawGameNative 0x4902c): the layers zRangeLo_ .. zRangeHi_-1 (the upper end is 170 when it is -1 or less), lowest first, one pass;
+        // setZOrderRange (0x49020) only stores the two numbers on the scene. Every object is filed under (int)z_order.
+        if (which != 0) return group;
+        const int hi = zRangeHi_ <= -1 ? 170 : zRangeHi_;
+        for (auto& up : Physics().Objects()) {
+            int z = (int)up->zOrder;
+            if (z >= zRangeLo_ && z < hi) group.push_back(up.get());
+            else if (std::getenv("AB_ZDBG")) std::fprintf(stderr, "zskip %s z=%g range %d..%d\n", up->name.c_str(), up->zOrder, zRangeLo_, hi);
         }
         std::sort(group.begin(), group.end(), [](PhysObject* a, PhysObject* b) {
             int za = (int)a->zOrder, zb = (int)b->zOrder;
@@ -3706,7 +3912,7 @@ void GamePlatform::DrawGame() {
     state_.tx = -camX_; state_.ty = -camY_;
     state_.sx = state_.sy = worldScale_;
     bool rio = scripts_ && scripts_->IsRio();
-    bool oneGroup = rio || (scripts_ && scripts_->IsSpace());   // Rio and Space draw every object in one pass over the z layers
+    bool oneGroup = rio || (scripts_ && (scripts_->IsSpace() || scripts_->IsStella()));   // Rio and Space draw every object in one pass over the z layers
     bool trajDone = false;
     // each of the six lists: its dots go through TRAIL_WHITE_1, _2, _3 and start again, then its puffs (BIRD_SPECIAL); then Space's aiming aid
     auto drawAim = [&]() {
@@ -4286,6 +4492,7 @@ void GamePlatform::ConsoleCommand(const std::string& raw) {
             "  help                    this list\n"
             "  box2d [21|22]           show / choose the physics library; it changes when the next level loads (restart the level)\n"
             "  zorder [name [z]]       list the objects back to front / show or set one object's z_order; zfront <name>, zback <name>\n"
+            "  track <object>|all      print an object's position and angle twice a second (all: every object that moved); track alone stops\n"
             "  polyradius [r]          show / set the collision skin of boxes and polygons made from now on (Box2D 2.2)\n"
             "  fps [n]                 limit the frame rate (0 = unlimited, the default); vsync [on|off] synchronises to the display\n"
             "  gamespeed [x]           gameSpeedFactor: the time step of everything (default 1)\n"
@@ -4313,6 +4520,10 @@ void GamePlatform::ConsoleCommand(const std::string& raw) {
         if (arg == "on" || arg == "1") { vsync = true; vsyncChanged = true; }
         else if (arg == "off" || arg == "0") { vsync = false; vsyncChanged = true; }
         std::printf("console: vsync %s\n", vsync ? "on" : "off");
+    } else if (cmd == "track") {
+        trackName_ = arg;
+        if (arg == "all") scripts_->RunString("_abTrack = nil");
+        std::printf(arg.empty() ? "console: track stopped\n" : "console: tracking %s (position and angle twice a second); `track` alone stops\n", arg.c_str());
     } else if (cmd == "gamespeed" || cmd == "physicsspeed" || cmd == "set" || cmd == "get") {
         // gamespeed / physicsspeed are the Lua globals gameSpeedFactor / physicsSpeedFactor; set / get reach any numeric Lua global
         std::string name = cmd == "gamespeed" ? "gameSpeedFactor" : cmd == "physicsspeed" ? "physicsSpeedFactor" : "";

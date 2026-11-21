@@ -61,12 +61,12 @@ endif()
 add_executable(ab_audio_tests tests/audio_controls_test.cpp)
 target_link_libraries(ab_audio_tests ab_audio)
 add_test(NAME audio_controls COMMAND ab_audio_tests)
-# Lua source the engine carries (the 1.6.2 editor, see script_host.cpp): written out as a byte array at configure time
+# Lua source the engine carries (the 1.6.2 editor, see script_host.cpp): written out as a byte array at build time, so editing a script always rebuilds it
 function(embed_lua_file input symbol output)
-  file(READ ${input} hex HEX)
-  string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," bytes "${hex}")
-  file(WRITE ${output} "namespace ab {\nextern const unsigned char ${symbol}[] = {${bytes}0};\nextern const unsigned int ${symbol}Size = sizeof(${symbol}) - 1;\n}\n")
-  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${input})
+  add_custom_command(OUTPUT ${output}
+    COMMAND ${CMAKE_COMMAND} -DINPUT=${input} -DSYMBOL=${symbol} -DOUTPUT=${output} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_lua.cmake
+    DEPENDS ${input} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_lua.cmake
+    COMMENT "Embedding ${symbol}")
 endfunction()
 embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/editor_classic.lua kEditorClassicLua ${CMAKE_CURRENT_BINARY_DIR}/generated/editor_classic_lua.cpp)
 embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/hatchery_natives.lua kHatcheryNativesLua ${CMAKE_CURRENT_BINARY_DIR}/generated/hatchery_natives_lua.cpp)
@@ -88,6 +88,9 @@ embed_lua_file(${CMAKE_CURRENT_SOURCE_DIR}/src/lua/achievements_page.lua kAchiev
 add_library(ab_lua src/lua/save_states.cpp src/lua/aes.cpp src/lua/sevenzip.cpp src/lua/dec_folder.cpp src/lua/lua_api.cpp src/lua/script_host.cpp src/lua/lua_frame_host.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/editor_classic_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/hatchery_natives_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/space_natives_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/space_editor_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/motion_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/compo_image_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/invisible_button_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/editor_joint_page_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/overlay_page_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/joint_page_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/friends_server_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/friends2_natives_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/stella_natives_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/achievements_page_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/page_lua.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/item_lua.cpp)
 target_include_directories(ab_lua PUBLIC src)
 target_link_libraries(ab_lua PUBLIC lua51 ab_game)
+if(WIN32)
+  target_link_libraries(ab_lua PUBLIC ws2_32)
+endif()
 
 add_library(ab_engine src/engine/game_platform.cpp src/engine/level_writer.cpp src/engine/sprite_sheet.cpp src/engine/png_decoder.cpp src/engine/apk_extract.cpp src/engine/font.cpp src/engine/render_soft.cpp src/engine/shaders.cpp)
 target_include_directories(ab_engine PUBLIC src third_party/stb)
@@ -140,6 +143,13 @@ if(AB_BUILD_WINDOW)
   add_executable(angrybirds src/window/main.cpp src/window/gl_backend.cpp src/window/exe_replace.cpp)
   target_link_libraries(angrybirds PRIVATE ab_engine ab_input)
   set_target_properties(angrybirds PROPERTIES OUTPUT_NAME AngryBirdsEngine)   # the file is AngryBirdsEngine.exe, the target keeps its name
+  if(WIN32)   # 3.9: a window program: no command prompt flashes up when config.lua says console = false (main.cpp opens one when it is wanted)
+    if(MSVC)
+      target_link_options(angrybirds PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup)
+    else()
+      target_link_options(angrybirds PRIVATE -mwindows)
+    endif()
+  endif()
   if(TARGET SDL2::SDL2-static)
     target_link_libraries(angrybirds PRIVATE SDL2::SDL2-static)
   elseif(TARGET SDL2-static)

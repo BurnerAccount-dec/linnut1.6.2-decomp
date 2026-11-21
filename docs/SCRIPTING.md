@@ -594,6 +594,15 @@ myMod.runs = myMod.runs + 1
 saveLuaFile("mymod.lua", "myMod", true)
 ```
 
+### Web and level text (3.9)
+
+| Function | What it does |
+|---|---|
+| `httpGet(url [, seconds])` | One blocking request to a plain `http://` address (not `https://`); returns the body as a string, or `nil` and a reason (`"cannot connect to localhost:80"`, `"status 404"`). `seconds` (default 3) is how long to wait. |
+| `playLevelText(text)` | Starts a level given as the text of a level file, the way dropping the file on the window does (the game's own loading mode, then the birds, the physics and the keys). Returns `false` when the game has no level loader. |
+
+`extras/extra_scripts.lua` (section 9, table `socialLevels`) uses both for the Social levels list: `socialLevels.server` is the address of the server, `socialLevels.key` the key that opens the list.
+
 ### Creating and removing objects
 
 All of these write the object into `objects.world[name]` (and `objects.joints` for joints), so a script sees it at once.
@@ -666,7 +675,7 @@ end)
 
 | Function | What it does |
 |---|---|
-| `createJoint{name=, end1=, end2=, type=, coordType=, x1=, y1=, x2=, y2=, ...}` | Makes one joint. `type` 1 is a distance (spring) joint (`frequency`, `dampingRatio`, `collideConnected`), the others are revolute / prismatic / pulley / weld (types 6 to 11, which no editor offers, are in "Extra joint types" below); the extra fields depend on the type (`motor`, `motorSpeed`, `maxTorque`, `limit`, `lowerLimit`, `upperLimit`, `breakable`, `breakForce`, `isDrawn`, `jointPosX`, `jointPosY`). It writes `objects.joints[name]`. |
+| `createJoint{name=, end1=, end2=, type=, coordType=, x1=, y1=, x2=, y2=, ...}` | Makes one joint. `type` 1 is a distance (spring) joint (`frequency`, `dampingRatio`, `collideConnected`), the others are revolute / prismatic / pulley / weld (types 6 to 11, which the 1.6.x editor's joint window offers after "Destroy-attached" and no other game editor does, are in "Extra joint types" below); the extra fields depend on the type (`motor`, `motorSpeed`, `maxTorque`, `limit`, `lowerLimit`, `upperLimit`, `breakable`, `breakForce`, `isDrawn`, `jointPosX`, `jointPosY`). It writes `objects.joints[name]`. |
 | `createJoints(list)` | `createJoint` for every entry of a level's joint table (an entry without `name` takes its key). |
 | `setJointParameters{name=, motor=, motorSpeed=, maxTorque=, limit=, ...}` | Changes the joint's motor and limits. `setRevoluteJointSpeed(name, speed)` sets only the motor speed. |
 | `checkJointLimits(name)`, `handleJointLimits(name, on)` | Make a limited joint apply its limits now. |

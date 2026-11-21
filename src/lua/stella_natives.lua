@@ -34,6 +34,7 @@ end
 -- the render state the scripts set last: the Flash animations and the scaled sprite draws below set their own transform, keep the
 -- scripts' transparency (the slingshot's pig highlight is drawn at alpha 0 until the player aims) and put the scripts' state back afterwards
 local nativeSetRenderState = env.setRenderState
+local nativeSetShader, nativeCreateShader, nativeShaderParam = env.setShader, env.createShader, env.setShaderParam      -- (the scripts define a setShader of their own for objects)
 local renderArgs = {n = 0}
 env.setRenderState = function(...)
     renderArgs = {n = select("#", ...), ...}
@@ -93,6 +94,60 @@ global("QrScanner", module("QrScanner", {isCameraSupported = no, isFrontCameraSu
 global("Analytics", module("Analytics", {}))
 global("Apprater", module("Apprater", {}))
 global("Telepods", module("Telepods", {}))
+-- The Telepod configuration (assets_service/telepod_configuration.dat) is a cloud download the game never gets here: an empty one, so the bird skins
+-- saved in a save file (read while the level is built: BirdAnimation) find no skin entry instead of stopping the level load with an error
+global("g_telepodConfiguration", {})
+
+-- native_setDensity(name, density), matched against the exe (0x34990): the density goes into the object's native data and its Lua table (world[name].density),
+-- and the body takes it. Willow's roll and Stella's ability change the density of the bird this way.
+env.native_setDensity = function(name, density)
+    local w = type(env.objects) == "table" and env.objects.world
+    if type(w) == "table" and type(w[name]) == "table" then w[name].density = density end
+    if env.setObjectDensity then env.setObjectDensity(name, density) end
+end
+-- native_setSprite(name, sprite): the object is drawn with that sprite (utils.lua setSprite, which keeps the name it last set)
+-- native_getLevelLimits (0x54468) returns the four floats the scene keeps at +0x360 (minX, minY, maxX, maxY), which setLevelLimits (0x4c850) stores
+local levelLimits = {0, 0, 0, 0}
+do
+    local engineSetLevelLimits = env.setLevelLimits
+    if engineSetLevelLimits then
+        env.setLevelLimits = function(a, b, c, d)
+            levelLimits = {tonumber(a) or 0, tonumber(b) or 0, tonumber(c) or 0, tonumber(d) or 0}
+            return engineSetLevelLimits(a, b, c, d)
+        end
+    end
+end
+env.native_getLevelLimits = function() return levelLimits[1], levelLimits[2], levelLimits[3], levelLimits[4] end
+-- 0x49020: stores the two numbers on the scene; drawGameNative (0x4902c) draws the z layers lo .. hi-1 (hi <= -1: 170)
+env.native_setZOrderRange = function(lo, hi)
+    if env.setDrawZRange then env.setDrawZRange(math.floor(tonumber(lo) or -1), math.floor(tonumber(hi) or -1)) end
+end
+local engineSetSprite = env.setSprite   -- the engine's own: utils.lua defines a global setSprite later that calls native_setSprite
+env.native_setSprite = function(name, sprite)
+    if engineSetSprite then engineSetSprite(name, sprite) end
+end
+-- native_getSimpleRandom(seed), matched against the exe (0x55cb0): returns the next seed and a number from 0 to 1. The phone computes in 32 bit integers and
+-- 32 bit floats (the seed travels through a float between two calls), so does this, and the same seed gives the same numbers
+local function f32(x)
+    if x ~= x or x == 0 or x == math.huge or x == -math.huge then return x end
+    local m, e = math.frexp(x)
+    local t = math.abs(m) * 16777216
+    local f = math.floor(t)
+    local d = t - f
+    if d > 0.5 or (d == 0.5 and f % 2 == 1) then f = f + 1 end
+    return (m < 0 and -f or f) / 16777216 * 2 ^ e
+end
+env.native_getSimpleRandom = function(seed)
+    local s = f32(tonumber(seed) or 0)
+    if s ~= s then s = 0 end
+    s = s >= 0 and math.floor(s) or math.ceil(s)                 -- vcvt.s32.f32: toward zero, saturating
+    if s > 2147483647 then s = 2147483647 elseif s < -2147483648 then s = -2147483648 end
+    local r = (s * 214013 + 2531011) % 4294967296                -- mla r0, r0, 0x343FD, 0x269EC3 (wraps at 32 bit)
+    if r == 4294967295 then r = 0 end                              -- the exe's modulo step adds 1 here
+    local signed = r >= 2147483648 and r - 4294967296 or r
+    local rnd = math.floor(r / 65536) % 32768                       -- bits 16..30
+    return f32(signed), f32(rnd * (2 ^ -15) * (1 + 2 ^ -15))      -- (constant 0x38000100)
+end
 -- EconomyParameters.loadConfiguration(file): the prices and rewards (config/economy.dat, plain JSON) are handed to economyParametersLoaded;
 -- the copy in the app data is never made here, so the bundle's file is read
 global("EconomyParameters", module("EconomyParameters", {
@@ -499,9 +554,40 @@ def("setFlashAnimation", function(name, file, action)
     end
 end)
 def("removeFlashAnimation", function(name) if name then flashObjects[name] = nil end end)
+-- native_setPreDrawFunction(object, f) / native_setPostDrawFunction(object, f): f(block, flipped) is called as the object is drawn, before its sprite
+-- (the costume's back layer, the willow's trail) or after it (the pig's pupils, the costume's front layer). DrawCalls.lua sets one function per object
+-- that runs all of the object's draw calls; nil takes it away. `block` is the script's own table of the object (objects.world[object]).
+local useShader      -- (defined with the shaders below)
+local preDraw, postDraw = {}, {}
+env.native_setPreDrawFunction = function(name, f) if type(name) == "string" then preDraw[name] = f end end
+env.native_setPostDrawFunction = function(name, f) if type(name) == "string" then postDraw[name] = f end end
+local function runDrawHook(list, name)
+    local f = list[name]
+    if type(f) ~= "function" then return end
+    local world = type(env.objects) == "table" and env.objects.world
+    local block = type(world) == "table" and world[name]
+    if type(block) ~= "table" then return end
+    if env.isVisible and not env.isVisible(name) then return end
+    local flipped = env.isHorizontallyFlipped and env.isHorizontallyFlipped(name) or false
+    local ok, err = pcall(f, block, flipped)
+    if not ok and list[name] == f then list[name] = nil print("draw function of " .. name .. " removed: " .. tostring(err)) end
+    restoreRenderState()
+end
 env.engine = env.engine or {}
+local shadedObjects = {}
+env.engine.drawObjectAfter = function(name)
+    if shadedObjects[name] then shadedObjects[name] = nil nativeSetShader("none") end
+    if postDraw[name] then runDrawHook(postDraw, name) end
+end
 local previousDrawObject = env.engine.drawObject
 env.engine.drawObject = function(name, ...)
+    if preDraw[name] then runDrawHook(preDraw, name) end
+    local world = type(env.objects) == "table" and env.objects.world
+    local block = type(world) == "table" and world[name]
+    if type(block) == "table" and block.shader ~= nil then      -- (an object with a Shader object is drawn with it)
+        local ok, used = pcall(useShader, block.shader)
+        if ok and used then shadedObjects[name] = true end
+    end
     if flashObjects[name] then
         local a = anims[name]
         if a and not a.placed and env.physicsToScreenTransform then     -- (an animation the scripts do not place follows its object)
@@ -519,19 +605,73 @@ env.engine.drawObject = function(name, ...)
     end
     if previousDrawObject then return previousDrawObject(name, ...) end
 end
+
+-- The game's shaders (data/shaders: 2d-sprite-diffuse-modulate, 2d-sprite-colorize, 2d-sprite-gold, all pixelShaders/pp.ps) as one engine shader. The scripts'
+-- Shader objects ({name, params = {{type, name, value}}}) set DIFFUSEC (a vector: the exe reads four numbers from the table, a missing fourth is 0, so
+-- {1, 0.25, 0.25} has alpha 0 and is added to the picture by the premultiplied blending), LIGHTNESS, SATURATION and HIGHLIGHT. ALPHA_FACTOR is the alpha
+-- of the scripts' render state. u_param0 = DIFFUSEC, u_param1 = LIGHTNESS, SATURATION, HIGHLIGHT, which shader (0 modulate, 1 colorize, 2 gold)
+local SHADER_SRC = [[
+vec4 shade(vec4 texel, vec2 uv, vec4 tint) {
+    vec4 color = texel;
+    vec4 diffuse = u_param0;
+    float lightness = u_param1.x, saturation = u_param1.y, highlight = u_param1.z;
+    float g = (color.r + color.g + color.b) * 0.333;
+    if (u_param1.w < 0.5) {
+        color *= diffuse;
+    } else if (u_param1.w < 1.5) {
+        vec4 grayscaleVec = vec4(g, g, g, color.a);
+        float l = lightness * color.a;
+        color = mix(grayscaleVec, color, saturation) * diffuse;
+        color = vec4(color.r + l, color.g + l, color.b + l, color.a);
+    } else {
+        float h = highlight * g * g;
+        g = 1.0 - g;
+        g = 1.0 - g * g + lightness * color.a;
+        color = vec4(g, g, g, color.a) * diffuse + h;
+    }
+    return color * tint.a;
+}
+]]
+local shaderMode = {["2d-sprite-diffuse-modulate"] = 0, ["2d-sprite-colorize"] = 1, ["2d-sprite-gold"] = 2}
+local shaderReady
+-- useShader(shaderObject): the engine's shader is switched on with the object's parameters; false when it is not one of those shaders
+function useShader(sh)
+    if type(sh) ~= "table" or not nativeSetShader then return false end
+    local mode = shaderMode[sh.name]
+    if mode == nil then return false end
+    if shaderReady == nil then
+        local ok = nativeCreateShader and nativeCreateShader("stella-sprite", SHADER_SRC)
+        shaderReady = ok and true or false
+    end
+    if not shaderReady then return false end
+    local d, light, sat, hl = {1, 1, 1, 1}, 0, 0, 0
+    for _, prm in ipairs(type(sh.params) == "table" and sh.params or {}) do
+        local v = prm.value
+        if prm.name == "DIFFUSEC" and type(v) == "table" then d = {tonumber(v[1]) or 0, tonumber(v[2]) or 0, tonumber(v[3]) or 0, tonumber(v[4]) or 0}
+        elseif prm.name == "LIGHTNESS" then light = tonumber(v) or 0
+        elseif prm.name == "SATURATION" then sat = tonumber(v) or 0
+        elseif prm.name == "HIGHLIGHT" then hl = tonumber(v) or 0 end
+    end
+    nativeShaderParam("stella-sprite", 0, d[1], d[2], d[3], d[4])
+    nativeShaderParam("stella-sprite", 1, light, sat, hl, mode)
+    nativeSetShader("stella-sprite")
+    return true
+end
 -- drawSpriteWithShader(sprite, shader, x, y, scaleX, scaleY, angle) / drawSpriteWithoutShader(sprite, x, y, scaleX, scaleY, angle): the sprite's
 -- pivot at (x, y); the shader (the greyed-out look of a disabled button) is left out
-local function drawScaled(sprite, x, y, sx, sy, angle)
+local function drawScaled(sprite, x, y, sx, sy, angle, shader)
     if not sprite then return end
     sx, sy = sx or 1, sy or sx or 1
     if sx == 0 or sy == 0 then return end
     local px, py = 0, 0
     if res.getSpritePivot then px, py = res.getSpritePivot(sprite) px, py = px or 0, py or 0 end
     nativeSetRenderState(0, 0, sx, sy, angle or 0, px, py, scriptAlpha())
+    local shaded = shader ~= nil and useShader(shader)
     res.drawSprite(sprite, (x or 0) / sx - px, (y or 0) / sy - py, "TOP", "LEFT")
+    if shaded then nativeSetShader("none") end
     restoreRenderState()
 end
-def("drawSpriteWithShader", function(sprite, shader, x, y, sx, sy, angle) drawScaled(sprite, x, y, sx, sy, angle) end)
+env.drawSpriteWithShader = function(sprite, shader, x, y, sx, sy, angle) drawScaled(sprite, x, y, sx, sy, angle, shader) end
 def("drawSpriteWithoutShader", function(sprite, x, y, sx, sy, angle) drawScaled(sprite, x, y, sx, sy, angle) end)
 def("deviceManufacturer", "Apple")
 def("deviceInfoModel", "iPhone")
@@ -545,7 +685,14 @@ local function guardScene(scene)
     local onExit, onEntry = rawget(scene, "onExit"), rawget(scene, "onEntry")
     if type(onExit) ~= "function" or type(onEntry) ~= "function" then return end
     scene.__abGuarded = true
-    scene.onEntry = function(self, ...) rawset(self, "__abLeft", nil) return onEntry(self, ...) end
+    local entries = 0
+    scene.onEntry = function(self, ...)
+        entries = entries + 1
+        if env.abGuardMenu then env.abGuardMenu() end      -- (the menu manager is loaded after the first call at start-up, so it is guarded here, when the first scene is entered)
+        if os.getenv("AB_SCENEDBG") and entries <= 6 then print("GameScene:onEntry #" .. entries .. " (left before: " .. tostring(rawget(self, "__abLeft")) .. ")\n" .. debug.traceback()) end
+        rawset(self, "__abLeft", nil)
+        return onEntry(self, ...)
+    end
     scene.onExit = function(self, ...)
         if rawget(self, "__abLeft") then return end
         rawset(self, "__abLeft", true)
@@ -553,4 +700,94 @@ local function guardScene(scene)
     end
 end
 guardScene(rawget(env, "GameScene"))
-env.abGuardStellaScene = function() guardScene(rawget(env, "GameScene")) end
+-- v3.9: the camera keeps the view inside the level's limits, which the level sets when it is loaded. A resolutionChanged before that (the window
+-- resized while a menu or the loading screen is up) stopped with "attempt to compare number with nil" in forceScreenLimits, so with no limits yet it leaves the view alone
+local function guardCamera(cam)
+    if type(cam) ~= "table" or rawget(cam, "__abGuarded") then return end
+    local force = rawget(cam, "forceScreenLimits")
+    if type(force) ~= "function" then return end
+    cam.__abGuarded = true
+    cam.forceScreenLimits = function(self, ...)
+        local l = self.levelLimits
+        if type(l) ~= "table" or l.minScale == nil or l.left == nil or l.right == nil or l.top == nil or l.bottom == nil then return end
+        return force(self, ...)
+    end
+end
+-- MenuManager:update calls setRoot(queudRoot) and clears queudRoot only afterwards. While the scene loads (its onEntry loads the level and the theme) another update can
+-- run, or onEntry can stop on a script error: the scene was then left and entered again, over and over (hundreds of "setupFrameElements" lines and "same listener twice"
+-- for every listener of the scene). The scene is now taken off the queue before it is entered, and an error is printed once and the scene counts as entered.
+local function guardMenuManager(mm)
+    if type(mm) ~= "table" or rawget(mm, "__abGuarded") then return end
+    local setRoot = rawget(mm, "setRoot")
+    if type(setRoot) ~= "function" then return end
+    mm.__abGuarded = true
+    local entering = false
+    mm.setRoot = function(self, root, ...)
+        if entering then            -- a scene entry that starts while another is still loading is dropped (it is what made the scene load again and again)
+            if root ~= nil and rawget(self, "queudRoot") == root then self.queudRoot = nil end
+            return
+        end
+        if root ~= nil and rawget(self, "queudRoot") == root then self.queudRoot = nil end      -- (taken off the queue first: a frame that runs while the scene loads must not enter it again)
+        entering = true
+        local ok, err = pcall(setRoot, self, root, ...)
+        entering = false
+        if not ok then print("scene entry stopped (the scene is kept): " .. tostring(err)) end
+    end
+    local upd = rawget(mm, "update")
+    if type(upd) == "function" then
+        local inUpdate = false
+        mm.update = function(self, ...)
+            if inUpdate or entering then return end      -- no nested update while the menu manager is already updating / loading a scene
+            inUpdate = true
+            local ok, err = pcall(upd, self, ...)
+            inUpdate = false
+            if not ok then print("menu update: " .. tostring(err)) end
+        end
+    end
+end
+-- AB_LISTENERDBG=1: every "same listener twice" prints which event, which listener and the Lua call stack (the first 8), to find who adds a listener again
+local function watchListeners(em)
+    if type(em) ~= "table" or rawget(em, "__abWatched") or not os.getenv("AB_LISTENERDBG") then return end
+    local add = rawget(em, "addEventListener")
+    if type(add) ~= "function" then return end
+    em.__abWatched = true
+    local shown = 0
+    em.addEventListener = function(self, id, listener, ...)
+        local lists = type(self) == "table" and self.eventListeners
+        local list = type(lists) == "table" and lists[id]
+        if type(list) == "table" and shown < 8 then
+            for _, x in pairs(list) do
+                if x == listener then
+                    shown = shown + 1
+                    local names = {}
+                    for k, v in pairs(env.events or {}) do if v == id then names[#names + 1] = tostring(k) end end
+                    print("DUPLICATE LISTENER for " .. table.concat(names, "/") .. " (" .. tostring(id) .. "), listener " .. tostring(type(listener) == "table" and (listener.name or listener.objectName) or listener))
+                    local dbg = rawget(_G, "debug")
+                    print(dbg and dbg.traceback and dbg.traceback() or "(no stack available)")
+                    break
+                end
+            end
+        end
+        return add(self, id, listener, ...)
+    end
+end
+-- Bird skins come from the Telepod configuration, which is empty here: a skin saved in the save file (chosen or unlocked) has no entry in it, and the level
+-- build (BirdAnimation, the extra bird bar of the HUD) indexes that entry. So a skin without an entry counts as not chosen and not unlocked.
+local function guardSkins(sw)
+    if type(sw) ~= "table" or rawget(sw, "__abSkins") then return end
+    local active, unlocked = rawget(sw, "getActiveBirdSkin"), rawget(sw, "isBirdSkinUnlocked")
+    if type(active) ~= "function" or type(unlocked) ~= "function" then return end
+    sw.__abSkins = true
+    local function known(skin) local c = env.g_telepodConfiguration return type(c) == "table" and c[skin] ~= nil end
+    sw.getActiveBirdSkin = function(self, ...)
+        local r = active(self, ...)
+        if r ~= nil and not known(r) then return nil end
+        return r
+    end
+    sw.isBirdSkinUnlocked = function(self, skin, ...)
+        if skin ~= nil and not known(skin) then return false end
+        return unlocked(self, skin, ...)
+    end
+end
+env.abGuardMenu = function() local m = env.MenuManager guardMenuManager(type(m) == "table" and m.MenuManager or nil) guardSkins(env.SettingsWrapper) end
+env.abGuardStellaScene = function() guardScene(rawget(env, "GameScene")) guardCamera(env.Camera) env.abGuardMenu() watchListeners(env.EventManager) end

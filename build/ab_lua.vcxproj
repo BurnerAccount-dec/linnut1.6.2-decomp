@@ -251,6 +251,902 @@
     </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\editor_classic_lua.cpp.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kEditorClassicLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/editor_classic.lua -DSYMBOL=kEditorClassicLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/editor_classic_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\editor_classic.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\editor_classic_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Embedding kEditorClassicLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/editor_classic.lua -DSYMBOL=kEditorClassicLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/editor_classic_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\editor_classic.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\editor_classic_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Embedding kEditorClassicLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/editor_classic.lua -DSYMBOL=kEditorClassicLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/editor_classic_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\editor_classic.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\editor_classic_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Embedding kEditorClassicLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/editor_classic.lua -DSYMBOL=kEditorClassicLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/editor_classic_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\editor_classic.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\editor_classic_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\hatchery_natives_lua.cpp.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kHatcheryNativesLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/hatchery_natives.lua -DSYMBOL=kHatcheryNativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/hatchery_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\hatchery_natives.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\hatchery_natives_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Embedding kHatcheryNativesLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/hatchery_natives.lua -DSYMBOL=kHatcheryNativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/hatchery_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\hatchery_natives.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\hatchery_natives_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Embedding kHatcheryNativesLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/hatchery_natives.lua -DSYMBOL=kHatcheryNativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/hatchery_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\hatchery_natives.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\hatchery_natives_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Embedding kHatcheryNativesLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/hatchery_natives.lua -DSYMBOL=kHatcheryNativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/hatchery_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\hatchery_natives.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\hatchery_natives_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\space_natives_lua.cpp.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kSpaceNativesLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/space_natives.lua -DSYMBOL=kSpaceNativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/space_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\space_natives.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\space_natives_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Embedding kSpaceNativesLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/space_natives.lua -DSYMBOL=kSpaceNativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/space_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\space_natives.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\space_natives_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Embedding kSpaceNativesLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/space_natives.lua -DSYMBOL=kSpaceNativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/space_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\space_natives.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\space_natives_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Embedding kSpaceNativesLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/space_natives.lua -DSYMBOL=kSpaceNativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/space_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\space_natives.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\space_natives_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\space_editor_lua.cpp.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kSpaceEditorLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/space_editor.lua -DSYMBOL=kSpaceEditorLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/space_editor_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\space_editor.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\space_editor_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Embedding kSpaceEditorLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/space_editor.lua -DSYMBOL=kSpaceEditorLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/space_editor_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\space_editor.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\space_editor_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Embedding kSpaceEditorLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/space_editor.lua -DSYMBOL=kSpaceEditorLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/space_editor_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\space_editor.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\space_editor_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Embedding kSpaceEditorLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/space_editor.lua -DSYMBOL=kSpaceEditorLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/space_editor_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\space_editor.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\space_editor_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\motion_lua.cpp.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kMotionLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/motion.lua -DSYMBOL=kMotionLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/motion_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\motion.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\motion_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Embedding kMotionLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/motion.lua -DSYMBOL=kMotionLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/motion_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\motion.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\motion_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Embedding kMotionLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/motion.lua -DSYMBOL=kMotionLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/motion_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\motion.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\motion_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Embedding kMotionLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/motion.lua -DSYMBOL=kMotionLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/motion_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\motion.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\motion_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\compo_image_lua.cpp.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kCompoImageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/CompoImage.lua -DSYMBOL=kCompoImageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/compo_image_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\CompoImage.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\compo_image_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Embedding kCompoImageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/CompoImage.lua -DSYMBOL=kCompoImageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/compo_image_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\CompoImage.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\compo_image_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Embedding kCompoImageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/CompoImage.lua -DSYMBOL=kCompoImageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/compo_image_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\CompoImage.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\compo_image_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Embedding kCompoImageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/CompoImage.lua -DSYMBOL=kCompoImageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/compo_image_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\CompoImage.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\compo_image_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\invisible_button_lua.cpp.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kInvisibleButtonLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/InvisibleButton.lua -DSYMBOL=kInvisibleButtonLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/invisible_button_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\InvisibleButton.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\invisible_button_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Embedding kInvisibleButtonLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/InvisibleButton.lua -DSYMBOL=kInvisibleButtonLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/invisible_button_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\InvisibleButton.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\invisible_button_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Embedding kInvisibleButtonLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/InvisibleButton.lua -DSYMBOL=kInvisibleButtonLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/invisible_button_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\InvisibleButton.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\invisible_button_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Embedding kInvisibleButtonLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/InvisibleButton.lua -DSYMBOL=kInvisibleButtonLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/invisible_button_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\InvisibleButton.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\invisible_button_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\editor_joint_page_lua.cpp.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kEditorJointPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/editorjointPage.luac -DSYMBOL=kEditorJointPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/editor_joint_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\editorjointPage.luac;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\editor_joint_page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Embedding kEditorJointPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/editorjointPage.luac -DSYMBOL=kEditorJointPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/editor_joint_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\editorjointPage.luac;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\editor_joint_page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Embedding kEditorJointPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/editorjointPage.luac -DSYMBOL=kEditorJointPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/editor_joint_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\editorjointPage.luac;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\editor_joint_page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Embedding kEditorJointPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/editorjointPage.luac -DSYMBOL=kEditorJointPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/editor_joint_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\editorjointPage.luac;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\editor_joint_page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\overlay_page_lua.cpp.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kOverlayPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/overlayPage.luac -DSYMBOL=kOverlayPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/overlay_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\overlayPage.luac;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\overlay_page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Embedding kOverlayPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/overlayPage.luac -DSYMBOL=kOverlayPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/overlay_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\overlayPage.luac;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\overlay_page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Embedding kOverlayPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/overlayPage.luac -DSYMBOL=kOverlayPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/overlay_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\overlayPage.luac;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\overlay_page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Embedding kOverlayPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/overlayPage.luac -DSYMBOL=kOverlayPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/overlay_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\overlayPage.luac;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\overlay_page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\joint_page_lua.cpp.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kJointPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/joint_page.lua -DSYMBOL=kJointPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/joint_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\joint_page.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\joint_page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Embedding kJointPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/joint_page.lua -DSYMBOL=kJointPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/joint_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\joint_page.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\joint_page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Embedding kJointPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/joint_page.lua -DSYMBOL=kJointPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/joint_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\joint_page.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\joint_page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Embedding kJointPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/joint_page.lua -DSYMBOL=kJointPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/joint_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\joint_page.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\joint_page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\friends_server_lua.cpp.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kFriendsServerLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/friends_server.lua -DSYMBOL=kFriendsServerLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/friends_server_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\friends_server.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\friends_server_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Embedding kFriendsServerLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/friends_server.lua -DSYMBOL=kFriendsServerLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/friends_server_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\friends_server.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\friends_server_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Embedding kFriendsServerLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/friends_server.lua -DSYMBOL=kFriendsServerLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/friends_server_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\friends_server.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\friends_server_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Embedding kFriendsServerLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/friends_server.lua -DSYMBOL=kFriendsServerLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/friends_server_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\friends_server.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\friends_server_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\friends2_natives_lua.cpp.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kFriends2NativesLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/friends2_natives.lua -DSYMBOL=kFriends2NativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/friends2_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\friends2_natives.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\friends2_natives_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Embedding kFriends2NativesLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/friends2_natives.lua -DSYMBOL=kFriends2NativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/friends2_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\friends2_natives.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\friends2_natives_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Embedding kFriends2NativesLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/friends2_natives.lua -DSYMBOL=kFriends2NativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/friends2_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\friends2_natives.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\friends2_natives_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Embedding kFriends2NativesLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/friends2_natives.lua -DSYMBOL=kFriends2NativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/friends2_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\friends2_natives.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\friends2_natives_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\stella_natives_lua.cpp.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kStellaNativesLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/stella_natives.lua -DSYMBOL=kStellaNativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/stella_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\stella_natives.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\stella_natives_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Embedding kStellaNativesLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/stella_natives.lua -DSYMBOL=kStellaNativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/stella_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\stella_natives.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\stella_natives_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Embedding kStellaNativesLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/stella_natives.lua -DSYMBOL=kStellaNativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/stella_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\stella_natives.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\stella_natives_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Embedding kStellaNativesLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/stella_natives.lua -DSYMBOL=kStellaNativesLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/stella_natives_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\stella_natives.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\stella_natives_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\achievements_page_lua.cpp.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kAchievementsPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/achievements_page.lua -DSYMBOL=kAchievementsPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/achievements_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\achievements_page.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\achievements_page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Embedding kAchievementsPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/achievements_page.lua -DSYMBOL=kAchievementsPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/achievements_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\achievements_page.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\achievements_page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Embedding kAchievementsPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/achievements_page.lua -DSYMBOL=kAchievementsPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/achievements_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\achievements_page.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\achievements_page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Embedding kAchievementsPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/achievements_page.lua -DSYMBOL=kAchievementsPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/achievements_page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\achievements_page.lua;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\achievements_page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\page_lua.cpp.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/page.luac -DSYMBOL=kPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\page.luac;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Embedding kPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/page.luac -DSYMBOL=kPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\page.luac;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Embedding kPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/page.luac -DSYMBOL=kPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\page.luac;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Embedding kPageLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/page.luac -DSYMBOL=kPageLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/page_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\page.luac;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\page_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4b833ba4255d54c1b7265e6dc7dd62a4\item_lua.cpp.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Embedding kItemLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/item.luac -DSYMBOL=kItemLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/item_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\item.luac;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\item_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Embedding kItemLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/item.luac -DSYMBOL=kItemLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/item_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\item.luac;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\item_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Embedding kItemLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/item.luac -DSYMBOL=kItemLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/item_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\item.luac;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\item_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Embedding kItemLua</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -DINPUT=C:/Users/Hugofritz/Downloads/engine/src/lua/fallback/item.luac -DSYMBOL=kItemLua -DOUTPUT=C:/Users/Hugofritz/Downloads/engine/build/generated/item_lua.cpp -P C:/Users/Hugofritz/Downloads/engine/cmake/embed_lua.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\item.luac;C:\Users\Hugofritz\Downloads\engine\cmake\embed_lua.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\generated\item_lua.cpp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
     <CustomBuild Include="C:\Users\Hugofritz\Downloads\engine\CMakeLists.txt">
       <UseUtf8Encoding>Always</UseUtf8Encoding>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Building Custom Rule C:/Users/Hugofritz/Downloads/engine/CMakeLists.txt</Message>
@@ -263,7 +1159,7 @@ endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
 exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd</Command>
-      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCXXInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCommonLanguageInclude.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeGenericSystem.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeInitializeConfigs.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeLanguageInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeRCInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeSystemSpecificInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeSystemSpecificInitialize.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\ExternalProject\shared_internal_commands.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\FetchContent.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\FetchContent\CMakeLists.cmake.in;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCXXLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCommonLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-Initialize.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\WindowsPaths.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeCCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeCXXCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeRCCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeSystem.cmake;C:\Users\Hugofritz\Downloads\engine\src\lua\achievements_page.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\editor_classic.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\CompoImage.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\InvisibleButton.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\editorjointPage.luac;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\item.luac;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\overlayPage.luac;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\page.luac;C:\Users\Hugofritz\Downloads\engine\src\lua\friends2_natives.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\friends_server.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\hatchery_natives.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\joint_page.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\motion.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\space_editor.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\space_natives.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\stella_natives.lua;%(AdditionalInputs)</AdditionalInputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCXXInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCommonLanguageInclude.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeGenericSystem.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeInitializeConfigs.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeLanguageInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeRCInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeSystemSpecificInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeSystemSpecificInitialize.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\ExternalProject\shared_internal_commands.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\FetchContent.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\FetchContent\CMakeLists.cmake.in;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCXXLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCommonLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-Initialize.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\WindowsPaths.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeCCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeCXXCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeRCCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeSystem.cmake;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\generate.stamp</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkObjects>
       <Message Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Building Custom Rule C:/Users/Hugofritz/Downloads/engine/CMakeLists.txt</Message>
@@ -276,7 +1172,7 @@ endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
 exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd</Command>
-      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCXXInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCommonLanguageInclude.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeGenericSystem.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeInitializeConfigs.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeLanguageInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeRCInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeSystemSpecificInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeSystemSpecificInitialize.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\ExternalProject\shared_internal_commands.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\FetchContent.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\FetchContent\CMakeLists.cmake.in;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCXXLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCommonLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-Initialize.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\WindowsPaths.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeCCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeCXXCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeRCCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeSystem.cmake;C:\Users\Hugofritz\Downloads\engine\src\lua\achievements_page.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\editor_classic.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\CompoImage.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\InvisibleButton.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\editorjointPage.luac;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\item.luac;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\overlayPage.luac;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\page.luac;C:\Users\Hugofritz\Downloads\engine\src\lua\friends2_natives.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\friends_server.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\hatchery_natives.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\joint_page.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\motion.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\space_editor.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\space_natives.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\stella_natives.lua;%(AdditionalInputs)</AdditionalInputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCXXInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCommonLanguageInclude.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeGenericSystem.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeInitializeConfigs.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeLanguageInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeRCInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeSystemSpecificInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeSystemSpecificInitialize.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\ExternalProject\shared_internal_commands.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\FetchContent.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\FetchContent\CMakeLists.cmake.in;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCXXLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCommonLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-Initialize.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\WindowsPaths.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeCCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeCXXCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeRCCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeSystem.cmake;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\generate.stamp</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkObjects>
       <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">Building Custom Rule C:/Users/Hugofritz/Downloads/engine/CMakeLists.txt</Message>
@@ -289,7 +1185,7 @@ endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
 exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd</Command>
-      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCXXInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCommonLanguageInclude.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeGenericSystem.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeInitializeConfigs.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeLanguageInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeRCInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeSystemSpecificInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeSystemSpecificInitialize.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\ExternalProject\shared_internal_commands.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\FetchContent.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\FetchContent\CMakeLists.cmake.in;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCXXLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCommonLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-Initialize.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\WindowsPaths.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeCCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeCXXCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeRCCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeSystem.cmake;C:\Users\Hugofritz\Downloads\engine\src\lua\achievements_page.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\editor_classic.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\CompoImage.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\InvisibleButton.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\editorjointPage.luac;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\item.luac;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\overlayPage.luac;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\page.luac;C:\Users\Hugofritz\Downloads\engine\src\lua\friends2_natives.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\friends_server.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\hatchery_natives.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\joint_page.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\motion.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\space_editor.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\space_natives.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\stella_natives.lua;%(AdditionalInputs)</AdditionalInputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCXXInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCommonLanguageInclude.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeGenericSystem.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeInitializeConfigs.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeLanguageInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeRCInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeSystemSpecificInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeSystemSpecificInitialize.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\ExternalProject\shared_internal_commands.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\FetchContent.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\FetchContent\CMakeLists.cmake.in;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCXXLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCommonLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-Initialize.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\WindowsPaths.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeCCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeCXXCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeRCCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeSystem.cmake;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\generate.stamp</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|Win32'">false</LinkObjects>
       <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">Building Custom Rule C:/Users/Hugofritz/Downloads/engine/CMakeLists.txt</Message>
@@ -302,7 +1198,7 @@ endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
 exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd</Command>
-      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCXXInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCommonLanguageInclude.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeGenericSystem.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeInitializeConfigs.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeLanguageInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeRCInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeSystemSpecificInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeSystemSpecificInitialize.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\ExternalProject\shared_internal_commands.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\FetchContent.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\FetchContent\CMakeLists.cmake.in;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCXXLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCommonLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-Initialize.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\WindowsPaths.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeCCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeCXXCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeRCCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeSystem.cmake;C:\Users\Hugofritz\Downloads\engine\src\lua\achievements_page.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\editor_classic.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\CompoImage.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\InvisibleButton.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\editorjointPage.luac;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\item.luac;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\overlayPage.luac;C:\Users\Hugofritz\Downloads\engine\src\lua\fallback\page.luac;C:\Users\Hugofritz\Downloads\engine\src\lua\friends2_natives.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\friends_server.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\hatchery_natives.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\joint_page.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\motion.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\space_editor.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\space_natives.lua;C:\Users\Hugofritz\Downloads\engine\src\lua\stella_natives.lua;%(AdditionalInputs)</AdditionalInputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCXXInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeCommonLanguageInclude.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeGenericSystem.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeInitializeConfigs.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeLanguageInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeRCInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeSystemSpecificInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\CMakeSystemSpecificInitialize.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Compiler\MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\ExternalProject\shared_internal_commands.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\FetchContent.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\FetchContent\CMakeLists.cmake.in;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCXXLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Internal\CMakeCommonLinkerInformation.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Linker\MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Linker\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-Initialize.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC-C.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC-CXX.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows-MSVC.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\Windows.cmake;C:\Program Files\CMake\share\cmake-4.4\Modules\Platform\WindowsPaths.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeCCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeCXXCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeRCCompiler.cmake;C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\4.4.0\CMakeSystem.cmake;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">C:\Users\Hugofritz\Downloads\engine\build\CMakeFiles\generate.stamp</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|Win32'">false</LinkObjects>
     </CustomBuild>

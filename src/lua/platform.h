@@ -244,6 +244,7 @@ public:
     virtual void DrawLine2D(float x1, float y1, float x2, float y2, float width, float r, float g, float b, float a) {
         (void)x1; (void)y1; (void)x2; (void)y2; (void)width; (void)r; (void)g; (void)b; (void)a; }
     virtual void DrawGame() {}
+    virtual void SetDrawZRange(int lo, int hi) { (void)lo; (void)hi; }   // Stella native_setZOrderRange: drawGameNative draws the z layers lo .. hi-1
     virtual void DrawBackground() {}
     virtual void DrawForeground() {}
     virtual void DrawParticles(bool world = true) { (void)world; }
@@ -252,6 +253,7 @@ public:
     virtual void SetSprite(const std::string& n, const std::string& sprite) { (void)n; (void)sprite; }
     virtual void SetMaterial(const std::string& n, const std::string& material) { (void)n; (void)material; }
     virtual void SetTexture(const std::string& n, const std::string& texture) { (void)n; (void)texture; }
+    virtual bool PlayLevelText(const std::string& text) { (void)text; return false; }   // v3.9
     virtual void SetTheme(const std::string& theme) { (void)theme; }
     virtual void SetTrailSprite(bool special, const std::string& name) { (void)special; (void)name; }
     virtual void StartNewTrajectory() {}
