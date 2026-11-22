@@ -2378,7 +2378,7 @@ void GamePlatform::ResGetSpriteBounds(const std::string&, const std::string& spr
     w = s ? (float)s->w : 0.0f;
     h = s ? (float)s->h : 0.0f;
     // sprites and composite sprites share one name table: a composite's size is its extent
-    if (!s) if (const CompoSprite* compo = sprites_.FindCompo(sprite)) {
+    if (!s || s->w <= 0 || s->h <= 0) if (const CompoSprite* compo = sprites_.FindCompo(sprite)) {
         int cw, ch, ox, oy;
         sprites_.CompoExtent(*compo, cw, ch, ox, oy);
         w = (float)cw; h = (float)ch;
@@ -2389,7 +2389,7 @@ void GamePlatform::ResGetSpritePivot(const std::string&, const std::string& spri
     const Sprite* s = sprites_.Find(sprite);
     px = s ? (float)s->pivotX : 0.0f;
     py = s ? (float)s->pivotY : 0.0f;
-    if (!s) if (const CompoSprite* compo = sprites_.FindCompo(sprite)) {
+    if (!s || s->w <= 0 || s->h <= 0) if (const CompoSprite* compo = sprites_.FindCompo(sprite)) {
         int cw, ch, ox, oy;
         sprites_.CompoExtent(*compo, cw, ch, ox, oy);
         px = (float)ox; py = (float)oy;
@@ -4139,6 +4139,7 @@ const GamePlatform::ParticleDef* GamePlatform::ParticleDefFor(const std::string&
     lua_getfield(L, t, "roundExplosions");
     if (lua_isboolean(L, -1)) d.roundExplosions = lua_toboolean(L, -1) != 0;
     lua_pop(L, 1);
+    if (d.v2Emitter) d.hasAngle = GetNumber(L, t, "minAngle", d.minAngle) && GetNumber(L, t, "maxAngle", d.maxAngle);
     GetNumber(L, t, "minAngleVel", d.minAngleVel);
     GetNumber(L, t, "maxAngleVel", d.maxAngleVel);
     GetNumber(L, t, "minScaleBegin", d.minScaleBegin);
@@ -4262,6 +4263,7 @@ void GamePlatform::AddParticles(const std::string& type, float amount, float x, 
             p.vy = (d->maxVelY - d->minVelY) * Rand01() + d->minVelY;
         }
         if (d->space) p.angle = ((d->maxAngle - d->minAngle) * Rand01() + d->minAngle) * 0.017453292f + (d->useSpawnerAngle ? angle : 0.0f);
+        else if (d->v2Emitter && d->hasAngle) p.angle = ((d->maxAngle - d->minAngle) * Rand01() + d->minAngle) * 0.017453292f;   // Rio: minAngle / maxAngle turn the sprite, the emitter angles only the direction
         else if (d->seasons || d->v2Emitter) p.angle = ((d->angleMaxEmitter - d->angleMinEmitter) * Rand01() + d->angleMinEmitter) * 0.017453292f;
         else p.angle = Rand01() * 3.1415927f + Rand01() * 3.1415927f;   // 1.x: the exe uses one random number twice
         p.angleVel = (d->maxAngleVel - d->minAngleVel) * Rand01() + d->minAngleVel;
@@ -4300,6 +4302,7 @@ void GamePlatform::AddParticles(const std::string& type, float amount, float x, 
             lua_settop(hookL, top);
             if (drop) continue;
         }
+        if (partDbg) std::fprintf(stderr, "PART %s x=%.1f y=%.1f vx=%.1f vy=%.1f life=%.2f sc=%.2f\n", type.c_str(), p.x, p.y, p.vx, p.vy, p.lifeTime, p.scaleBegin);
         particles_.push_back(p);
     }
 }

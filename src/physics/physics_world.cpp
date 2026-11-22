@@ -175,6 +175,7 @@ bool PhysicsWorld::BodyCommand(const std::string& n, int cmd, float a, float& re
     PhysObject* o = Find(n);
     if (!o) return false;
     PhysBody& b = *o->pbody;
+    if (cmd == 96) { b.SetStatic(a != 0.0f); if (a == 0.0f) b.SetAwake(true); return true; }   // Rio: setStatic(name, on) - the Samba Burst freezes its birds while they dance
     if (cmd == 95) { result = (float)b.Type(); return true; }          // 3.7.1: getBodyType
     if (cmd == 30) { o->filterMask = (int)a; o->filterUsed = true; return true; }   // setFilterMask (3.x)
     if (cmd == 31) { o->filterCat = (int)a; o->filterUsed = true; return true; }    // setFilterCategory (3.x)

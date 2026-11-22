@@ -2,6 +2,22 @@
 
 What changed in each version of the engine, newest first. The README has the current status; the reference for script writers is in [`docs/SCRIPTING.md`](docs/SCRIPTING.md) and how to run and debug in [`docs/USAGE.md`](docs/USAGE.md).
 
+## New in 4.3
+
+- **Rio: the Samba Burst power-up works.** The script calls `setStatic(name, on)` to freeze its birds while they dance and to let them go again; the engine had no such function, so the burst stopped with a script error the moment the Samba Bird hit something. It exists now (`setStatic` in the Lua API, also usable from other scripts).
+- **Rio: particle rotation.** A particle definition with `minAngle` / `maxAngle` turns the sprite by that range; the emitter angles only choose the direction it flies in (they used to decide both).
+- **Sling Scope starts where the bird is.** The scope drew its path from the point the rubber band was pulled to. When the slingshot's pole base pushes the bird closer, the real launch leaves from the bird's own position, so the two paths differed. The scope now simulates from the bird; `tuning["scope.accurate"] = 0` gives the retail behaviour back. Applies to every game that draws the Sling Scope through the engine.
+- **Friends 2.0.0, Christmas tree slingshot:** the tree's parts hang about the bird without colliding with anything, so the bird in the sling no longer shoves and bursts the decorations and the next bird that jumps up to the sling no longer hits the tree.
+- **Friends 2.0.0, Wingman:** the yellow comic-book background of the activation animation is drawn again (its picture was measured as 0 pixels wide because a missing second argument made the engine read the picture's name as a sheet name).
+- **Friends 2.0.0, the tree's lobbed ornaments** (collider "projectile") collide with everything except the birds and the tree itself.
+- **Rio 2.0.0: the aiming aid uses the red sling dot** (`PARTICLE_SLINGDOT`) like the other games, not another sprite.
+- **Friends 2.0.0, "Connect now!"** (Facebook connect pop-up) no longer ends in "Oops! An unexpected error occurred": it takes the game's Facebook login path, which looks for the Social account like Friends 1.0.0 does and offers to go on as a local player.
+- **Friends 2.0.0 and 1.0.0: the bird coin shop** exists and works while a network is on: its six packages are paid with the same fake ad as the coin window (no network: the game's own error).
+- **Friends 1.0.0: where the Social sync is:** "Play Tournament" shows the Facebook Login window; its check mark looks for the Social account (found, or choose "LOCAL PLAYER" if there is none).
+- **Friends 2.0.0: the Tutorial Tournament's end** ("Tutorial Completed!") no longer stops with a script error when a tutorial level has no saved score, so its results window opens and the menu is left again instead of staying shut with a frozen "6 Seconds Left".
+- **Friends 2.0.0:** the game's `debug.traceback` call (a frame without children) no longer stops with a script error.
+- `AB_PARTDBG=1` also prints where each particle starts and how fast it moves.
+
 ## New in 4.2.1
 
 - **Pop-ups own their clicks.** A press that a script's pop-up (the leave-the-level question, the level spawner, the Social levels list) took no longer reaches the game once the pop-up has closed: its hold and release are hidden until the button comes up, so a button of the pop-up cannot also press the one under it.

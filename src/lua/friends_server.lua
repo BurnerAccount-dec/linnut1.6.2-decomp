@@ -314,8 +314,30 @@ fb.postTournamentResults = function(rank, points, cb) later(cb, true) end
 fb.getCreditCount = function() return coinCount() end
 fb.checkCreditCountChange = function() return 0 end
 fb.hasBoughtSomething = function() return false end
-fb.isCoinShopReady = function() return false end      -- coins for real money: not here
-fb.getCreditShopListing = function(cb) later(cb, false) end
+-- (4.3) the coin shop: with a network connection it works like the coin window's fake ad, each of the six packages is paid with an ad
+local COIN_PACKS = {{1700, 400}, {780, 170}, {360, 80}, {170, 30}, {80, 10}, {30, 0}}
+local function netUp() return type(env.isNetworkConnected) ~= "function" or env.isNetworkConnected() end
+fb.isCoinShopReady = function() return netUp() and type(env.watchAd) == "function" end
+fb.getCreditShopListing = function(cb)
+    if not netUp() then later(cb, false) return end
+    local list = {}
+    for i, c in ipairs(COIN_PACKS) do list[i] = {id = "ab.coins." .. i, price = "Free (ad)", topUpValue = c[1] + c[2]} end
+    later(cb, true, list)
+end
+fb.buyCredits = function(id, cb)                           -- cb(1: bought, product id) | cb(0, message)
+    local n = tonumber(tostring(id):match("(%d+)$"))
+    local c = n and COIN_PACKS[n]
+    if not c then later(cb, 0, "That is not for sale.") return end
+    if not netUp() or type(env.watchAd) ~= "function" then later(cb, 0, "No internet connection.") return end
+    env.watchAd(function(reward)
+        if (reward or 0) <= 0 then later(cb, 0, "Cancelled.") return end
+        if type(env.addCoins) == "function" then env.addCoins(-reward) end   -- the ad's reward goes to the Social wallet, the package to the Friends coins
+        addCoins(c[1] + c[2])
+        save()
+        notify("EID_CREDIT_COUNT_UPDATED")
+        later(cb, 1, id)
+    end)
+end
 fb.hasClaimableBundle = function(name) return name == "MobileLoginPack" and not state().loginGift end
 fb.claimBundle = function(name, cb)
     local ok = name == "MobileLoginPack" and not state().loginGift

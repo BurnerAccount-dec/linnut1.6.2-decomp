@@ -604,7 +604,7 @@ private:
         // Angry Birds Space (0x493e20): the emitter angle range, the particle's own rotation range (minAngle / maxAngle, degrees), the emit area scale,
         // `useAngleFromSpawner` (the angle of the emitting object is added to the direction and the rotation), the def's own ignoreLimits and `background`
         bool space = false, useSpawnerAngle = false, ignoreLimits = false, background = false;
-        float minAngle = 0, maxAngle = 0, areaX = 1, areaY = 1;
+        float minAngle = 0, maxAngle = 0, areaX = 1, areaY = 1; bool hasAngle = false;
         std::vector<std::string> sprites;
     };
     std::map<std::string, ParticleDef> particleOverrideDefs_;   // addParticlesWithScale / addParticlesWithProperties: the def with the call's values

@@ -2120,6 +2120,7 @@ int l_simulateAimingAid(lua_State* L) { float st[2] = {(float)luaL_optnumber(L, 
 int l_setSensorGravityMask(lua_State* L) { return BodyCmd(L, 10); }
 int l_setFilterMask(lua_State* L) { return BodyCmd(L, 30); }
 int l_setFilterCategory(lua_State* L) { return BodyCmd(L, 31); }
+int l_setStatic(lua_State* L) { float r = 0; P(L)->BodyCommand(S(L, 1), 96, B(L, 2) ? 1.0f : 0.0f, r); return 0; }
 int l_setRevertGravity(lua_State* L) { float r = 0; P(L)->BodyCommand(S(L, 1), 14, B(L, 2) ? 1.0f : 0.0f, r); return 0; }
 int l_setRevertGravityWithMultiplier(lua_State* L) { float r = 0; P(L)->BodyCommand(S(L, 1), 15, B(L, 2) ? 1.0f : 0.0f, r); P(L)->BodyCommand(S(L, 1), 16, NOpt(L, 3, 0), r); P(L)->BodyCommand(S(L, 1), 17, NOpt(L, 4, 0), r); return 0; }
 int l_setObjectGravityCategory(lua_State* L) { return BodyCmd(L, 11); }
@@ -3800,7 +3801,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"createJoint", l_createJoint}, {"createJoints", l_createJoints}, {"setJointParameters", l_setJointParameters},
         {"checkJointLimits", l_checkJointLimits}, {"destroyJoint", l_destroyJoint},
         {"removeObject", l_removeObject}, {"savePersistentLuaFile", l_savePersistentLuaFile}, {"applyImpulse", l_applyImpulse}, {"applyForce", l_applyForce}, {"applyForceNative", l_applyForce}, {"setObjectDecoration", l_setObjectDecoration}, {"setNormalTrailSprite", l_setNormalTrailSprite}, {"setSpecialTrailSprite", l_setSpecialTrailSprite}, {"setSpriteRotation", l_setSpriteRotation}, {"setPivotOffset", l_setPivotOffset}, {"setTextureScale", l_setTextureScale}, {"setRecordVelocity", l_setRecordVelocity},
-        {"setPosition", l_setPosition}, {"setRotation", l_setRotation}, {"setVelocity", l_setVelocity},
+        {"setPosition", l_setPosition}, {"setStatic", l_setStatic}, {"setRotation", l_setRotation}, {"setVelocity", l_setVelocity},
         {"setAngularVelocity", l_setAngularVelocity}, {"setLinearDamping", l_setLinearDamping}, {"clearShapesArray", l_clearShapesArray}, {"addBoxToCompoundList", l_addBoxToCompoundList}, {"addPolygonToCompoundList", l_addPolygonToCompoundList}, {"addLineToCompoundList", l_addLineToCompoundList}, {"addCircleToCompoundList", l_addCircleToCompoundList}, {"setCompoundShapeLinearDamping", l_setCompoundShapeLinearDamping}, {"setCompoundShapeParameter", l_setCompoundShapeParameter}, {"createCompoundObject", l_createCompoundObject}, {"finalizeCompoundObject", l_finalizeCompoundObject}, {"enableAimingAid", l_enableAimingAid}, {"setAimingAidSprite", l_setAimingAidSprite}, {"clearAimingAid", l_clearAimingAid}, {"populateAimingAid", l_populateAimingAid}, {"updateBirdTrajectoryTable", l_updateBirdTrajectoryTable}, {"simulateAimingAid", l_simulateAimingAid}, {"spriteExists", l_spriteExists}, {"setSensorGravityMask", l_setSensorGravityMask}, {"setRevertGravity", l_setRevertGravity}, {"setRevertGravityWithMultiplier", l_setRevertGravityWithMultiplier}, {"setObjectGravityCategory", l_setObjectGravityCategory},
         {"setSensorMinimumAndMaximumForces", l_setSensorMinimumAndMaximumForces}, {"setGravityForceMultiplier", l_setGravityForceMultiplier},
         {"getGravityForceMultiplier", l_getGravityForceMultiplier}, {"setAngularDamping", l_setAngularDamping},

@@ -77,6 +77,15 @@ local CATALOG = {
         {id = "StoneCutter", type = "DURABLE", currency = "IVC", prices = {{price = 300, totalQuantity = 1, freeQuantity = 0, referencePrice = 300, salesPrice = ""}}},
         {id = "GlassBreaker", type = "DURABLE", currency = "IVC", prices = {{price = 300, totalQuantity = 1, freeQuantity = 0, referencePrice = 300, salesPrice = ""}}}}},
 }
+local COIN_PRICES = {                                                  -- the six tiles of the coin shop (COINSHOP_1 to COINSHOP_6: the first is the best value)
+    {productId = "ab.coins.1", price = "Free (ad)", localizedPrice = "Free (ad)", totalQuantity = 1700, freeQuantity = 400, referencePrice = 0, salesPrice = ""},
+    {productId = "ab.coins.2", price = "Free (ad)", localizedPrice = "Free (ad)", totalQuantity = 780, freeQuantity = 170, referencePrice = 0, salesPrice = ""},
+    {productId = "ab.coins.3", price = "Free (ad)", localizedPrice = "Free (ad)", totalQuantity = 360, freeQuantity = 80, referencePrice = 0, salesPrice = ""},
+    {productId = "ab.coins.4", price = "Free (ad)", localizedPrice = "Free (ad)", totalQuantity = 170, freeQuantity = 30, referencePrice = 0, salesPrice = ""},
+    {productId = "ab.coins.5", price = "Free (ad)", localizedPrice = "Free (ad)", totalQuantity = 80, freeQuantity = 10, referencePrice = 0, salesPrice = ""},
+    {productId = "ab.coins.6", price = "Free (ad)", localizedPrice = "Free (ad)", totalQuantity = 30, freeQuantity = 0, referencePrice = 0, salesPrice = ""},
+}
+local function networkUp() return type(env.isNetworkConnected) ~= "function" or env.isNetworkConnected() end
 local BUNDLE = {PowerupBundle = {"superseed", "kingsling", "slingscope", "birdquake"}}
 -- the daily wheel's eight pieces, in the game's order (WheelPopup.lua): 5, 10 and 50 coins, then one of each power-up
 local WHEEL = {{"credits", 5}, {"credits", 10}, {"credits", 50}, {"superseed", 1}, {"slingscope", 1}, {"birdquake", 1}, {"extrabird", 1}, {"kingsling", 1}}
@@ -307,24 +316,45 @@ local service = module("service", {
     toggleZoom = function() end,
 })
 
+local function openGuest(cb)
+    session = "Guest"
+    episodes("Tournament")
+    local e = type(env.g_episodes) == "table" and env.g_episodes[1]
+    if type(e) == "table" then allLevels() e.folder_name = levelFolder end
+    rollover()
+    local s = state()
+    if not s.welcome then s.welcome = true give("credits", WELCOME_COINS) save() end
+    later(cb)
+end
 local social = module("social", {
     getSessionType = function() return session end,
     isOnlineSession = function() return online() end,
-    hasToken = function() return false end,                           -- no Facebook: "Play Tournament" logs in as a guest
+    hasToken = function()                                             -- no Facebook: "Play Tournament" logs in as a guest; "Connect now!" (4.3) takes the Facebook path once
+        local t = env.abConnectIntent
+        env.abConnectIntent = nil
+        return t == true
+    end,
     hasPermission = function() return false end,
     resolveGuestIdentity = function(cb) later(cb) end,
-    resolveFacebookIdentity = function(cb) later(cb, {message = "Facebook is not available."}) end,
-    openGuestSession = function(cb)
-        session = "Guest"
-        episodes("Tournament")
-        local e = type(env.g_episodes) == "table" and env.g_episodes[1]
-        if type(e) == "table" then allLevels() e.folder_name = levelFolder end
-        rollover()
-        local s = state()
-        if not s.welcome then s.welcome = true give("credits", WELCOME_COINS) save() end
-        later(cb)
+    resolveFacebookIdentity = function(cb) later(cb) end,
+    openGuestSession = function(cb) openGuest(cb) end,
+    -- (4.3) "Connect now!" looks for the player's Social account on the Social server, as Friends 1.0.0 does: found (or not checkable) goes on, no network at all is the game's own
+    -- error, a network without the account (or without the server) gets its own window that lets the player go on as a local player
+    openFacebookSession = function(cb)
+        local found = env.abFindSocialAccount and env.abFindSocialAccount()
+        if found == nil or found == "found" or found == "unchecked" then
+            if found == "found" then state().social = true save() end
+            openGuest(cb) return
+        end
+        if found == "nonetwork" then later(cb, {group = "Network", title = "Facebook", message = "No internet connection."}) return end
+        local name = env.abSocialName and env.abSocialName()
+        local lines = found == "nosocial"
+            and {"No Angry Birds Social account", name and ("named " .. name .. " was found.") or "is set for this player.", "Make one on the Social server,", "or play as a local player."}
+            or {"The Social server does not answer,", "so no Social account was found.", "Start it, or play as a local player."}
+        env.abNotice(lines, {{"cancel", "ESCAPE"}, {"LOCAL PLAYER", "LOCAL"}}, function(i)
+            if i == 2 then openGuest(cb) else later(cb, {group = "Facebook", code = 3, title = "Facebook", message = "Cancelled."}) end
+        end)
     end,
-    openFacebookSession = function(cb) later(cb, {message = "Facebook is not available."}) end,
     openTutorialSession = function(cb) session = "Tutorial" episodes("Tutorial") later(cb) end,
     openPracticeSession = function(cb) session = "Practice" episodes("Practice") later(cb) end,
     closeSession = function() session = "Uninitialized" episodes("Tournament") end,
@@ -488,7 +518,10 @@ local tournament = module("tournament", {
 
 local shop = module("shop", {
     getItemCatalog = function(cb) later(cb, nil, {shops = CATALOG}) end,
-    getCoinCatalog = function(cb) later(cb, {title = "Shop", message = "Coins cannot be bought here."}) end,
+    getCoinCatalog = function(cb)                                        -- the coin shop: with a network connection its packages are paid with an ad (the fake ad of the coin window)
+        if not networkUp() then later(cb, {group = "Network", title = "Shop", message = "No internet connection."}) return end
+        later(cb, nil, {shops = {{id = "COINS", name = "Coins", items = {{id = "credits", type = "CONSUMABLE", currency = "USD", prices = COIN_PRICES}}}}})
+    end,
     getLevelCatalog = function(cb) later(cb, nil, {}) end,
     isLevelBought = function() return false end,
     setLevelBought = function() end,
@@ -497,7 +530,19 @@ local shop = module("shop", {
     inShop = function() end,
     shopOpenedFrom = function() end,
     getRandomVideoReward = function(cb) later(cb, {message = "No videos here."}) end,
-    buyIAPProduct = function(_, cb) later(cb, {title = "Shop", message = "Nothing can be bought for money here."}) end,
+    buyIAPProduct = function(id, cb)                                     -- cb(error): the ad plays, then the package's coins are the player's
+        local pack
+        for _, p in ipairs(COIN_PRICES) do if p.productId == id then pack = p end end
+        if not pack then later(cb, {title = "Shop", message = "Nothing can be bought for money here."}) return end
+        if not networkUp() or type(env.watchAd) ~= "function" then later(cb, {group = "Network", title = "Shop", message = "No internet connection."}) return end
+        env.watchAd(function(reward)
+            if (reward or 0) <= 0 then later(cb, {group = "Payment", code = 3, title = "Shop", message = "Cancelled."}) return end
+            if type(env.addCoins) == "function" then env.addCoins(-reward) end   -- the ad's own reward goes to the Social wallet; the package goes to the Friends coins
+            give("credits", pack.totalQuantity + pack.freeQuantity)
+            save()
+            later(cb)
+        end)
+    end,
     redeemCode = function(_, cb) later(cb, {title = "Shop", message = "Codes cannot be redeemed here."}) end,
     redeemVoucher = function(_, cb) later(cb, {title = "Shop", message = "Vouchers cannot be redeemed here."}) end,
     buyVirtualProduct = function(code, quantity, cb)                   -- pay with coins: cb(error, {{itemId, totalQuantity}})
@@ -633,12 +678,14 @@ do
         wrapped = true
         local bounds, pivot = r.getSpriteBounds, r.getSpritePivot
         r.getSpriteBounds = function(a, b)
-            local w, h = bounds(a, b)
+            local w, h
+            if b == nil then w, h = bounds(a) else w, h = bounds(a, b) end   -- (a nil second argument would make the name a sheet: the composite pictures, e.g. the Wingman splash's yellow comic background, measured 0)
             if w == 0 and h == 0 then local pw, ph = peek(b or a) if pw then return pw, ph end end
             return w, h
         end
         r.getSpritePivot = function(a, b)
-            local x, y = pivot(a, b)
+            local x, y
+            if b == nil then x, y = pivot(a) else x, y = pivot(a, b) end
             if x == 0 and y == 0 then local w, h, px, py = peek(b or a) if w then return px, py end end
             return x, y
         end
@@ -679,10 +726,21 @@ do
 end
 
 -- loadTableFromFile(file, name): a saved file (highscores.lua) read again into the global `name` (at a tournament rollover)
+-- (4.3) the Tutorial Tournament's end (its results prompt) adds up the four tutorial levels' scores and indexes every one of them; a level that has no entry
+-- (the highscores were read again from the file at the rollover) stopped it with a script error and the menu stayed shut. A level without a score counts 0 there.
+local function tutorialScores(t)
+    if type(t) == "table" and getmetatable(t) == nil then
+        setmetatable(t, {__index = function(_, k)
+            if type(k) == "string" and string.find(k, "^LevelTutorial%d+$") then return {score = 0} end
+        end})
+    end
+    return t
+end
 if env.loadTableFromFile == nil then
     env.loadTableFromFile = function(file, name)
         local ok, t = pcall(env.loadPersistentFileWrapper, file)
         if ok and type(t) == "table" then env[name] = t end
+        if name == "highscores" then tutorialScores(env.highscores) end
     end
 end
 
@@ -695,6 +753,7 @@ env.abCircleNoCollision = true
 
 -- a first start has no highscores.lua: the phone gives the game an empty table
 if env.highscores == nil then env.highscores = {} end
+tutorialScores(env.highscores)
 
 -- the phone build (the engine's debug keys turn the cheats on later, with the game's DebugConsole.lua)
 if rawget(env, "releaseBuild") == nil then env.releaseBuild = true end
@@ -713,3 +772,34 @@ local function behind(t)
 end
 behind(env)
 if _G ~= env then behind(_G) end
+
+-- The Christmas tree slingshot's parts (collider type 9, none) are decoration that hangs about the bird: nothing collides with them
+-- (with the engine's default rules a bird in the sling shoved them around and the decorations burst, and the next bird jumping onto the
+-- sling struck the tree)
+do
+    local done = false
+    local function rules()
+        local w = env.objects and env.objects.world
+        local on = w ~= nil and w.slingshotTree_1 ~= nil
+        if on and not done and env.setColliderRule then
+            for i = 0, 15 do env.setColliderRule(9, i, false) end          -- the tree's parts (collider none)
+            env.setColliderRule(13, 3, false)                               -- the ornaments it lobs (collider projectile) hit everything but the birds (and the tree)
+        end
+        done = on
+    end
+    local wrappedLoad = false
+    local function hook()
+        local L = env.Load
+        if wrappedLoad or type(L) ~= "table" or type(L.showFacebookLoginPopup) ~= "function" then return end
+        wrappedLoad = true
+        local orig = L.showFacebookLoginPopup
+        L.showFacebookLoginPopup = function(onConnect, ...)
+            return orig(function(...) env.abConnectIntent = true if onConnect then return onConnect(...) end end, ...)
+        end
+    end
+    local engine = env.engine or _G.engine
+    if engine and engine.on then engine.on("update", function() rules() hook() end) end
+end
+
+-- the game's ui.Frame:layout calls debug.traceback() when a frame has no children (the phone's Lua has the debug library)
+if rawget(env, "debug") == nil and _G.debug then env.debug = {traceback = function(m) return tostring(m or "") end} end
