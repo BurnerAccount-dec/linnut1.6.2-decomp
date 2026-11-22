@@ -73,10 +73,22 @@ void InputBridge::Apply(lua_State* L) {
         lua_setfield(L, -2, "modalInput");
     }
     wasDown = down0;
+    // (4.2) a press that a pop-up took (the button went down while one was open) is the pop-up's alone: the game does not see it, nor the rest of it (the hold, the
+    // release) after the pop-up has closed, so a button of the pop-up cannot also press the one that lies under it
+    static bool swallowing = false;
+    const int lb = KeyIndex("LBUTTON");
+    if (modal && down0) swallowing = true;
+    bool hidePressed[kKeyCount], hideReleased[kKeyCount], hideHeld[kKeyCount];
+    for (int i = 0; i < kKeyCount; i++) { hidePressed[i] = pressed_[i]; hideReleased[i] = released_[i]; hideHeld[i] = held_[i]; }
+    bool mouseHidden = false;
+    if (!modal && swallowing && lb >= 0) {
+        hidePressed[lb] = false; hideReleased[lb] = false; hideHeld[lb] = false; mouseHidden = true;
+        if (!down0) swallowing = false;
+    }
     static const bool none[kKeyCount] = {};
-    FillKeyTable(L, "keyPressed", modal ? none : pressed_);
-    FillKeyTable(L, "keyReleased", modal ? none : released_);
-    FillKeyTable(L, "keyHold", modal ? none : held_);
+    FillKeyTable(L, "keyPressed", modal ? none : hidePressed);
+    FillKeyTable(L, "keyReleased", modal ? none : hideReleased);
+    FillKeyTable(L, "keyHold", modal ? none : hideHeld);
 
     lua_getfield(L, -1, "cursor");
     if (lua_istable(L, -1)) {
@@ -90,7 +102,7 @@ void InputBridge::Apply(lua_State* L) {
     lua_pop(L, 1);
 
     // one fake touch while the left button is down
-    bool down = !modal && held_[KeyIndex("LBUTTON")];
+    bool down = !modal && !mouseHidden && held_[KeyIndex("LBUTTON")];
     lua_pushnumber(L, down ? 1 : 0);
     lua_setfield(L, -2, "touchcount");
     lua_getfield(L, -1, "touches");

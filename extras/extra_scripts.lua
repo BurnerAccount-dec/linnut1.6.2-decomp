@@ -1679,7 +1679,8 @@ stellaMod = {
 	},
 	willow = {
 		duration = 4, durationAfterCollision = 4, durationAfterCollisionWhenAbilityActivated = 2, holdThresholdDuration = 0.15, damage = 200, damageFactors = "WillowAbilityDamageFactors",
-		spinSpeed = 220, minSpinSpeed = 10, delayBeforeAim = 0.1, useNewAbility = true, turnSpeed = -1.2, speedWhileTurning = 1.5, boostForce = 0.4, boostForceDuration = 2,
+		spinSpeed = 220, minSpinSpeed = 10, delayBeforeAim = 0.1, useNewAbility = true, turnSpeed = -1.2, speedWhileTurning = 1,   -- times the speed the bird had when the ability started (Stella's own speeds are far lower than Classic's, so a fixed speed slowed the bird to a crawl)
+		 boostForce = 0.4, boostForceDuration = 2,
 		aimDurationStable = 0.2, aimDurationSpeedUp = 3, aimSlowmo = 0.3, maxTurn = 360, densityWhenRolling = 1, sensorRadius = 0.35, aimLineLength = 10,
 	},
 	dahlia = {
@@ -1709,8 +1710,8 @@ do
 	local highlights = {}      -- active BlockHighlighters
 
 	------------------------------------------------ the game's time: Stella's setDeltaTimeMultiplier is the engine's gameSpeedFactor
-	local function getMult() return gameSpeedFactor or 1 end
-	local function setMult(m) gameSpeedFactor = m ~= 1 and m or nil end
+	local function getMult() return physicsSpeedFactor or 1 end
+	local function setMult(m) physicsSpeedFactor = m ~= 1 and m or nil end      -- (4.2) the physics' speed only: animations, the menus and the scripts' own clocks keep their pace
 	local function later(delay, fn, real) timers[#timers + 1] = { left = delay, fn = fn, real = real } end
 	local function clamp(v, a, b) return v < a and a or (v > b and b or v) end
 	local function ease(name)     -- motion.ease when there is one, else the plain curve
@@ -2215,7 +2216,7 @@ do
 		local c = stellaMod.willow
 		local i = infoOf(name, o)
 		local dx, dy = willowDir(name)
-		S = { kind = "willow", bird = name, phase = "active", timer = 0, holdTimer = 0, holding = false, released = false, aimTimer = 0, dx = dx, dy = dy, turned = 0, spin = 0,
+		S = { kind = "willow", bird = name, phase = "active", speed0 = getVelocity(name), timer = 0, holdTimer = 0, holding = false, released = false, aimTimer = 0, dx = dx, dy = dy, turned = 0, spin = 0,
 			duration = passive and c.durationAfterCollision or c.duration, hasTapped = not passive, oldDensity = o.density }
 		setObjectGravity(name, 0, 0)
 		o.density = c.densityWhenRolling
@@ -2246,15 +2247,16 @@ do
 		S.spin = S.spin + realDt
 		S.aimTimer = S.aimTimer + realDt
 		setMult(1)
+		local aimDone = false
 		if c.useNewAbility and not i.collided and not S.released then
-			aimProgress(S.aimTimer, c.aimSlowmo, c.aimDurationStable, c.aimDurationSpeedUp)
+			aimDone = aimProgress(S.aimTimer, c.aimSlowmo, c.aimDurationStable, c.aimDurationSpeedUp)
 		end
 		S.timer = S.timer + realDt
 		if S.timer >= S.duration then willowStop() return end
 		local p = min(1, S.timer / c.duration)         -- the spin slows down over the duration
 		setRotation(name, (o.angle or 0) + (c.minSpinSpeed + (1 - p) * (c.spinSpeed - c.minSpinSpeed)) * pi / 180 * realDt)
-		if released or (i.collided and not S.hasTapped) then
-			if released and not S.released then S.timer, S.duration = 0, c.boostForceDuration end    -- letting go starts the boost phase on a new timer: the hold phase's clock does not run on into it
+		if released or aimDone or (i.collided and not S.hasTapped) then
+			if (released or aimDone) and not S.released then S.timer, S.duration = 0, c.boostForceDuration end    -- letting go starts the boost phase on a new timer: the hold phase's clock does not run on into it
 			if not S.released then willowRelease() end
 		end
 		if S.boostTimer ~= nil then
@@ -2275,7 +2277,8 @@ do
 			local ca, sa = cos(a), sin(a)
 			S.dx, S.dy = S.dx * ca - S.dy * sa, S.dx * sa + S.dy * ca
 			S.turned = S.turned + a
-			setVelocity(name, S.dx * c.speedWhileTurning * u, S.dy * c.speedWhileTurning * u)
+			local sp = (S.speed0 or 0) * c.speedWhileTurning
+			setVelocity(name, S.dx * sp, S.dy * sp)
 			S.holdTimer = S.holdTimer + realDt
 		end
 		S.sx, S.sy = o.x, o.y
@@ -2294,6 +2297,12 @@ do
 		S = { kind = "dahlia", bird = name, phase = "aim", dx = dx, dy = dy, aimingT = 0, aimingTimer = c.aimDuration, delay = c.delayBeforeAim, sx = o.x, sy = o.y, gx = o.x, gy = o.y, darkening = 0,
 			hitGround = false, radius = radiusOf(name) }
 		S.hl = newHighlighter(c.color, c.lightness, c.speed)
+		-- the ghost stays inside the level: what is further out than every object in it is where the game removes a bird
+		local x0, y0, x1, y1 = o.x, o.y, o.x, o.y
+		for n, t in pairs(objects.world) do
+			if n ~= name and t.x ~= nil and t.y ~= nil then x0, x1, y0, y1 = min(x0, t.x), max(x1, t.x), min(y0, t.y), max(y1, t.y) end
+		end
+		S.bx0, S.by0, S.bx1, S.by1 = x0, y0, x1, y1
 		setRotation(name, atan2(dy, dx))
 		setVelocity(name, 0, 0)
 		setObjectGravity(name, 0, 0)
@@ -2356,6 +2365,7 @@ do
 				local p = 1 - t / c.aimDuration
 				local e = 1 - (1 - p) * (1 - p)
 				S.gx, S.gy = o.x + e * S.dx * c.maxDistance * u, o.y + e * S.dy * c.maxDistance * u
+				if S.bx0 ~= nil then S.gx, S.gy = clamp(S.gx, S.bx0, S.bx1), clamp(S.gy, S.by0, S.by1) end
 				S.aimingTimer, S.aimingT = t, e
 				setRotation(name, atan2(S.dy, S.dx))
 				local set = {}
@@ -2364,7 +2374,7 @@ do
 				local g = castHits(S.sx, S.sy, S.gx, S.gy, name)
 				for _, h in ipairs(g) do local t2 = objects.world[h.name] if t2 ~= nil and (t2.mass or 0) <= 0 then S.hitGround = true S.gx, S.gy = h.x, h.y break end end
 			end
-			S.darkening = min(1, S.darkening + (dt / c.bgDarkeningDuration) / getMult())
+			S.darkening = min(1, S.darkening + realDt / c.bgDarkeningDuration)
 			if S.aimingTimer ~= 0 and not released and not S.hitGround then
 			else
 				setMult(1)
@@ -2383,20 +2393,24 @@ do
 		elseif S.phase == "kick" then
 			S.kickTimer = max(0, S.kickTimer - dt)
 			S.rotation = (1 - S.kickTimer / c.kickDuration) * pi * 2
+			setRotation(name, -S.rotation + pi * 0.5)        -- the body turns to the direction the kick pushes in
 			setMult(c.kickSlowmo)
 			local cx, cy = S.kx or o.x, S.ky or o.y
 			cx, cy = o.x, o.y
 			local rr = c.explosionRadius * u
-			local sweep = 2 * pi - S.rotation
+			-- the kick is a leg that turns with the body: it points where the body does (th, going from straight down all the way round), and an object is struck on the frame
+			-- the leg passes the object's bearing from the bird; it is pushed the way the leg points, which is where the body faces
+			local th = -S.rotation + pi * 0.5
+			local k = c.explosionForce * c.explosionScale
 			for _, t in ipairs(overlapped(cx, cy, rr, rr, name)) do
 				if t.mass ~= 0 and S.kicked[t.name] == nil then
-					local a = atan2(t.y - cy, t.x - cx)
-					if (a - pi * 0.5) + c.kickRotationPhysicsOffset < 0 then a = a + 2 * pi end
-					if sweep < a then
+					local b = atan2(t.y - cy, t.x - cx)
+					while b > pi * 0.5 do b = b - 2 * pi end
+					while b <= pi * 0.5 - 2 * pi do b = b + 2 * pi end
+					if th <= b then
 						S.kicked[t.name] = true
 						S.glows[t.name] = { time = 1, x = t.x, y = t.y }
-						local k = c.explosionForce * c.explosionScale
-						pushSpeed(t.name, cos(-S.rotation + pi * 0.5) * k * 0.1, sin(-S.rotation + pi * 0.5) * k * 0.1, t.x, t.y)
+						pushSpeed(t.name, cos(th) * k * 0.1, sin(th) * k * 0.1, t.x, t.y)
 					end
 				end
 			end
@@ -2550,11 +2564,14 @@ do
 
 	engine.on("update", function(dt, realDt)
 		holdAbilities()
-		realDt = dt / getMult()   -- the engine gives a Classic script the scaled time twice; the multiplier in force this frame is the one still set now
+		realDt = dt            -- the frame's real time; dt becomes the physics' time (what the world moved in this frame)
+		dt = dt * getMult()
 		local touch = touchcount ~= nil and touchcount > 0
 		local down = (keyPressed ~= nil and (keyPressed["LBUTTON"] or keyPressed["SPACE"])) or (keyHold ~= nil and (keyHold["LBUTTON"] or keyHold["SPACE"])) or touch or stellaMod.forceDown == true   -- forceDown: for scripts and tests, the button counts as held
 		local pressed = down and not wasDown
 		local released = wasDown and not down
+		-- paused (or in a pop-up): a running ability waits, with its timers, and goes on when the game does; a button let go meanwhile counts on the first frame after
+		if stellaMod.enabled and S ~= nil and currentGameMode ~= updateGame and objects.world ~= nil and objects.world[S.bird] ~= nil then return end
 		wasDown = down and true or false
 		if not stellaMod.enabled then
 			if S ~= nil then stellaMod.cancel() end

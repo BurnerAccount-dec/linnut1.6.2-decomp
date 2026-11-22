@@ -2,7 +2,20 @@
 
 What changed in each version of the engine, newest first. The README has the current status; the reference for script writers is in [`docs/SCRIPTING.md`](docs/SCRIPTING.md) and how to run and debug in [`docs/USAGE.md`](docs/USAGE.md).
 
+## New in 4.2.1
+
+- **Pop-ups own their clicks.** A press that a script's pop-up (the leave-the-level question, the level spawner, the Social levels list) took no longer reaches the game once the pop-up has closed: its hold and release are hidden until the button comes up, so a button of the pop-up cannot also press the one under it.
+- **Stella abilities slow the physics, not the game.** Their slow motion now sets `physicsSpeedFactor` (the physics' speed only) instead of `gameSpeedFactor`, so menus, animations and the scripts' own clocks keep their pace.
+- **Willow:** when her spin (aim) phase runs out the boost starts by itself, as if the button was let go; she keeps the speed she had while turning (it was a fixed speed far below Classic's birds).
+- **Dahlia:** the ghost stays inside the level (a teleport beyond every object got the bird removed), and her body turns to the direction the kick pushes in.
+- **Stella abilities survive pausing.** A running ability (and its timers) now waits while the game is paused or a pop-up is open, and goes on when the game does; a button let go during the pause counts on the first frame after. Willow's hold phase and boost phase each have their own timer.
+- **Dahlia's kick pushes the way her body faces.** The leg turns with the body and strikes an object on the frame it passes the object's bearing, pushing it in the direction the leg (and the body) points; it used a separate angle test, so objects were pushed in directions that did not match the body.
+
 ## New in 4.2
+
+
+
+
 
 - **Space 1.1.0 (iPhone): background elements loop at the screen's edge.** They looped while still on screen and jumped a whole screen ahead; now they leave the screen completely and come in at the other side.
 - **Stella abilities: old timers can no longer reach a later ability.** The delayed steps of Poppy's drill and of the aim phase now belong to the ability that started them, so a timer left over from an earlier bird does not stop or release the next one.
