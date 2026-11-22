@@ -314,6 +314,12 @@ function classicRoutes(req, res, url, body) {
         save();
         return send(200, "text/plain", "ok\t" + (account ? u.coin | 0 : w.coins) + "\t" + account + "\n");
     }
+    if (url.pathname === "/classic/account") {          // (4.2) Angry Birds Friends' "Log in with Facebook" looks for the player's Social account: /classic/account?player=Name, answered "ok <tab> found <tab> coins" or "ok <tab> none"
+        const name = String(url.searchParams.get("player") || "").replace(/[^\w .-]/g, "").slice(0, 24);
+        if (tooMany(callerIp, "account", 120)) return send(429, "text/plain", "too many requests"); countTry(callerIp, "account");
+        const u = name ? db.users[name] : null;
+        return send(200, "text/plain", u ? "ok\tfound\t" + (u.coin | 0) + "\n" : "ok\tnone\t0\n");
+    }
     if (url.pathname === "/classic/levels.txt") {       // for the engine's "Social levels" list: one level a line, key, name, user and plays with tabs between
         const clean = (v) => String(v).replace(/[\t\r\n]+/g, " ");
         const all = Object.values(db.levels).filter((l) => l.data && l.published !== false);

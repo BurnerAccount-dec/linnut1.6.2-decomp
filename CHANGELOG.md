@@ -2,6 +2,29 @@
 
 What changed in each version of the engine, newest first. The README has the current status; the reference for script writers is in [`docs/SCRIPTING.md`](docs/SCRIPTING.md) and how to run and debug in [`docs/USAGE.md`](docs/USAGE.md).
 
+## New in 4.2
+
+- **Space 1.1.0 (iPhone): background elements loop at the screen's edge.** They looped while still on screen and jumped a whole screen ahead; now they leave the screen completely and come in at the other side.
+- **Stella abilities: old timers can no longer reach a later ability.** The delayed steps of Poppy's drill and of the aim phase now belong to the ability that started them, so a timer left over from an earlier bird does not stop or release the next one.
+- **Angry Birds Friends: coins and the Social account.** The coin window (F10) in Friends has "Share coins with Friends" (one balance with the Social account), "Move Friends coins to Social" and "Move Social coins to Friends". Off by default: Friends keeps its own coins unless the player chooses.
+- **Angry Birds Friends: "Log in with Facebook" looks for the Social account** (the name in `socialLevels.player`) on the Social server. With no connection at all the game's own network error shows; with a connection but no account (or no server) a separate window says so and offers to play as a local player. The Social server answers `/classic/account?player=Name`.
+
+
+- Per-sprite control now also covers the Stella / Space theme layers (every repeat and layer element, through the same getBackgroundSprites / setBackgroundSprite calls) and the bird trail (`getTrailSprites` / `setTrailSprite`).
+- Game line is detected from marker scripts (`blocks_planets.lua`, `blocks_tatooine.lua`, `PolaroidMode.lua` = Space line; anything else with common scripts = Seasons 4.x line), so Friends 1.0.0 and unknown games get the right natives. All 12 test games load with no script errors.
+
+- **Every repeat of a background or foreground sprite can be changed on its own:** `getBackgroundSprites()` / `getForegroundSprites()` list what a layer drew, `setBackgroundSprite(layer, tile, {dx, dy, scale, angle, alpha, hidden})` / `setForegroundSprite` change one repeat, `clearSpriteChanges()` puts them back. Pictures with many trees drawn into one image stay one piece; trails and the new theme system's layers are not covered yet.
+- **Friends 1.0.0:** the mouse wheel over the profile / scores panel on the right only scrolls it, and over the game it only zooms.
+- **Friends 1.0.0 loads again:** the 4.1.2.2 change for iPhone packages treated it as Angry Birds Space (it has scripts_common too) and loaded Space's natives; it is now handled like Seasons 4.x data, with its backgrounds staying on the ground when the view zooms out.
+- **Backgrounds when zooming out in the 3.3.0 apk:** the far layers followed the camera's height by their parallax speed (the Seasons rule), so zooming out with the mouse wheel let the cream and cake layers sink behind the ground. Outside the Seasons games they now stay on the ground, as in the retail game.
+- **Stella's aim aids in `extras/extra_scripts.lua`:** Luca's scream shows wave marks marching along the ray, fading in and out at the ends, with a target where the ray ends in the open and a glow on the block that stops it; Poppy's aim is a line of marks with a twirl at the tap point; Willow's aim is marks fading along the ray, cut where it meets something, with a marker lying on the surface; Dahlia's aim is 20 particles flowing from the bird to the ghost, orange to pink, with an end mark. They are drawn with the lines and sprites Classic has, since Stella's own art is not in the other games.
+- **Dahlia hits harder:** `explosionScale` and `passThroughScale` of her kick and dash are 400 instead of 100.
+- **iPhone packages load the right natives:** Angry Birds Stella, Star Wars, Space and Rio HD `.ipa` files were treated as Seasons 4.x when their scripts were common; the Stella menu ignored the mouse and several functions were missing. They now load their own natives.
+- **Rio HD 2.0.0 levels no longer freeze:** the missing `enableInGameParticlesNative` is answered by a generic native.
+- **Ads for coins without the Social server:** `watchAd` needs only a network connection; the coins are credited to the wallet and synced with the server later, when it runs.
+- **Stella's aiming dots grow:** the ability aim of `extras/extra_scripts.lua` draws dots that grow, fade with distance and march along the path, with a mark at wall bounces, instead of a plain line.
+- **Documents:** Angry Birds Social is listed as playable; `docs/STUBS.md` lists what is still unfinished in every game.
+
 ## New in 4.1.2.1
 
 - **No more freezes from the wallet check:** the regular check of the Social stand-in server (every 30 s, every 2 minutes while it does not answer) waited for the server inside the frame, up to a second and a half for `localhost` and again for `127.0.0.1`, so a server that was not running held the game still for seconds at random moments, in levels too. It now asks on its own thread (new script functions `httpGetAsync(url [, seconds [, forget]])` and `httpPoll(id)`, which gives nothing while the answer is on its way, then the body, or nil and the reason) and looks at the answer in the frames that follow. Coins earned while a question is on its way stay pending. Asking by hand (an ad, S in the coin window, `isOnline()`) still waits, as before. `getWalletInfo()` tries the connection at most every 10 seconds, and the Social levels' play and score messages no longer wait for the server.

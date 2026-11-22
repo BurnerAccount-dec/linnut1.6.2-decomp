@@ -717,6 +717,7 @@ bool ScriptHost::LoadScripts() {
         "end end\n"
         "if env.getCameraTopLeft == nil and env.getCamera then env.getCameraTopLeft = function() local x, y = env.getCamera() return x, y end end   -- Seasons 4.1.0's main menu\n"
         "if env.isTrialMode == nil then env.isTrialMode = no end\n"
+        "if env.enableInGameParticlesNative == nil then env.enableInGameParticlesNative = function(on) env.tuning = env.tuning or {}; env.tuning[\"particles.inGame\"] = on and 1 or 0 end end   -- (4.1.2.1) Rio HD 2.0.0 calls it too, not only Space and Star Wars: a script error here stopped every frame\n"
         "do   -- the newer iOS games call many native_* functions of the phone (ads, store, analytics): any such name that is not there is a function that does nothing\n"
         "    local nativeModule = _G.setmetatable({}, {__call = none, __index = function(_, k) if _G.type(k) == \"string\" and (_G.string.find(k, \"^is\") or _G.string.find(k, \"^has\")) then return no end return none end})   -- called it does nothing, indexed (native_RovioAds.addPlacement, Rio HD 2.0.0) its functions do nothing\n"
         "    local function nativeStub(t, k) if _G.type(k) == \"string\" and _G.string.sub(k, 1, 7) == \"native_\" then return nativeModule end end\n"

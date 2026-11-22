@@ -653,7 +653,7 @@ void GamePlatform::RunFrame(float dt) {
         for (ThemeSprite& t : themeSprites_) {
             if (t.wrapW != -1 || t.velX == 0) continue;
             float scale = (t.layer >= 0 && t.layer < (int)bgLayers_.size()) ? bgLayers_[t.layer].scale : 1.0f;
-            t.x = std::fmod(t.x + t.velX * dt * p2w * scale / 1024.0f + 1.0f, 1.0f);
+            t.x += t.velX * dt * p2w * scale / 1024.0f;   // (4.2) no wrap here: the draw wraps by the sprite's own width, so it leaves the screen before it loops
         }
     }
     if (scripts_ && scripts_->IsSpace()) for (ThemeSprite& t : themeSprites_) {
@@ -3085,9 +3085,22 @@ void GamePlatform::DrawNewThemeLayers(std::vector<BgLayer>& layers, int layerBas
             // Star Wars: a layer with ANCHOR_V stays at one height on the screen, and its offsetY counts from the middle of the screen (Cloud City's sky, scaled 1.4, then just covers it)
             if ((flags & 0x20) && !mid) cy += sh * 0.5f;
         };
-        auto drawAt = [&](const std::string& name, float cx, float cy, float szx, float szy) {
+        // (4.2) every drawn repeat (and element) is listed for getThemeSprites and can be changed with setThemeSprite (which 3 = background, 4 = foreground)
+        const int instWhich = (&layers == &ntFg_) ? 4 : 3;
+        if (&layer == &layers[0]) instSeen_[instWhich].clear();
+        auto drawAt = [&](const std::string& name, float cx, float cy, float szx, float szy, long tile) {
+            SpriteInstInfo info; info.layer = (int)i + 1; info.tile = tile; info.sprite = name; info.x = cx + layer.dx; info.y = cy + layer.dy;
+            const Sprite* isp = sprites_.Find(name); info.w = isp ? isp->w * szx : 0; info.h = isp ? isp->h * szy : 0;
+            instSeen_[instWhich].push_back(info);
+            float ox = 0, oy = 0, al = 1;
+            auto ch = instChange_.find(std::make_tuple(instWhich, (int)i + 1, tile));
+            if (ch != instChange_.end()) {
+                if (ch->second.hidden) return;
+                ox = ch->second.dx; oy = ch->second.dy; szx *= ch->second.scaleX; szy *= ch->second.scaleY; al = ch->second.alpha;
+            }
             state_ = RenderState();
-            state_.sx = szx; state_.sy = szy; state_.tx = (cx + layer.dx) / szx; state_.ty = (cy + layer.dy) / szy;
+            state_.alpha = al;
+            state_.sx = szx; state_.sy = szy; state_.tx = (cx + ox + layer.dx) / szx; state_.ty = (cy + oy + layer.dy) / szy;
             ResDrawSprite(name, 0, 0, 1, 1, false, 0, 0);
         };
         const Sprite* sp = layer.empty ? nullptr : sprites_.Find(layer.sprite);
@@ -3149,32 +3162,34 @@ void GamePlatform::DrawNewThemeLayers(std::vector<BgLayer>& layers, int layerBas
             if (layer.upFill) DrawRect(layer.upR / 255.0f, layer.upG / 255.0f, layer.upB / 255.0f, 1, 0, 0, sw, cy - h * szy * 0.5f + 3.0f, false);
             if (layer.downFill) { float y0 = cy + h * szy * 0.5f - 3.0f; DrawRect(layer.downR / 255.0f, layer.downG / 255.0f, layer.downB / 255.0f, 1, 0, y0, sw, sh + 1.0f, false); }
             const float stepX = w * szx, stepY = h * szy;
-            auto drawVertical = [&](float x, float y) {      // 0x44bdf0: V_REPEAT
+            auto drawVertical = [&](float x, float y, long hx) {      // 0x44bdf0: V_REPEAT
                 if (!(layer.flags & 2)) return;
-                float yy = y; for (int n = 0; n < 64 && 0.0f < yy + stepY * 0.5f; n++) { yy -= stepY; drawAt(layer.sprite, x, yy, szx, szy); }
-                yy = y; for (int n = 0; n < 64 && yy - stepY * 0.5f < sh; n++) { yy += stepY; drawAt(layer.sprite, x, yy, szx, szy); }
+                float yy = y; for (int n = 0; n < 64 && 0.0f < yy + stepY * 0.5f; n++) { yy -= stepY; drawAt(layer.sprite, x, yy, szx, szy, hx - 1000 * (n + 1)); }
+                yy = y; for (int n = 0; n < 64 && yy - stepY * 0.5f < sh; n++) { yy += stepY; drawAt(layer.sprite, x, yy, szx, szy, hx + 1000 * (n + 1)); }
             };
-            drawAt(layer.sprite, cx, cy, szx, szy);
+            drawAt(layer.sprite, cx, cy, szx, szy, 0);
             // 0x44bfa0: H_REPEAT, REPEAT_LEFT_ONLY / REPEAT_RIGHT_ONLY, until the screen's edge (Stella's sea band is a strip 4 pixels wide:
             // 64 copies a side covered only the middle 512 pixels)
             if ((layer.flags & 4) || (layer.flags & 0x300)) {
                 float x = cx;
-                if (!(layer.flags & 0x100)) for (int n = 0; n < 4096 && x - stepX * 0.5f < sw; n++) { x += stepX; drawAt(layer.sprite, x, cy, szx, szy); drawVertical(x, cy); }
+                if (!(layer.flags & 0x100)) for (int n = 0; n < 4096 && x - stepX * 0.5f < sw; n++) { x += stepX; drawAt(layer.sprite, x, cy, szx, szy, n + 1); drawVertical(x, cy, n + 1); }
                 x = cx;
-                if (!(layer.flags & 0x200)) for (int n = 0; n < 4096 && 0.0f < x + stepX * 0.5f; n++) { x -= stepX; drawAt(layer.sprite, x, cy, szx, szy); drawVertical(x, cy); }
+                if (!(layer.flags & 0x200)) for (int n = 0; n < 4096 && 0.0f < x + stepX * 0.5f; n++) { x -= stepX; drawAt(layer.sprite, x, cy, szx, szy, -(n + 1)); drawVertical(x, cy, -(n + 1)); }
             }
-            drawVertical(cx, cy);
+            drawVertical(cx, cy, 0);
         }
         // the elements of the layer: placed in the layer's own coordinates around its origin
+        long elemNo = 0;
         for (const ThemeSprite& t : themeSprites_) {
             if (t.layer != (int)i + layerBase) continue;
+            elemNo++;
             const Sprite* ep = sprites_.Find(t.sprite);
             if (!ep) continue;
             float ex = 0, ey = 0;
             place((float)ep->w, (float)ep->h, (float)ep->pivotX, (float)ep->pivotY, t.x * (t.flipped ? -1.0f : 1.0f) * 20.0f + layer.posX + layer.offX, t.y * 20.0f + layer.posY + layer.offY, layer.flags, ex, ey);
             float ezx = f * layer.scaleX * t.scaleX, ezy = f * layer.scaleY * t.scaleY;
             if (ezx <= 0 || ezy <= 0) continue;
-            drawAt(t.sprite, ex, ey, ezx, ezy);
+            drawAt(t.sprite, ex, ey, ezx, ezy, 1000000 + elemNo);
         }
     }
     state_ = RenderState();
@@ -3247,7 +3262,9 @@ void GamePlatform::DrawSpaceBackground() {
                 if (!ep) continue;
                 float k = t.scaleX * layer.scale * u * zoom;
                 float W = ep->w * k, H = ep->h * k;
-                float x = std::fmod(t.x * sw + shX + sw * 4.0f, sw + W) - W, y = t.y * sh + shY;
+                const float period = sw + W;                       // (4.2) loops when the sprite is wholly off one edge and comes in at the other, not while it is still on screen
+                float x = std::fmod(t.x * sw + shX, period); if (x < 0) x += period; x -= W;
+                float y = t.y * sh + shY;
                 state_ = RenderState();
                 ResDrawSprite(t.sprite, x, y - H * 0.5f, 0, 0, true, W, H);
             }
@@ -3403,8 +3420,30 @@ template <class F> struct DrawHookGuard {
     ~DrawHookGuard() { f(); }
 };
 
+
+// (4.2) one repeat (tile) of a background or foreground layer: remembered for getBackgroundSprites / getForegroundSprites and drawn with the changes a script
+// set for it (setBackgroundSprite / setForegroundSprite: dx, dy in screen pixels, scaleX, scaleY, angle in radians, alpha, hidden). Scale and angle need a plain sprite.
+void GamePlatform::DrawLayerInstance(int which, int layerNo, long tile, const std::string& sprite, float x, float w, float h, bool plain) {
+    SpriteInstInfo info;
+    info.layer = layerNo; info.tile = tile; info.sprite = sprite;
+    info.x = (state_.tx + x) * state_.sx; info.y = state_.ty * state_.sy; info.w = w * state_.sx; info.h = h * state_.sy;
+    instSeen_[which].push_back(info);
+    auto it = instChange_.find(std::make_tuple(which, layerNo, tile));
+    if (it == instChange_.end()) { ResDrawSprite(sprite, x, 0, 4, 3, false, 0, 0); return; }
+    const SpriteInstChange& c = it->second;
+    if (c.hidden) return;
+    RenderState keep = state_;
+    state_.tx += c.dx / (state_.sx != 0 ? state_.sx : 1.0f);
+    state_.ty += c.dy / (state_.sy != 0 ? state_.sy : 1.0f);
+    state_.alpha *= c.alpha;
+    if (plain && (c.scaleX != 1 || c.scaleY != 1)) ResDrawSprite(sprite, x, 0, 4, 3, true, w * c.scaleX, h * c.scaleY);
+    else ResDrawSprite(sprite, x, 0, 4, 3, false, 0, 0);
+    state_ = keep;
+}
+
 void GamePlatform::DrawBackground() {
     TagScope tag(this, "background");
+    instSeen_[0].clear();
     if (scripts_) EmitHook(scripts_->State(), "drawBackgroundBefore");
     auto afterHook = [this]() { if (scripts_) { state_ = RenderState(); EmitHook(scripts_->State(), "drawBackground"); } };
     DrawHookGuard<decltype(afterHook)> bgGuard(afterHook);
@@ -3454,7 +3493,9 @@ void GamePlatform::DrawBackground() {
             // Seasons 4.x: the far layers move up and down by their speed too. With the camera's bottom edge on the ground they sit on the
             // screen's bottom edge; its level cameras look far above the ground (South Hamerica: bottom at -515), where the old rule put
             // the mountains below the screen
-            state_.ty = (screenHeight_ * (1.0f - layer.speed) - camY_ * worldScale_ * layer.speed) / (s * worldScale_) + layer.dy / (s * worldScale_);
+            // (4.2) only the Seasons games follow the camera's height by the layer's speed; the 3.3.0 apk's layers stay on the ground when the view zooms out
+            const float mY = (scripts_ && scripts_->IsSeasonsProduct()) ? layer.speed : 1.0f;
+            state_.ty = (screenHeight_ * (1.0f - mY) - camY_ * worldScale_ * mY) / (s * worldScale_) + layer.dy / (s * worldScale_);
         }
         state_.sx = state_.sy = s * worldScale_;
         if (layer.looping) {
@@ -3462,13 +3503,15 @@ void GamePlatform::DrawBackground() {
             float x0 = -(m + w * s) * inv;
             state_.tx = x0 - std::trunc(x0) + layer.dx / (s * worldScale_);
             float right = screenWidth_ * inv / worldScale_ + pivotX;
-            for (float x = std::trunc(x0); x <= right; x += w) ResDrawSprite(layer.sprite, x, 0, 4, 3, false, 0, 0);
+            long tile = (long)std::trunc(shift / (w * s)) - 1;
+            const float sh = sp ? (float)sp->h : (float)ch;
+            for (float x = std::trunc(x0); x <= right; x += w, tile++) DrawLayerInstance(0, (int)(&layer - &bgLayers_[0]) + 1, tile, layer.sprite, x, w, sh, sp != nullptr);
         } else {
             if (layer.hasFixedX) { place += firstFixed ? startX * 0.0625f * w : w * 0.5f; firstFixed = false; }
             else place = w * 0.5f;
             state_.tx = place - std::trunc(place) + layer.dx / (s * worldScale_);
             if (std::getenv("AB_DRAWDBG")) std::fprintf(stderr, "BGFIXED %s place=%g w=%g shift=%g\n", layer.sprite.c_str(), place, w, shift);
-            ResDrawSprite(layer.sprite, place - shift * inv, 0, 4, 3, false, 0, 0);
+            DrawLayerInstance(0, (int)(&layer - &bgLayers_[0]) + 1, 0, layer.sprite, place - shift * inv, w, sp ? (float)sp->h : (float)ch, sp != nullptr);
         }
         themeShift_ = baseShift * inv;
         DrawThemeSprites((int)(&layer - &bgLayers_[0]));
@@ -3480,6 +3523,7 @@ void GamePlatform::DrawBackground() {
 // sprites repeated at 1.5 times the world scale.
 void GamePlatform::DrawForeground() {
     TagScope tag(this, "foreground");
+    instSeen_[1].clear();
     if (scripts_) EmitHook(scripts_->State(), "drawForegroundBefore");
     auto afterHook = [this]() { if (scripts_) { state_ = RenderState(); EmitHook(scripts_->State(), "drawForeground"); } };
     DrawHookGuard<decltype(afterHook)> fgGuard(afterHook);
@@ -3540,7 +3584,8 @@ void GamePlatform::DrawForeground() {
             state_.ty *= 1.0f / wob; state_.sy *= wob;
         }
         float right = screenWidth_ / (worldScale_ * c) + px;
-        for (float x = std::trunc(x0); x <= right; x += w) ResDrawSprite(name, x, 0, 4, 3, false, 0, 0);
+        long tile = (long)std::trunc(shift / (c * w)) - 1;
+        for (float x = std::trunc(x0); x <= right; x += w, tile++) DrawLayerInstance(1, fgIndex + 1, tile, name, x, w, h, sprites_.Find(name) != nullptr);
         themeShift_ = baseShift / c;
         DrawThemeSprites((int)bgLayers_.size() + fgIndex);
     }
@@ -3973,12 +4018,28 @@ void GamePlatform::DrawGame() {
     const bool aimOverCharacters = !(scripts_ && (scripts_->IsSpace() || scripts_->IsStarWars()));   // Classic and the later games: the aiming aid is drawn over the birds and pigs
     // Stella draws its sprites at a tenth (the scale of its blocks): the trail puffs too, about their pivot
     const float trailK = (scripts_ && scripts_->IsStella()) ? 0.1f : 1.0f;
-    auto drawTrail = [&](const SpriteSheet& sheet, const Sprite& sp, float x, float y) {
-        if (trailK == 1.0f) DrawSpriteAt(sheet, sp, x, y, 4, 3, false, 0, 0);
-        else DrawSpriteAt(sheet, sp, x - sp.pivotX * trailK, y - sp.pivotY * trailK, 0, 0, true, sp.w * trailK, sp.h * trailK);
+    // (4.2) every dot and puff of the trajectory (which 2: layers 1 to 6 the dots of the six lists, 7 to 12 their puffs) can be listed with
+    // getTrailSprites and changed one by one with setTrailSprite
+    auto drawTrail = [&](const SpriteSheet& sheet, const Sprite& sp, float x, float y, int layerNo, long tile) {
+        SpriteInstInfo info; info.layer = layerNo; info.tile = tile; info.sprite = sp.name;
+        info.x = (state_.tx + x) * state_.sx; info.y = (state_.ty + y) * state_.sy; info.w = sp.w * trailK * state_.sx; info.h = sp.h * trailK * state_.sy;
+        instSeen_[2].push_back(info);
+        float k = trailK, ox = 0, oy = 0, a = state_.alpha;
+        float scaleX = 1, scaleY = 1;
+        auto it = instChange_.find(std::make_tuple(2, layerNo, tile));
+        if (it != instChange_.end()) {
+            const SpriteInstChange& c = it->second;
+            if (c.hidden) return;
+            ox = c.dx / (state_.sx != 0 ? state_.sx : 1.0f); oy = c.dy / (state_.sy != 0 ? state_.sy : 1.0f);
+            scaleX = c.scaleX; scaleY = c.scaleY; state_.alpha = a * c.alpha;
+        }
+        if (k == 1.0f && scaleX == 1 && scaleY == 1) DrawSpriteAt(sheet, sp, x + ox, y + oy, 4, 3, false, 0, 0);
+        else DrawSpriteAt(sheet, sp, x + ox - sp.pivotX * k * scaleX, y + oy - sp.pivotY * k * scaleY, 0, 0, true, sp.w * k * scaleX, sp.h * k * scaleY);
+        state_.alpha = a;
     };
     auto drawTrajectory = [&]() {
         trajDone = true;
+        instSeen_[2].clear();
         state_.angle = 0; state_.pivotX = state_.pivotY = 0;
         for (int list = 0; list < 6; list++) {
             const std::string* custom = trajCustom_[list / 3];
@@ -3988,13 +4049,15 @@ void GamePlatform::DrawGame() {
                 if (!sp) sp = sprites_.Find("TRAIL_WHITE_" + std::to_string(i % 3 + 1), &sheet);
                 if (!sp) sp = sprites_.Find("SMOKE_TRAIL_" + std::to_string(i % 3 + 1), &sheet);   // Angry Birds 1.0 (iPhone)
                 if (std::getenv("AB_DRAWDBG") && i == 0) std::fprintf(stderr, "TRAJ list %d dots %zu sprite %s\n", list, trajDots_[list].size(), sp ? "yes" : "NO");
-                if (sp) { TagScope t(this, "trajectory"); drawTrail(*sheet, *sp, trajDots_[list][i].x, trajDots_[list][i].y); }
+                if (sp) { TagScope t(this, "trajectory"); drawTrail(*sheet, *sp, trajDots_[list][i].x, trajDots_[list][i].y, list + 1, (long)i); }
             }
+            long puffNo = 0;
             for (const TrajectoryPoint& p : trajPuffs_[list]) {
                 const SpriteSheet* sheet = nullptr;
                 const Sprite* sp = custom[3].empty() ? nullptr : sprites_.Find(custom[3], &sheet);
                 if (!sp) sp = sprites_.Find("BIRD_SPECIAL", &sheet);
-                if (sp) { TagScope t(this, "trajectory"); drawTrail(*sheet, *sp, p.x, p.y); }
+                if (sp) { TagScope t(this, "trajectory"); drawTrail(*sheet, *sp, p.x, p.y, list + 7, puffNo); }
+                puffNo++;
             }
         }
         if (!aimOverCharacters) drawAim();

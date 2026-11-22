@@ -195,6 +195,12 @@ public:
     virtual void SetTopLeft(float x, float y) { (void)x; (void)y; }
     // theme layers as data (which: 0 background, 1 foreground of the new theme system)
     struct ThemeLayerInfo { std::string sprite; float speed = 1, scale = 1, scaleX = 1, scaleY = 1, offset = 0, offX = 0, offY = 0, posX = 0, posY = 0, dx = 0, dy = 0, velX = 0, velY = 0, angle = 0; bool looping = true, hidden = false; };
+    // (4.2) the sprites a background (which 0) or foreground (1) layer drew this frame, and per-sprite changes: a layer's sprite repeats across the screen and each repeat is a tile
+    struct SpriteInstInfo { int layer = 0; long tile = 0; std::string sprite; float x = 0, y = 0, w = 0, h = 0; };
+    struct SpriteInstChange { float dx = 0, dy = 0, scaleX = 1, scaleY = 1, angle = 0, alpha = 1; bool hidden = false; };
+    virtual void SpriteInstances(int which, std::vector<SpriteInstInfo>& out) { (void)which; out.clear(); }
+    virtual void SetSpriteInstance(int which, int layer, long tile, const SpriteInstChange* change) { (void)which; (void)layer; (void)tile; (void)change; }
+    virtual void ClearSpriteInstances() {}
     virtual void ClearParticleCache() {}
     virtual void GroundColor(bool set, float& r, float& g, float& b) { if (!set) r = g = b = 0; }
     virtual void GetCamera(float& x, float& y, float& ws, int& w, int& h) { x = y = 0; ws = 1; w = h = 0; }

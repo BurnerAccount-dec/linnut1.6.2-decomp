@@ -2558,6 +2558,44 @@ int l_setThemeLayer(lua_State* L) {
     P(L)->SetThemeLayer(which, idx, t);
     return 0;
 }
+
+// getBackgroundSprites() / getForegroundSprites() -> { {layer=1, tile=-3, sprite="NAME", x=, y=, w=, h=}, ... }: every repeat of a layer's sprite drawn in the last frame
+// (x, y: where the sprite's bottom left sits on the screen, w, h: its size in screen pixels). tile counts the repeats along the level and keeps its number when the view scrolls.
+// setBackgroundSprite(layer, tile, {dx=, dy=, scaleX=, scaleY=, angle=, alpha=, hidden=}) / setForegroundSprite(...): changes that one repeat (dx, dy in screen pixels,
+// angle in radians); a nil or a missing table puts it back. getTrailSprites() / setTrailSprite(layer, index, changes) do the same for the dots (layers 1 to 6, the six lists) and puffs (7 to 12) of the trajectory. clearSpriteChanges() puts back all of them. Layers of the new theme system (Stella, Space) are not covered.
+int PushSpriteInstances(lua_State* L, int which) {
+    std::vector<Platform::SpriteInstInfo> v;
+    P(L)->SpriteInstances(which, v);
+    lua_newtable(L);
+    int n = 0;
+    for (const auto& i : v) {
+        lua_newtable(L);
+        auto num = [&](const char* k, double d) { lua_pushnumber(L, d); lua_setfield(L, -2, k); };
+        num("layer", i.layer); num("tile", (double)i.tile); num("x", i.x); num("y", i.y); num("w", i.w); num("h", i.h);
+        lua_pushstring(L, i.sprite.c_str()); lua_setfield(L, -2, "sprite");
+        lua_rawseti(L, -2, ++n);
+    }
+    return 1;
+}
+int l_getBackgroundSprites(lua_State* L) { return PushSpriteInstances(L, 0); }
+int l_getForegroundSprites(lua_State* L) { return PushSpriteInstances(L, 1); }
+int SetSpriteInstanceFrom(lua_State* L, int which) {
+    int layer = (int)luaL_checknumber(L, 1);
+    long tile = (long)luaL_checknumber(L, 2);
+    if (!lua_istable(L, 3)) { P(L)->SetSpriteInstance(which, layer, tile, nullptr); return 0; }
+    Platform::SpriteInstChange c;
+    auto num = [&](const char* k, float& v) { lua_getfield(L, 3, k); if (lua_isnumber(L, -1)) v = (float)lua_tonumber(L, -1); lua_pop(L, 1); };
+    num("dx", c.dx); num("dy", c.dy); num("scaleX", c.scaleX); num("scaleY", c.scaleY); num("angle", c.angle); num("alpha", c.alpha);
+    lua_getfield(L, 3, "scale"); if (lua_isnumber(L, -1)) c.scaleX = c.scaleY = (float)lua_tonumber(L, -1); lua_pop(L, 1);
+    lua_getfield(L, 3, "hidden"); if (lua_isboolean(L, -1)) c.hidden = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
+    P(L)->SetSpriteInstance(which, layer, tile, &c);
+    return 0;
+}
+int l_setBackgroundSprite(lua_State* L) { return SetSpriteInstanceFrom(L, 0); }
+int l_setForegroundSprite(lua_State* L) { return SetSpriteInstanceFrom(L, 1); }
+int l_getTrailSprites(lua_State* L) { return PushSpriteInstances(L, 2); }
+int l_setTrailSprite(lua_State* L) { return SetSpriteInstanceFrom(L, 2); }
+int l_clearSpriteChanges(lua_State* L) { P(L)->ClearSpriteInstances(); return 0; }
 int l_setTopLeft(lua_State* L) { P(L)->SetTopLeft(N(L, 1), N(L, 2)); return 0; }
 int l_setWorldScale(lua_State* L) { P(L)->SetWorldScale(N(L, 1)); return 0; }
 int l_setMaxWorldScale(lua_State* L) { P(L)->SetMaxWorldScale(N(L, 1)); return 0; }
@@ -3771,7 +3809,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"getAngle", l_getAngle}, {"getWorldPoint", l_getWorldPoint}, {"setObjectParameter", l_setObjectParameter}, {"setBodyType", l_setBodyType}, {"getBodyType", l_getBodyType}, {"setScale", l_setScale}, {"setRenderScale", l_setRenderScale}, {"getRenderScale", l_getRenderScale}, {"getScale", l_getScale}, {"setSpeedCap", l_setSpeedCap}, {"getSpeedCap", l_getSpeedCap}, {"clearSpeedCap", l_clearSpeedCap}, {"getTouchingObjects", l_getTouchingObjects}, {"rayCast", l_rayCast}, {"fileExists", l_fileExists},
         {"setPhysicsSimulationScale", l_setPhysicsSimulationScale}, {"setPhysicsEnabled", l_setPhysicsEnabled}, {"setThemeOffsetY", l_setThemeOffsetY}, {"setStartingCameraValue", l_setStartingCameraValue},
         {"isPhysicsEnabled", l_isPhysicsEnabled}, {"setLevelLimits", l_setLevelLimits},
-        {"setTopLeft", l_setTopLeft}, {"getCamera", l_getCamera}, {"getThemeLayers", l_getThemeLayers}, {"setThemeLayer", l_setThemeLayer}, {"setWorldScale", l_setWorldScale}, {"setMaxWorldScale", l_setMaxWorldScale}, {"resetMouseWheelScale", l_resetMouseWheelScale},
+        {"setTopLeft", l_setTopLeft}, {"getCamera", l_getCamera}, {"getThemeLayers", l_getThemeLayers}, {"getBackgroundSprites", l_getBackgroundSprites}, {"getForegroundSprites", l_getForegroundSprites}, {"setBackgroundSprite", l_setBackgroundSprite}, {"setForegroundSprite", l_setForegroundSprite}, {"clearSpriteChanges", l_clearSpriteChanges}, {"getTrailSprites", l_getTrailSprites}, {"setTrailSprite", l_setTrailSprite}, {"setThemeLayer", l_setThemeLayer}, {"setWorldScale", l_setWorldScale}, {"setMaxWorldScale", l_setMaxWorldScale}, {"resetMouseWheelScale", l_resetMouseWheelScale},
         {"setMaxTranslation", l_setMaxTranslation},
         {"setRenderState", l_setRenderState}, {"drawRect", l_drawRect}, {"drawLine2D", l_drawLine2D},
         {"drawTexturedRect", l_nothing}, {"drawSome", l_nothing},

@@ -25,6 +25,7 @@ struct BootConfig {
     float screenWidth = 1024, screenHeight = 768;
     bool isLiteVersion = false;
     bool isBetaVersion = false;
+    bool seasonsProduct = false;               // (4.2) the game is an Angry Birds Seasons: its backgrounds follow the camera's height by their parallax speed
     bool seasons4 = false;                     // Seasons 4.x: commonScriptPath holds gamelogic.lua like Space / Star Wars, but it is neither of them
     bool showCursor = true;                    // config.lua: false means the game draws its own cursor (Seasons 2.2.0 reads the global showCursor)
 };
@@ -50,6 +51,7 @@ public:
     bool IsSpace() const { return space_; }    // Angry Birds Space: the scripts load their own block files; the exe calls draw() after update()
     bool IsRio() const { return rio_; }        // Angry Birds Rio: data in many files, and the exe calls draw() after update()
     bool IsSeasons4() const { return config_.seasons4; }
+    bool IsSeasonsProduct() const { return config_.seasonsProduct; }
     const std::string& ScriptPath() const { return config_.scriptPath; }   // Seasons 4.x (scripts_common/gamelogic.lua, JSON sheets)
     bool IsMobileData() const { return mobileData_; }
     bool IsStella() const { return stella_; }   // an .ipa / .apk game: its scripts move many things by a fixed step per update

@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <map>
+#include <tuple>
 #include <set>
 
 #include "audio/audio_mixer.h"
@@ -447,6 +448,13 @@ private:
     int ThemeLayerCount(int which) override { return which == 2 ? (int)fgLayers_.size() : (int)(which == 1 ? ntFg_ : bgLayers_).size(); }
     bool GetThemeLayer(int which, int i, ThemeLayerInfo& o) override;
     bool SetThemeLayer(int which, int i, const ThemeLayerInfo& in) override;
+    void ClearSpriteInstances() override { instChange_.clear(); }
+    void SpriteInstances(int which, std::vector<SpriteInstInfo>& out) override { out = instSeen_[InstWhich(which)]; }
+    int InstWhich(int which) const { which = which < 0 ? 0 : (which > 2 ? 2 : which); return (newTheme_ && which < 2) ? which + 3 : which; }   // Stella / Space theme layers are listed under 3 and 4
+    void SetSpriteInstance(int which, int layer, long tile, const SpriteInstChange* change) override {
+        auto key = std::make_tuple(InstWhich(which), layer, tile);
+        if (change) instChange_[key] = *change; else instChange_.erase(key);
+    }
     void SyncTuningOnly() { int a = 0, b = 0; SyncTuning(a, b); }
     void OnContactStarWars(PhysObject& a, PhysObject& b, ContactHandle& contact);   // 0x42f9d0
     class Host;                       // FrameHost: world step, Lua writes, (no audio / effects yet)
@@ -621,6 +629,9 @@ private:
     int softLimit_ = 40, hardLimit_ = 125;     // constructor defaults (0x41c2fb)
     float softFactor_ = 0.5f;
     float camX_ = 0, camY_ = 0, worldScale_ = 1;
+    std::vector<SpriteInstInfo> instSeen_[5];
+    std::map<std::tuple<int, int, long>, SpriteInstChange> instChange_;
+    void DrawLayerInstance(int which, int layerNo, long tile, const std::string& sprite, float x, float w, float h, bool plain);
     // the exe's zoom animation (App +0x280..0x298): a wheel step eases from zoomStart_ to zoomTarget_
     void UpdateZoom(float dt);
     float zoom_ = 1, zoomPrev_ = 1, zoomMax_ = 1, zoomStart_ = 1, zoomTarget_ = 1, zoomT_ = -1, zoomDur_ = 0.5f;

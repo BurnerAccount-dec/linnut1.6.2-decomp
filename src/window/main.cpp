@@ -593,7 +593,15 @@ static int GameMain(int argc, char** argv) {
     BootConfig cfg;
     cfg.scriptPath = scripts;
     cfg.commonScriptPath = commonScripts;
-    cfg.seasons4 = !commonScripts.empty() && (wc.product.find("Seasons") != std::string::npos || !apkPath.empty());     // v3.0: an Android .apk with scripts_common (3.3.0) is the same generation
+    const bool packageIsIpa = apkPath.size() > 4 && !strcasecmp_ab(apkPath.c_str() + apkPath.size() - 4, ".ipa");
+    // (4.2) Which engine line a game with a scripts_common folder belongs to is decided by files only that line has, not by what it is not: the Space line (Star Wars, Stella:
+    // blocks_planets.lua, blocks_tatooine.lua, PolaroidMode.lua) keeps the Space natives; every other game with scripts_common (Seasons 4.x, Friends 1.0.0, the 3.3.0 apk, a game
+    // this engine has not seen) takes the Seasons 4.x line.
+    auto hasScript = [&](const char* name) { FILE* f = std::fopen((scripts + "/" + name).c_str(), "rb"); if (f) std::fclose(f); return f != nullptr; };
+    const bool spaceLine = hasScript("blocks_planets.lua") || hasScript("blocks_tatooine.lua") || hasScript("PolaroidMode.lua");
+    cfg.seasons4 = !commonScripts.empty() && !spaceLine;
+    cfg.seasonsProduct = wc.product.find("Seasons") != std::string::npos;
+    const bool friendsWheelSplit = wc.product.find("Friends") != std::string::npos;
     cfg.imagePath = wc.imagePath;
     cfg.fontPath = wc.fontPath;
     cfg.deviceModel = wc.deviceModel; cfg.isLiteVersion = wc.isLiteVersion; cfg.isBetaVersion = wc.isBetaVersion;
@@ -784,7 +792,18 @@ static int GameMain(int argc, char** argv) {
                     if (e.type == SDL_MOUSEBUTTONDOWN) input.KeyDown(KeyIndex(name)); else input.KeyUp(KeyIndex(name));
                     break;
                 }
-                case SDL_MOUSEWHEEL: input.Wheel((float)e.wheel.y); platform.SetWheelFine((SDL_GetModState() & KMOD_SHIFT) != 0); platform.Wheel(e.wheel.y); break;
+                case SDL_MOUSEWHEEL: {
+                    // (4.2) Angry Birds Friends: the wheel over the profile / scores panel on the right only scrolls it, over the game it only zooms
+                    bool overProfile = false;
+                    if (friendsWheelSplit) {
+                        int mx = 0, my = 0, ww2 = 1, wh2 = 1;
+                        SDL_GetMouseState(&mx, &my); SDL_GetWindowSize(window, &ww2, &wh2);
+                        overProfile = ww2 > 0 && (float)mx / (float)ww2 >= 0.77f;
+                    }
+                    if (!friendsWheelSplit || overProfile) input.Wheel((float)e.wheel.y);
+                    if (!overProfile) { platform.SetWheelFine((SDL_GetModState() & KMOD_SHIFT) != 0); platform.Wheel(e.wheel.y); }
+                    break;
+                }
                 case SDL_WINDOWEVENT:
                     if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST) input.ReleaseAll();
                     // the scripts pause the game when the window is left (gamePaused) and get gameResumed back

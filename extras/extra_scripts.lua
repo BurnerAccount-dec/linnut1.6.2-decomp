@@ -1685,7 +1685,7 @@ stellaMod = {
 	dahlia = {
 		maxDistance = 6, delayBeforeAim = 0.01, aimDuration = 0.3, aimSlowmo = 0.125, dashDuration = 0.4, kickDuration = 0.5, kickSlowmo = 1, explosionForce = 0.5, explosionRadius = 0.5,
 		uniformExplosionForce = true, passThroughForce = 0.01, horizontalMovement = false, kickRotationPhysicsOffset = -0.5, bgDarkeningDuration = 1, bgDarkeningAmount = 0.4,
-		explosionScale = 100, passThroughScale = 100, hopX = 0.5, hopY = -1, ghostWidth = 0.6, ghostHeight = 0.4, aimHighlightIntensity = 0.5,
+		explosionScale = 400, passThroughScale = 400, hopX = 0.5, hopY = -1, ghostWidth = 0.6, ghostHeight = 0.4, aimHighlightIntensity = 0.5,
 		color = { 2, 1.2, 1 }, lightness = 0, speed = 3,
 	},
 	-- Stella's damage factors (definitions/damagefactors.lua), in Classic's materials: the bird carries one of these while an ability runs
@@ -2096,6 +2096,8 @@ do
 		local name = S.bird
 		if S.phase == "aim" then
 			S.aimTimer = S.aimTimer + realDt
+			S.waveTimer = (S.waveTimer or 0) + realDt
+			S.glowTimer = (S.glowTimer or 0) + realDt
 			S.darkening = min(1, S.aimTimer / c.bgDarkeningTweenInDuration)
 			setMult(c.aimSlowmo)
 			local dx, dy = aimDirection(o)
@@ -2252,6 +2254,7 @@ do
 		local p = min(1, S.timer / c.duration)         -- the spin slows down over the duration
 		setRotation(name, (o.angle or 0) + (c.minSpinSpeed + (1 - p) * (c.spinSpeed - c.minSpinSpeed)) * pi / 180 * realDt)
 		if released or (i.collided and not S.hasTapped) then
+			if released and not S.released then S.timer, S.duration = 0, c.boostForceDuration end    -- letting go starts the boost phase on a new timer: the hold phase's clock does not run on into it
 			if not S.released then willowRelease() end
 		end
 		if S.boostTimer ~= nil then
@@ -2341,6 +2344,7 @@ do
 		local u = stellaMod.unit
 		local name = S.bird
 		if S.phase == "aim" then
+			S.particleTimer = (S.particleTimer or 0) + realDt
 			setPosition(name, S.sx, S.sy)
 			setMult(c.aimSlowmo)
 			if S.delay ~= nil then
@@ -2495,13 +2499,15 @@ do
 				local c = stellaMod.poppy
 				if not S.stopTimerSet then
 					S.stopTimerSet = true
-					later(c.drillDuration, function() if S ~= nil and S.kind == "poppy" then poppyStop() end end)
+					local mine = S
+					later(c.drillDuration, function() if S == mine and S ~= nil then poppyStop() end end)
 				end
 			elseif kind == "willow" and first == false then
 			elseif S.phase == "aim" and first then
 				local c = stellaMod[S.kind]
 				if S.kind ~= "dahlia" then
-					later(c.forceActivationAfterCollisionWhileAimingDuration, function() if S ~= nil and S.phase == "aim" then S.release = true end end, true)
+					local mine = S
+					later(c.forceActivationAfterCollisionWhileAimingDuration, function() if S == mine and S ~= nil and S.phase == "aim" then S.release = true end end, true)
 				end
 			end
 			if kind == "willow" and first then
@@ -2618,23 +2624,56 @@ do
 		if S.kind == "stella" then
 			local c = stellaMod.stella
 			if S.phase == "aim" and S.path ~= nil then
-				local total, shown = 0, 0
-				local reach = c.maxDistance * stellaMod.unit
+				-- StellaAbility's aim drawing (r19_0): a dot every half Stella unit along each jump, marching with the aim timer; they grow from the tip (aimAppearTimer) with a sine,
+				-- fade with the distance along the path, and each bounce gets a wall marker
+				local u = stellaMod.unit
+				local maxD = c.maxDistance
+				local x0, y0 = toScreen(0, 0)
+				local x1, y1 = toScreen(1, 0)
+				local ws = x1 - x0                         -- pixels in a physics unit
+				local path = S.path
+				local lens, sum = {}, 0
+				for k = 2, #path do lens[k] = sqrt((path[k].x - path[k - 1].x) ^ 2 + (path[k].y - path[k - 1].y) ^ 2) / u sum = sum + lens[k] end
 				local appear = min(1, S.aimAppear)
-				for k = 2, #S.path do
-					local p, q = S.path[k - 1], S.path[k]
-					local sx1, sy1 = toScreen(p.x, p.y)
-					local sx2, sy2 = toScreen(p.x + (q.x - p.x) * appear, p.y + (q.y - p.y) * appear)
-					drawLine2D(sx1, sy1, sx2, sy2, 3, 255, 140, 140, 220)
-					if q.nx ~= nil then
-						local a = atan2(q.ny, q.nx)
-						local mx, my = toScreen(q.cx, q.cy)
-						local tx, ty = toScreen(q.cx - q.ny * 1.2, q.cy + q.nx * 1.2)
-						local ux, uy = toScreen(q.cx + q.ny * 1.2, q.cy - q.nx * 1.2)
-						drawLine2D(tx, ty, ux, uy, 4, 255, 255, 255, 255 * appear)
+				local count = (ceil(sum * 2) + 1 + 11 * #path) * appear       -- r7_18: how many dots are out so far
+				local phase = (S.aimTimer % 0.5) * 2                          -- r9_18: the marching offset
+				local drawn, along = 0, 0
+				for k = 2, #path do
+					local a, b = path[k - 1], path[k]
+					local len = lens[k]
+					if len > 0.0001 then
+						local take = min(len, maxD - along)
+						local dx, dy = (b.x - a.x) / len / u * take, (b.y - a.y) / len / u * take      -- in Stella units
+						local n = ceil(take * 2)
+						for m = 1, n do
+							drawn = drawn + 1
+							if drawn <= count then
+								local f0, f1 = (m - 1) / n, m / n
+								local px = a.x + (dx * (f0 + phase * (f1 - f0))) * u
+								local py = a.y + (dy * (f0 + phase * (f1 - f0))) * u
+								local size = sin(clamp(0.1 * (count - drawn - phase), 0, 1) * pi * 0.83) * 2
+								local alpha = clamp(1 - (along + sqrt((px - a.x) ^ 2 + (py - a.y) ^ 2) / u) / maxD, 0, 1)
+								if size > 0.01 then
+									local sx, sy = toScreen(px, py)
+									local d = 0.17 * u * ws * size
+									setRenderState(0, 0, 1, 1, 0, 0, 0, alpha)
+									_G.res.drawSprite("TRAIL_WHITE_1", sx, sy, "VCENTER", "HCENTER", d, d)
+								end
+							end
+						end
+						along = along + take
+						if maxD < along then break end
+						if drawn <= count and b.nx ~= nil then       -- the wall marker (STELLA_5 in the game): a short tick along the wall, seen from the tip
+							local size = sin(clamp(0.1 * (count - drawn), 0, 1) * pi * 0.83) * 2
+							local fade = (0.5 + (S.aimTimer or 0) / (c.aimDurationStable + c.aimDurationSpeedUp) * 0.5) * (1 - 0.5 * along / maxD)
+							local tx, ty = toScreen(b.cx - b.ny * 0.9 * size, b.cy + b.nx * 0.9 * size)
+							local ux, uy = toScreen(b.cx + b.ny * 0.9 * size, b.cy - b.nx * 0.9 * size)
+							drawLine2D(tx, ty, ux, uy, 4, 255, 255, 255, 255 * min(0.6, fade * 1.5))
+						end
+						drawn = drawn + 10
 					end
-					ring(q.x, q.y, S.radius, 2, 255, 255, 255, 120)
 				end
+				setRenderState(0, 0, 1, 1, 0, 0, 0, 1)
 			elseif S.trail ~= nil then
 				for k = 2, #S.trail do
 					local p, q = S.trail[k - 1], S.trail[k]
@@ -2649,11 +2688,50 @@ do
 		elseif S.kind == "luca" then
 			local c = stellaMod.luca
 			if S.phase == "aim" and S.preview ~= nil then
+				-- LucaAbility's aim drawing (L10_1): wave marks every 0.65 of a mark's width along the ray, marching with waveTimer (a quarter second a step),
+				-- the first and the last two fading in and out; a glow with the wall's normal where a block stops the ray, a target where it ends in the open
 				local w = S.preview
-				local sx1, sy1 = toScreen(w.x1, w.y1)
-				local sx2, sy2 = toScreen(w.x2, w.y2)
-				drawLine2D(sx1, sy1, sx2, sy2, 3, 90, 180, 255, 200)
-				ring(w.x2, w.y2, 0.8, 3, 90, 180, 255, 220)
+				local x0, y0 = toScreen(0, 0)
+				local x1, y1 = toScreen(1, 0)
+				local ws = x1 - x0
+				local step = 0.45                                    -- the mark's width (physics units) times 0.65
+				local n = floor(w.maxDistance / step)
+				local ang = atan2(w.dy, w.dx)
+				local march = ((S.waveTimer or 0) % 0.25) * 4 * step
+				for i = 0, n do
+					local a = 1
+					if i < 2 then a = min(1, i / 2 + march / step / 2)
+					elseif i >= n - 2 then a = max(0, (n - i) / 2 - march / step / 2) end
+					if a > 0.01 then
+						local px = w.x1 + w.dx * (i * step + march)
+						local py = w.y1 + w.dy * (i * step + march)
+						local sx, sy = toScreen(px, py)
+						local len, th = 0.34 * ws, 0.13 * ws
+						local ca, sa = cos(ang), sin(ang)
+						local nxp, nyp = -sa * th * 0.5, ca * th * 0.5
+						drawLine2D(sx - ca * len * 0.5 + nxp, sy + sa * len * 0.5 - nyp, sx + ca * len * 0.5 - nxp, sy - sa * len * 0.5 + nyp, 4, 120, 200, 255, 255 * a)
+						drawLine2D(sx - ca * len * 0.5, sy + sa * len * 0.5, sx + ca * len * 0.5, sy - sa * len * 0.5, 2, 255, 255, 255, 255 * a)
+					end
+				end
+				local pulse = sin(min(pi, (S.glowTimer or 0) / 0.02 * pi))
+				if w.stopName ~= nil then
+					-- STELLA_BOUNCE_GLOW: a flat glow lying on the wall, turned with its normal
+					local na = atan2(-w.dy, -w.dx)
+					for k = 1, 3 do
+						local rr = (0.5 + 0.35 * k) * 0.9
+						ring(w.x2, w.y2, rr, 3, 120, 200, 255, 90 / k)
+					end
+					local ex, ey = toScreen(w.x2, w.y2)
+					local tx, ty = cos(na + pi / 2) * 1.6 * ws, sin(na + pi / 2) * 1.6 * ws
+					drawLine2D(ex - tx, ey + ty, ex + tx, ey - ty, 6, 160, 220, 255, 200)
+				else
+					-- LUCA_TARGET: a ring with a cross where the ray ends in the open
+					local ex, ey = toScreen(w.x2, w.y2)
+					ring(w.x2, w.y2, 0.8, 3, 120, 200, 255, 230)
+					ring(w.x2, w.y2, 0.4, 2, 255, 255, 255, 230)
+					drawLine2D(ex - 0.55 * ws, ey, ex + 0.55 * ws, ey, 2, 255, 255, 255, 200)
+					drawLine2D(ex, ey - 0.55 * ws, ex, ey + 0.55 * ws, 2, 255, 255, 255, 200)
+				end
 			elseif S.phase == "scream" then
 				local w = S.waves[1]
 				local k = clamp(w.timer / max(0.001, w.duration), 0, 1)
@@ -2664,10 +2742,22 @@ do
 				ring(w.x1 + (w.x2 - w.x1) * k, w.y1 + (w.y2 - w.y1) * k, 1.5, 3, 200, 230, 255, 220)
 			end
 		elseif S.kind == "poppy" and S.phase == "aim" and S.tapY ~= nil then
-			local sx1, sy1 = toScreen(o.x, o.y)
-			local sx2, sy2 = toScreen(o.x, S.tapY)
-			drawLine2D(sx1, sy1, sx2, sy2, 3, 255, 220, 60, 220)
-			ring(o.x, S.tapY, 1, 3, 255, 220, 60, 220)
+			-- PoppyAbility's aim drawing (L11_1): an aiming mark every half unit along the line to the tap (ceil(length * 2) of them, 0.9 of the way),
+			-- and a twirl at the tap that cycles through four frames in 0.2 s
+			local len = abs(S.tapY - o.y)
+			local n = ceil(len / stellaMod.unit * 2)
+			local x0, y0 = toScreen(0, 0)
+			local x1, y1 = toScreen(1, 0)
+			local ws = x1 - x0
+			for i = 1, n do
+				local sx, sy = toScreen(o.x, o.y + (S.tapY - o.y) * 0.9 * (i / n))
+				setRenderState(0, 0, 1, 1, 0, 0, 0, 1)
+				_G.res.drawSprite("TRAIL_WHITE_1", sx, sy, "VCENTER", "HCENTER", 0.17 * stellaMod.unit * ws, 0.17 * stellaMod.unit * ws)
+			end
+			local frame = floor(1 + 3 * ((S.aimTimer or 0) % 0.2) / 0.2)      -- POPPY_TWIRL_GROUND_1..4
+			for k = 0, 3 do
+				ring(o.x, S.tapY, (0.5 + 0.18 * ((frame + k) % 4)) * (k == 0 and 1.2 or 0.7), k == 0 and 3 or 1, 255, 220, 60, k == 0 and 230 or 110)
+			end
 		elseif S.kind == "poppy" and S.phase == "drill" then
 			local cx, cy, hw, hh = poppySensor(o)
 			local x1, y1 = toScreen(cx - hw, cy - hh)
@@ -2677,18 +2767,62 @@ do
 			local c = stellaMod.willow
 			local len = c.aimLineLength
 			if not S.released then
-				local sx1, sy1 = toScreen(o.x, o.y)
-				local sx2, sy2 = toScreen(o.x + S.dx * len, o.y + S.dy * len)
-				drawLine2D(sx1, sy1, sx2, sy2, 3, 120, 255, 160, 200)
+				-- WillowAbility's aim drawing (L5_1): the line is cut where a ray hits something; floor(length * 3) aiming marks along it, fading from full to 0.1;
+				-- a twirl lying on the surface at the contact, turned with its normal
+				local x0, y0 = toScreen(0, 0)
+				local x1, y1 = toScreen(1, 0)
+				local ws = x1 - x0
+				local L = len
+				local contact
+				for _, h in ipairs(castHits(o.x, o.y, o.x + S.dx * len, o.y + S.dy * len, S.bird)) do
+					L = len * h.fraction contact = h break
+				end
+				local n = floor(L / stellaMod.unit * 3)
+				for i = 1, n do
+					local f = i / n
+					local sx, sy = toScreen(o.x + S.dx * L * f, o.y + S.dy * L * f)
+					setRenderState(0, 0, 1, 1, 0, 0, 0, 0.1 + 0.9 * (1 - f * L / len))
+					_G.res.drawSprite("TRAIL_WHITE_1", sx, sy, "VCENTER", "HCENTER", 0.17 * stellaMod.unit * ws, 0.17 * stellaMod.unit * ws)
+				end
+				setRenderState(0, 0, 1, 1, 0, 0, 0, 1)
+				if contact ~= nil then
+					local cx, cy = o.x + S.dx * L, o.y + S.dy * L
+					local sx, sy = toScreen(cx, cy)
+					local tx, ty = -S.dy * 0.9 * ws, S.dx * 0.9 * ws
+					drawLine2D(sx - tx, sy + ty, sx + tx, sy - ty, 4, 120, 255, 160, 220)
+					ring(cx, cy, 0.35, 2, 255, 255, 255, 200)
+				end
 			end
 			ring(o.x, o.y, c.sensorRadius * stellaMod.unit, 2, 120, 255, 160, 180)
 		elseif S.kind == "dahlia" then
 			local c = stellaMod.dahlia
 			if S.phase == "aim" or S.phase == "dash" then
-				local sx1, sy1 = toScreen(S.sx, S.sy)
-				local sx2, sy2 = toScreen(S.gx, S.gy)
-				drawLine2D(sx1, sy1, sx2, sy2, 6, 252, 182, 253, 140)
-				drawLine2D(sx1, sy1, sx2, sy2, 2, 232, 151, 101, 255)
+				-- DahliaAbility's aim drawing (L17_1): 20 particles, each with its own height across the path and speed, flow from the bird to the ghost
+				-- (position (x + (10 * particleTimer % speed) / speed) % 1), wobble with a sine and colour from orange to pink along the way; a bigger end mark
+				if S.particles == nil then
+					S.particles = {}
+					for i = 1, 20 do S.particles[i] = { x = _G.math.random(), y = _G.math.random(), speed = 0.5 * (1 + _G.math.random()) } end
+				end
+				local ang = atan2(S.gy - S.sy, S.gx - S.sx)
+				local ca, sa = cos(ang), sin(ang)
+				local x0, y0 = toScreen(0, 0)
+				local x1, y1 = toScreen(1, 0)
+				local ws = x1 - x0
+				for _, q in ipairs(S.particles) do
+					local f = (q.x + ((10 * (S.particleTimer or 0)) % q.speed) / q.speed) % 1
+					local wob = (2 * (q.y - 0.5) + 0.2 * sin(f * pi * 6)) * S.radius
+					local px = S.sx + (S.gx - S.sx) * f - sa * wob
+					local py = S.sy + (S.gy - S.sy) * f + ca * wob
+					local sx, sy = toScreen(px, py)
+					local r = 1.5 * (0.91 + (0.99 - 0.91) * f)
+					local g = 1.5 * (0.59 + (0.71 - 0.59) * f)
+					local b = 1.5 * (0.40 + (0.99 - 0.40) * f)
+					local d = 0.125 * 1.2 * stellaMod.unit * ws
+					setRenderState(0, 0, 1, 1, 0, 0, 0, 1)
+					drawLine2D(sx - ca * d, sy + sa * d, sx + ca * d, sy - sa * d, 0.45 * d, min(255, 255 * r), min(255, 255 * g), min(255, 255 * b), 255)
+				end
+				local ex, ey = toScreen(S.gx, S.gy)
+				drawLine2D(ex - sa * S.radius * ws, ey - ca * S.radius * ws, ex + sa * S.radius * ws, ey + ca * S.radius * ws, 5, 255, 190, 255, 255)
 				ring(S.gx, S.gy, S.radius, 3, 255, 255, 255, 230)
 			elseif S.phase == "kick" then
 				local rr = c.explosionRadius * stellaMod.unit

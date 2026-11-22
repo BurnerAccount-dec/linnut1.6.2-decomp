@@ -89,11 +89,31 @@ local function weekCodes(week)
     return list
 end
 
+-- (4.2) the coins: Friends keeps its own, or, when the player turns "share coins" on (the coin window, F10), uses the wallet that the Social account shares
+local function shared() return state().shareCoins == true and type(env.getCoins) == "function" end
+local function coinCount() if shared() then return env.getCoins() end return state().coins end
 local function addCoins(n)
-    local s = state()
-    s.coins = max(0, s.coins + n)
+    if shared() then env.addCoins(n) else local s = state() s.coins = max(0, s.coins + n) end
     notify("EID_CREDIT_COUNT_UPDATED")
 end
+-- what the coin window asks for: the option itself and the two ways of moving coins across
+env.abFriendsCoins = {
+    shared = shared,
+    setShared = function(on)
+        local s = state()
+        if on and not shared() then env.addCoins(s.coins) s.coins = 0 end          -- turning it on brings the Friends coins to the shared wallet
+        s.shareCoins = on and true or false
+        save() notify("EID_CREDIT_COUNT_UPDATED")
+    end,
+    toSocial = function() local s = state() local n = s.coins s.coins = 0 if n > 0 then env.addCoins(n) end save() notify("EID_CREDIT_COUNT_UPDATED") return n end,
+    toFriends = function()
+        local s = state()
+        local n = type(env.getCoins) == "function" and env.getCoins() or 0
+        if n > 0 then env.addCoins(-n) s.coins = s.coins + n end
+        save() notify("EID_CREDIT_COUNT_UPDATED") return n
+    end,
+    friendsCoins = function() return state().coins end,
+}
 local function addItem(name, n)
     local wrapper = env.settingsWrapper
     if not (wrapper and wrapper.getItem) then return 0 end
@@ -192,13 +212,27 @@ fb.hasToken = function() return state().login == true end
 fb.isFacebookSessionOpen = function() return mode == "online" end
 fb.isOnlineMode = function() hook() return mode == "online" end
 fb.isUnknownMode = function() return false end
-fb.openFacebookSession = function(cb)
+local function logIn(cb)
     local s = state()
     s.login = true
     mode = "online"
     rollover()
     save()
     later(cb, true)
+end
+-- (4.2) "Log in with Facebook" looks for the player's Social account (the name in socialLevels.player) on the Social server. No network at all is the game's own network
+-- error; a network without the account (or without the server) gets its own window, which lets the player go on as a local player.
+fb.openFacebookSession = function(cb)
+    local found = env.abFindSocialAccount and env.abFindSocialAccount()
+    if found == nil or found == "found" or found == "unchecked" then logIn(cb) return end
+    if found == "nonetwork" then later(cb, false, "offline") return end
+    local name = env.abSocialName and env.abSocialName()
+    local lines = found == "nosocial"
+        and {"No Angry Birds Social account", name and ("named " .. name .. " was found.") or "is set for this player.", "Make one on the Social server,", "or play as a local player."}
+        or {"The Social server does not answer,", "so no Social account was found.", "Start it, or play as a local player."}
+    env.abNotice(lines, {{"cancel", "ESCAPE"}, {"LOCAL PLAYER", "LOCAL"}}, function(i)
+        if i == 2 then logIn(cb) else later(cb, false, "cancelled") end
+    end)
 end
 fb.logoutFromFacebook = function(cb)
     state().login = false
@@ -277,7 +311,7 @@ fb.getPreviousWeeksTournamentResult = function() return state().lastResult or {v
 fb.postTournamentResults = function(rank, points, cb) later(cb, true) end
 
 -- coins, the power-up shop and the welcome gift
-fb.getCreditCount = function() return state().coins end
+fb.getCreditCount = function() return coinCount() end
 fb.checkCreditCountChange = function() return 0 end
 fb.hasBoughtSomething = function() return false end
 fb.isCoinShopReady = function() return false end      -- coins for real money: not here
@@ -297,7 +331,7 @@ fb.buyWithCredits = function(code, quantity, cb)
     local price
     for _, p in ipairs(PRICES[code] or {}) do if p.tq == quantity then price = p end end
     if not price then later(cb, false, nil, "That is not for sale.") return end
-    if state().coins < price.p then later(cb, false, nil, "Not enough coins.") return end
+    if coinCount() < price.p then later(cb, false, nil, "Not enough coins.") return end
     addCoins(-price.p)
     local items = {}
     for _, name in ipairs(ITEMS[code]) do items[name] = addItem(name, price.tq + (price.fq or 0)) end

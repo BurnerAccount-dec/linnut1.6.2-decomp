@@ -102,6 +102,29 @@ local function syncInBackground()          -- the regular check: asks on its own
     syncDone(a.server, body, why, a.sent)
 end
 
+-- (4.2) Friends' login: is there a Social account? "found", "nosocial" (the server answers, no such account), "noserver", "nonetwork" (no connection at all)
+-- or "unchecked" (no name is set in socialLevels.player: nothing to look for)
+env.abSocialName = function() local _, player = social() return player end
+env.abFindSocialAccount = function()
+    if env.isNetworkConnected and not env.isNetworkConnected() then return "nonetwork" end
+    local server, player = social()
+    if not player then return type(env.socialLevels) == "table" and "nosocial" or "unchecked" end
+    if type(env.httpGet) ~= "function" then return "unchecked" end
+    local url = "/classic/account?player=" .. urlEncode(player)
+    local body = env.httpGet(server .. url, 1.5)
+    if not body and string.find(server, "//localhost", 1, true) then body = env.httpGet((string.gsub(server, "//localhost", "//127.0.0.1", 1)) .. url, 1.5) end
+    if not body then return "noserver" end
+    local what = string.match(body, "^ok\t(%a+)")
+    if what == "found" then return "found" elseif what == "none" then return "nosocial" end
+    return "noserver"
+end
+-- a window with a message and one or two buttons: callback(1) for the first (Esc), callback(2) for the second
+local notice
+env.abNotice = function(lines, buttons, callback)
+    notice = {lines = lines, buttons = buttons, callback = callback}
+    env.abPage.mode = "notice"
+end
+
 -- ---------------------------------------------------------------------------------------------------------------- the script functions
 env.getCoins = function() return wallet.coins end
 env.addCoins = function(n)
@@ -149,8 +172,8 @@ local function openLanguages()
 end
 env.showLanguages = openLanguages
 env.showCoins = function() page.mode = "coins" end
--- An ad plays only while the computer is on a network (isNetworkConnected: it has an address that reaches beyond itself, Wi-Fi or cable) and the Social stand-in server
--- answers (the coins come from it). Both are checked when the ad is asked for (a second at most); the window says which is missing.
+-- An ad plays only while the computer is on a network (isNetworkConnected: it has an address that reaches beyond itself, Wi-Fi or cable), checked when the ad is asked for
+-- (a second at most). The Social stand-in server is not needed: the coins wait in the wallet until it answers.
 env.isSocialServerReachable = function() return sync() and true or false end
 env.isOnline = function() return (env.isNetworkConnected == nil or env.isNetworkConnected()) and env.isSocialServerReachable() end
 local networkAt, networkIs = -1e9, false
@@ -163,8 +186,7 @@ end
 env.watchAd = function(callback)
     local from = page.mode
     local message
-    if env.isNetworkConnected and not env.isNetworkConnected() then message = "network"
-    elseif not sync() then message = "server" end
+    if env.isNetworkConnected and not env.isNetworkConnected() then message = "network" end     -- (4.1.2.1) an ad needs the internet only: the coins wait in the wallet until the Social server is there to keep them
     if message then
         page.back, page.mode, page.problem = from, "offline", message
         if type(callback) == "function" then pcall(callback, 0) end
@@ -304,6 +326,9 @@ local function drawWindow()
     if page.mode == "buy" then
         drawBuy(sw, sh)
         return
+    elseif page.mode == "notice" and notice then
+        drawDialog(sw, sh, notice.lines, {{notice.buttons[1][1], notice.buttons[1][2], GREY}, notice.buttons[2] and {notice.buttons[2][1], notice.buttons[2][2]} or nil})
+        return
     elseif page.mode == "offline" then
         if page.problem == "server" then
             drawDialog(sw, sh, {"The Social server does not answer.", state.why or "Start it and try again."}, {{"OK", "ESCAPE"}})
@@ -325,10 +350,21 @@ local function drawWindow()
         elseif state.status == "offline" then line = "No Social server answers: the coins are kept on this computer"
         else line = "Not connected to the Social server yet" end
         text(line, sw / 2, y + h * 0.43, h * 0.045, "VCENTER", "HCENTER", 0.9)
-        local bw, bh = w * 0.62, h * 0.12
-        button("WATCH AN AD   +" .. cfg.adReward, sw / 2 - bw / 2, y + h * 0.52, bw, bh, "A")
-        button("SYNC NOW", sw / 2 - bw / 2, y + h * 0.67, bw, bh, "S")
-        button("CLOSE", sw / 2 - bw / 2, y + h * 0.82, bw, bh, "ESCAPE")
+        local bw, bh = w * 0.7, h * 0.12
+        local fc = env.abFriendsCoins
+        if fc then      -- (4.2) Angry Birds Friends: its coins are its own unless the player shares them with the Social account
+            bh = h * 0.085
+            text("Friends coins on their own: " .. fc.friendsCoins(), sw / 2, y + h * 0.485, h * 0.036, "VCENTER", "HCENTER", 0.85)
+            button("WATCH AN AD   +" .. cfg.adReward, sw / 2 - bw / 2, y + h * 0.52, bw, bh, "A")
+            button("SHARE COINS WITH FRIENDS: " .. (fc.shared() and "ON" or "OFF"), sw / 2 - bw / 2, y + h * 0.615, bw, bh, "SHARE")
+            button("MOVE FRIENDS COINS TO SOCIAL", sw / 2 - bw / 2, y + h * 0.71, bw, bh, "TOSOCIAL")
+            button("MOVE SOCIAL COINS TO FRIENDS", sw / 2 - bw / 2, y + h * 0.805, bw, bh, "TOFRIENDS")
+            button("CLOSE", sw / 2 - bw / 2, y + h * 0.9, bw, bh, "ESCAPE")
+        else
+            button("WATCH AN AD   +" .. cfg.adReward, sw / 2 - bw / 2, y + h * 0.52, bw, bh, "A")
+            button("SYNC NOW", sw / 2 - bw / 2, y + h * 0.67, bw, bh, "S")
+            button("CLOSE", sw / 2 - bw / 2, y + h * 0.82, bw, bh, "ESCAPE")
+        end
     else
         text("LANGUAGE", sw / 2, y + h * 0.08, h * 0.08, "VCENTER", "HCENTER")
         font(false)
@@ -372,6 +408,16 @@ local function press(key, row)
         else finishBuy(false) end
         return
     end
+    if page.mode == "notice" then
+        local n = notice
+        notice, page.mode = nil, nil
+        if n and type(n.callback) == "function" then pcall(n.callback, key == "ESCAPE" and 1 or 2) end
+        return
+    end
+    local fc = env.abFriendsCoins
+    if key == "SHARE" and fc then fc.setShared(not fc.shared()) return
+    elseif key == "TOSOCIAL" and fc then fc.toSocial() return
+    elseif key == "TOFRIENDS" and fc then fc.toFriends() return end
     if key == "ESCAPE" then page.mode = nil
     elseif key == "A" then env.watchAd()
     elseif key == "S" then sync()
@@ -406,6 +452,15 @@ env.abAchievementInput = function()
         end
     elseif page.mode == "offline" then
         if type(kp) == "table" and (kp.ESCAPE or kp.BACKSPACE or kp.RETURN or kp.LBUTTON) then page.mode, page.back = page.back, nil end
+    elseif page.mode == "notice" and type(kp) == "table" then
+        if kp.ESCAPE or kp.BACKSPACE then press("ESCAPE")
+        elseif kp.RETURN then press(notice and notice.buttons[2] and notice.buttons[2][2] or "ESCAPE") end
+        if kp.LBUTTON and page.mode then
+            local c = env.cursor or {}
+            for _, r in ipairs(rects) do
+                if c.x and c.x >= r.x and c.x <= r.x + r.w and c.y >= r.y and c.y <= r.y + r.h then press(r.key) break end
+            end
+        end
     elseif page.mode == "buy" and type(kp) == "table" then
         local enough = wallet.coins >= (env.abBuy and env.abBuy.price or 0)
         if kp.ESCAPE or kp.BACKSPACE then press("ESCAPE")

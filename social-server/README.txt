@@ -69,3 +69,5 @@ Coins of the engine
 The engine (F10) keeps a wallet of coins and shares it with this server through /classic/wallet. The server keeps every wallet in social-data.json, so nothing is lost when it is
 stopped, and a wallet that was made before any account existed waits here: as soon as an account with the name the engine uses (socialLevels.player in extras/extra_scripts.lua) is made, the
 wallet's coins are added to the account once. After that the account's coins and the engine's coins are the same.
+
+Angry Birds Friends (engine): "Log in with Facebook" asks /classic/account?player=Name whether a Social account with the player's name (socialLevels.player) exists; the coin window (F10) can share the Friends coins with that account, or move them across.
