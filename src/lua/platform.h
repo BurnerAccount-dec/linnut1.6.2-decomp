@@ -121,6 +121,31 @@ public:
     virtual void DestroyJoint(const std::string& name) { (void)name; }
     // Returns the names of the links (createJoint type 5) that fired; the caller deletes joints[name].
     virtual std::vector<std::string> RemoveObject(const std::string& name) { (void)name; return std::vector<std::string>(); }
+    virtual void SetThemeForegroundOffsetY(int index, float y) { (void)index; (void)y; }   // Classic 3.x setThemeForegroundOffsetY
+    virtual bool ApplySensorForces(const std::string& sensor, const std::string& object) { (void)sensor; (void)object; return false; }   // Stella native_applySensorForces
+    virtual bool ObjectVertices(const std::string& name, std::vector<std::vector<float>>& out) { (void)name; out.clear(); return false; }   // Stella getObjectVertices
+    virtual bool ObjectTrackOverlap(const std::string& name, const std::vector<float>& pts) { (void)name; (void)pts; return false; }   // Stella objectAndTrackOverlap
+    virtual void DrawWorldPolygon(const std::vector<float>& pts, float ox, float oy, float r, float g, float b, float a) { (void)pts; (void)ox; (void)oy; (void)r; (void)g; (void)b; (void)a; }   // Stella drawPolygon
+    virtual void ShareScreenShot() {}   // Stella native_shareScreenShot
+    virtual void CaptureScreen(const std::string& file) { (void)file; }   // Classic 4.0 captureScreen
+    virtual void SetMousePosition(float x, float y) { (void)x; (void)y; }   // Classic 4.0 setMousePosition
+    virtual void RemoveTemporaryLevel(const std::string& path) { (void)path; }   // Classic 4.0 removeTemporaryLevel
+    // Classic 4.0 res.getCompoSpriteData / getCompoSpriteEntry / setCompoSpriteEntry: the parts of a composite sprite, counted from 0
+    struct CompoEntryInfo { std::string sprite; float x = 0, y = 0, scaleX = 1, scaleY = 1, angle = 0; bool flipX = false, flipY = false, visible = true; };
+    virtual int CompoEntryCount(const std::string& compo) { (void)compo; return -1; }
+    virtual int CompoEntryIndex(const std::string& compo, const std::string& sprite) { (void)compo; (void)sprite; return -1; }
+    virtual bool GetCompoEntry(const std::string& compo, int index, CompoEntryInfo& out) { (void)compo; (void)index; (void)out; return false; }
+    virtual bool SetCompoEntry(const std::string& compo, int index, const CompoEntryInfo& in) { (void)compo; (void)index; (void)in; return false; }
+    virtual void SetActiveTextField(const std::string& name) { (void)name; }   // Classic 4.0 activateTextInputField ("" deactivates)
+    // Classic 4.0 object natives (getRadius, useAsBackgroundMask, setGravityEnabled / isGravityEnabled, getJointList); false: no such object
+    virtual bool ObjectRadiusField(const std::string& name, float& r) { (void)name; r = 0; return false; }
+    virtual bool SetObjectBackgroundMask(const std::string& name) { (void)name; return false; }
+    virtual bool SetObjectGravityEnabled(const std::string& name, bool on) { (void)name; (void)on; return false; }
+    virtual bool ObjectGravityEnabled(const std::string& name, bool& on) { (void)name; on = true; return false; }
+    virtual std::vector<std::string> ObjectJoints(const std::string& name) { (void)name; return {}; }
+    virtual void SetThemeTint(float r, float g, float b) { (void)r; (void)g; (void)b; }   // Classic 4.0 setThemeTintColour
+    virtual void SetThemeLayerColour(int index, float r, float g, float b, float a, bool tint) { (void)index; (void)r; (void)g; (void)b; (void)a; (void)tint; }   // setThemeRectColour / setThemeLayerTintColour
+    virtual void SimulationTrajectory(std::vector<std::pair<float, float>>& out) const { out.clear(); }   // Stella getSimulationTrajectoryPoints
     virtual CollisionPrediction PredictCollision(const std::string& a, const std::string& b, float restitution, const float* vel = nullptr) { (void)a; (void)b; (void)restitution; (void)vel; return CollisionPrediction(); }
     virtual bool SetOwnGravityVector(const std::string& n, float gx, float gy) { (void)n; (void)gx; (void)gy; return false; }
     virtual bool SetOwnGravityScale(const std::string& n, float scale) { (void)n; (void)scale; return false; }

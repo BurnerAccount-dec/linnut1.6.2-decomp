@@ -43,8 +43,26 @@ end
 -- ---------------------------------------------------------------------------------------------------------------- the Social server
 local state = {status = "never", clock = 0, nextSync = 5}     -- status: never / online / offline
 local function urlEncode(s) return (string.gsub(tostring(s), "[^%w%-_%.]", function(c) return string.format("%%%02X", string.byte(c)) end)) end
+-- (4.4) a game without socialLevels (Friends from an .apk / .ipa has no extra_scripts.lua) reads socialPlayer / socialServer from config.lua beside the exe
+local engineCfg
+local function engineConfig()
+    if engineCfg == nil then
+        engineCfg = {}
+        local f = loadfile and loadfile("config.lua")
+        if f then
+            local t = {}
+            setfenv(f, t)
+            if pcall(f) then engineCfg = t end
+        end
+    end
+    return engineCfg
+end
 local function social()
-    local s = type(env.socialLevels) == "table" and env.socialLevels or {}
+    local s = type(env.socialLevels) == "table" and env.socialLevels
+    if not s then
+        local c = engineConfig()
+        s = {server = type(c.socialServer) == "string" and c.socialServer or nil, player = type(c.socialPlayer) == "string" and c.socialPlayer or nil}
+    end
     local name = s.player
     if name == "Player" or name == "" then name = nil end        -- the default name is nobody's account
     return s.server or "http://localhost", name
@@ -108,8 +126,14 @@ env.abSocialName = function() local _, player = social() return player end
 env.abFindSocialAccount = function()
     if env.isNetworkConnected and not env.isNetworkConnected() then return "nonetwork" end
     local server, player = social()
-    if not player then return type(env.socialLevels) == "table" and "nosocial" or "unchecked" end
     if type(env.httpGet) ~= "function" then return "unchecked" end
+    player = player or wallet.account
+    -- (4.4) no name set (Friends has no socialLevels): the wallet's own sync asks the server, so a running server is found, and an account the
+    -- wallet is already shared with counts; the server answering without an account is "nosocial" (the game said "unchecked" and never asked)
+    if not player then
+        if not sync() then return "noserver" end
+        return wallet.account and "found" or "nosocial"
+    end
     local url = "/classic/account?player=" .. urlEncode(player)
     local body = env.httpGet(server .. url, 1.5)
     if not body and string.find(server, "//localhost", 1, true) then body = env.httpGet((string.gsub(server, "//localhost", "//127.0.0.1", 1)) .. url, 1.5) end

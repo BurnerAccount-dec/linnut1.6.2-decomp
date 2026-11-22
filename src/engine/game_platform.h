@@ -59,6 +59,15 @@ public:
     // requestExit / setFullScreenMode: the window loop reads these
     bool ExitRequested() const { return exitRequested_; }
     bool TakeFullScreenRequest(bool& on) { if (!fullScreenReq_) return false; on = IsFullScreen(); fullScreenReq_ = false; return true; }
+    // Classic 4.0 setMousePosition(x, y) (0x41aca0, the window's +0x34): the window moves the cursor to that screen point
+    bool TakeMouseWarp(float& x, float& y) { if (!mouseWarpReq_) return false; x = mouseWarpX_; y = mouseWarpY_; mouseWarpReq_ = false; return true; }
+    void SetMousePosition(float x, float y) override { mouseWarpX_ = x; mouseWarpY_ = y; mouseWarpReq_ = true; }
+    // Classic 4.0 text input fields (createTextInputField, activate / deactivate / removeTextInputField; GameLua +0x1414): the typed text goes into
+    // the global table textInputFields[name]; one field takes the keyboard at a time
+    void TextTyped(const std::string& utf8);
+    void TextBackspace();
+    std::string activeTextField_;
+    void SetActiveTextField(const std::string& name) override { activeTextField_ = name; }
     // setResolution(w, h) from a script; the window layer applies it. False when nothing was asked.
     bool TakeResolutionRequest(int& w, int& h);
     void SetResolution(float w, float h) override { reqW_ = (int)w; reqH_ = (int)h; hasReq_ = true; }
@@ -204,6 +213,51 @@ public:
     void CheckJointLimits(const std::string& n, bool stop = false) override { Physics().CheckJointLimits(n, stop); }
     void DestroyJoint(const std::string& n) override { Physics().DestroyJoint(n); }
     std::vector<std::string> RemoveObject(const std::string& n) override { return Physics().RemoveObject(n); }
+    bool ApplySensorForces(const std::string& sensor, const std::string& object) override { return Physics().ApplySensorForces(sensor, object); }
+    bool ObjectVertices(const std::string& name, std::vector<std::vector<float>>& out) override { return Physics().ObjectVertices(name, out); }
+    bool ObjectTrackOverlap(const std::string& name, const std::vector<float>& pts) override { return Physics().ObjectTrackOverlap(name, pts); }
+    void DrawWorldPolygon(const std::vector<float>& pts, float ox, float oy, float r, float g, float b, float a) override;
+    void ShareScreenShot() override { screenshotPending_ = true; }
+    void CaptureScreen(const std::string& file) override { captureFile_ = file; }
+    void RemoveTemporaryLevel(const std::string& path) override;
+    int CompoEntryCount(const std::string& compo) override { const CompoSprite* c = sprites_.FindCompo(compo); return c ? (int)c->parts.size() : -1; }
+    int CompoEntryIndex(const std::string& compo, const std::string& sprite) override {
+        const CompoSprite* c = sprites_.FindCompo(compo);
+        if (c) for (size_t i = 0; i < c->parts.size(); i++) if (c->parts[i].sprite == sprite) return (int)i;
+        return -1;
+    }
+    bool GetCompoEntry(const std::string& compo, int index, CompoEntryInfo& out) override {
+        const CompoSprite* c = sprites_.FindCompo(compo);
+        if (!c || index < 0 || index >= (int)c->parts.size()) return false;
+        const CompoPart& p = c->parts[(size_t)index];
+        out.sprite = p.sprite; out.x = p.exact ? p.fx : (float)p.x; out.y = p.exact ? p.fy : (float)p.y;
+        out.scaleX = p.scale; out.scaleY = p.scaleY != 0 ? p.scaleY : p.scale; out.angle = p.angle;
+        out.flipX = p.flipX; out.flipY = p.flipY; out.visible = !p.hidden;
+        return true;
+    }
+    bool SetCompoEntry(const std::string& compo, int index, const CompoEntryInfo& in) override {
+        CompoSprite* c = const_cast<CompoSprite*>(sprites_.FindCompo(compo));   // the loaded set owns it; the game changes the entry in place too
+        if (!c || index < 0 || index >= (int)c->parts.size()) return false;
+        CompoPart& p = c->parts[(size_t)index];
+        p.sprite = in.sprite; p.x = (int)in.x; p.y = (int)in.y; p.fx = in.x; p.fy = in.y;
+        p.scale = in.scaleX; p.scaleY = in.scaleY; p.angle = in.angle; p.flipX = in.flipX; p.flipY = in.flipY; p.hidden = !in.visible;
+        p.exact = p.exact || in.scaleX != 1 || in.scaleY != 1 || in.angle != 0 || in.flipX || in.flipY;   // scaled, turned or mirrored parts take the exact path
+        return true;
+    }
+    bool ObjectRadiusField(const std::string& name, float& r) override { PhysObject* o = Physics().Find(name); r = o ? o->radiusField : 0.0f; return o != nullptr; }
+    bool SetObjectBackgroundMask(const std::string& name) override { PhysObject* o = Physics().Find(name); if (o) o->backgroundMask = true; return o != nullptr; }
+    bool SetObjectGravityEnabled(const std::string& name, bool on) override { PhysObject* o = Physics().Find(name); if (o) o->gravityEnabled = on; return o != nullptr; }
+    bool ObjectGravityEnabled(const std::string& name, bool& on) override { PhysObject* o = Physics().Find(name); on = o ? o->gravityEnabled : true; return o != nullptr; }
+    std::vector<std::string> ObjectJoints(const std::string& name) override { return Physics().JointsOf(name); }
+    void SetThemeTint(float r, float g, float b) override { themeTintR_ = r; themeTintG_ = g; themeTintB_ = b; }
+    void SetThemeLayerColour(int index, float r, float g, float b, float a, bool tint) override {
+        if (index < 0 || index >= (int)bgLayers_.size()) return;
+        BgLayer& l = bgLayers_[(size_t)index];
+        l.colR = r; l.colG = g; l.colB = b; l.colA = a;
+        if (tint) l.tintOn = true;
+    }
+    void SimulationTrajectory(std::vector<std::pair<float, float>>& out) const override { out.clear(); for (const TrajectoryPoint& p : aimPts_) out.push_back({p.x, p.y}); }
+    void SetThemeForegroundOffsetY(int index, float y) override { if (index < 0 || index >= (int)fgLayers_.size()) return; fgOffY_.resize(fgLayers_.size(), 0.0f); fgOffY_[index] = y; }
     CollisionPrediction PredictCollision(const std::string& a, const std::string& b, float restitution, const float* vel = nullptr) override { return Physics().PredictCollision(a, b, restitution, vel); }
     bool SetOwnGravityVector(const std::string& n, float gx, float gy) override { return Physics().SetOwnGravityVector(n, gx, gy); }
     bool SetOwnGravityScale(const std::string& n, float scale) override { return Physics().SetOwnGravityScale(n, scale); }
@@ -257,7 +311,7 @@ public:
     std::vector<std::string> IntersectingObjects(float x, float y, float l, float r, float d, float u) override { return Physics().IntersectingObjects(x, y, l, r, d, u); }
     void SetVelocity(const std::string& n, float vx, float vy) override { Physics().SetVelocity(n, vx, vy); }
     void SetAngularVelocity(const std::string& n, float w) override { Physics().SetAngularVelocity(n, w); }
-    bool BodyCommand(const std::string& n, int cmd, float a, float& result) override;   // cmds 20..24: the Space aiming aid
+    bool BodyCommand(const std::string& n, int cmd, float a, float& result) override;   // cmds 20..24: the Space aiming aid, 25..27 Stella's simulation natives
     bool SpriteExists(const std::string& name) override { return sprites_.Find(name) != nullptr; }
     bool AimSimulate(const std::string& bird, float vx, float vy, int points, const float* start = nullptr, const float* force = nullptr) override;
     void SetSleeping(const std::string& n, bool s) override { Physics().SetSleeping(n, s); }
@@ -534,6 +588,7 @@ private:
     void Transform(float x, float y, float cx, float cy, float& ox, float& oy) const;
 
     void DrawPhysObject(PhysObject& o);
+    void DrawAimingAidDots();
     void SelectRioAnimations(float dt);          // Rio: the exe asks the script which animation each animated object plays
     void UpdateRioSquash(float dt);              // Rio: the wobble of an object's scale after a hit, and the marmosets' turning
     void UpdateRioGettingUp(float dt);           // Rio: a marmoset lying on its side stands up again
@@ -543,6 +598,9 @@ private:
 
     struct BgLayer { float dx = 0, dy = 0; bool hidden = false;   // Lua: extra offset in screen pixels, skip the layer
                      std::string sprite; float speed = 1, scale = 1; bool looping = true, hasFixedX = false; float autoScroll = 0, offset = 0; bool space = false; float offX = 0, offY = 0, baseOffY = 0;
+                     // Classic 4.0 themes: {rect = {r, g, b, a, relLeft, relBottom, relWidth, relHeight}} is a screen rectangle in one colour (0 to 255);
+                     // the layer colour (rect colour, or the sprite tint when tintOn) is what setThemeRectColour / setThemeLayerTintColour change
+                     bool rect = false, tintOn = false; float colR = 255, colG = 255, colB = 255, colA = 255; float relL = 0, relB = 0, relW = 1, relH = 1;
                      // Space (0x48bdd0 / 0x467f70): the layer's own numbers
                      bool empty = false; float zDist = 0, xMult = 1, yMult = 1, angleMult = 0, posX = 0, posY = 0, scaleSpeed = 1, angle = 0;
                      // NEW_THEME_SYSTEM (0x44c1b0): scaleX / scaleY (0xbc / 0xc0), the flag bits (0xa4: 1 OVERSTRETCH_ANCHOR_V, 2 V_REPEAT, 4 H_REPEAT, 0x20 ANCHOR_V, 0x40, 0x100 / 0x200 REPEAT_LEFT_ONLY / REPEAT_RIGHT_ONLY) and the rocks spawnParameters scatters
@@ -629,6 +687,10 @@ private:
     int softLimit_ = 40, hardLimit_ = 125;     // constructor defaults (0x41c2fb)
     float softFactor_ = 0.5f;
     float camX_ = 0, camY_ = 0, worldScale_ = 1;
+    float themeTintR_ = 255, themeTintG_ = 255, themeTintB_ = 255;   // Classic 4.0 setThemeTintColour (the theme's +0 / +4 / +8)
+    std::string captureFile_;          // Classic 4.0 captureScreen(file): the finished frame is saved under this name
+    bool screenshotPending_ = false;   // Stella native_shareScreenShot: the frame is saved when it is finished
+    int screenshotCount_ = 0;          // the game's counter: Stella_Screenshot1.png, 2, ...
     std::vector<SpriteInstInfo> instSeen_[5];
     std::map<std::tuple<int, int, long>, SpriteInstChange> instChange_;
     void DrawLayerInstance(int which, int layerNo, long tile, const std::string& sprite, float x, float w, float h, bool plain);
@@ -636,6 +698,7 @@ private:
     void UpdateZoom(float dt);
     float zoom_ = 1, zoomPrev_ = 1, zoomMax_ = 1, zoomStart_ = 1, zoomTarget_ = 1, zoomT_ = -1, zoomDur_ = 0.5f;
     bool exitRequested_ = false, fullScreenReq_ = false;
+    bool mouseWarpReq_ = false; float mouseWarpX_ = 0, mouseWarpY_ = 0;
     std::vector<BgLayer> bgLayers_;
     std::vector<float> fgDx_, fgDy_; std::vector<char> fgHidden_;   // Lua: per-layer offset (pixels) and visibility of the old-style foreground strip (which = 2)
     struct ThemeSprite { std::string name, sprite; float x, y, scaleX, scaleY, angle, speedX; int layer; float angleVel = 0; bool flipped = false; float velX = 0, velY = 0, scaleSpeed = 0;
@@ -655,6 +718,7 @@ private:
     bool swTheme_ = false;
     bool swBg_ = false;                            // a Star Wars theme (its table has textureScale): backgrounds are drawn at the retail Star Wars scale
     void SpawnFGLayerParticles(int id) override;      // Star Wars' foreground layers with named fields (offsetY, downFillColor)
+    std::vector<float> fgOffY_;   // (4.4) setThemeForegroundOffsetY: each foreground layer's y offset in world pixels (Classic 3.x, the record's +0x38)
     std::vector<float> fgSpeed_, fgScale_, fgAuto_, fgOffset_;      // per foreground layer: parallax speed and scale (entries 3 and 4; 1 and 1.5 when absent)
     float groundR_ = 0, groundG_ = 0, groundB_ = 0;
     std::string themeTexture_;

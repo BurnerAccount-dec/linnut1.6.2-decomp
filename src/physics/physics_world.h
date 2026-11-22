@@ -66,6 +66,11 @@ public:
     virtual void SetDensity(float d) { (void)d; }          // v2.5: every fixture, then the mass is worked out again
     virtual void SetActive(bool on) = 0;
     virtual float ShapeRadius() const = 0;               // the first fixture's skin radius (polygons) or radius (circles)
+    // Stella getObjectVertices (0x54df4): every fixture in the body's fixture-list order, the polygon's local vertices as x,y pairs
+    // (a circle or an edge gives an empty list)
+    virtual void FixturePolygons(std::vector<std::vector<float>>& out) const { out.clear(); }
+    // Stella objectAndTrackOverlap (0x3e5e4): 1 when the first fixture touches the open line through the points (x,y pairs, world), else 0
+    virtual int TrackOverlap(const std::vector<float>& pts) const { (void)pts; return 0; }
     // The collision prediction's view of a body (predictCollision). Defaults describe a body that cannot be asked.
     virtual float Inertia() const { return 0; }          // rotational inertia about the centre of mass (0: it cannot spin, or static)
     virtual void CenterOfMass(float& x, float& y) const { x = PosX(); y = PosY(); }   // world position of the centre of mass
@@ -137,6 +142,9 @@ struct PhysObject : FrameObject {
     float waterDensity = 0;                          // +0x168
     bool killOn = false; float killTimer = 0;       // +0x15b, +0xec: when set, objects.world[name].strength becomes 0 and the object is dead after killTimer seconds
     bool isCircle = false; float boxW = 0, boxH = 0; // +0x15c, +0xb0, +0xb4: the size the water code reads
+    float radiusField = 0;   // Classic 4.0 +0x110 (getRadius): createCircle's radius, resizeCircle's new one, -1 for createPolygon, 0 for a box
+    bool backgroundMask = false;   // Classic 4.0 +0x128 (useAsBackgroundMask): drawn with the textured polygons, in the batch before the others
+    bool gravityEnabled = true;    // Classic 4.0 +0x29 (setGravityEnabled / isGravityEnabled): only stored, nothing in the game reads it
     bool hidden = false;                             // Space id 33 (+0x1ab) = 0: isVisible false, not drawn
     float capSpeed = 0, capVx = 0, capVy = 0;        // v2.4 setSpeedCap: 0 = no limit, applied after every physics step
     bool zSet = false;                               // setObjectZOrder was used: the object is drawn by zOrder in every game (Rio always sorts by it)
@@ -223,6 +231,10 @@ public:
     void ApplyOwnGravity();
     // 0x41e440: the force and drag of water (a kind 2 sensor with setIsWater) on an object inside it
     void ApplyWater(PhysObject& w, PhysObject& o);
+    // every force ApplySensorForces / ApplyWater give goes through here: while capturing (the Stella trajectory simulation) it is only added up
+    void PushForce(PhysObject& o, float fx, float fy, float px, float py);
+    bool captureForces_ = false;
+    float capFx_ = 0, capFy_ = 0;
     bool SetOwnGravityVector(const std::string& n, float gx, float gy);
     bool SetOwnGravityScale(const std::string& n, float scale);
     bool ResetOwnGravity(const std::string& n);
@@ -234,6 +246,19 @@ public:
     int SensorPair(PhysObject* sen, PhysObject* other, bool enter);
     float BirdGravityFactor(float timer) const;
     bool GravityPull(const PhysObject& s, const PhysObject& t, float tx, float ty, float tvx, float tvy, float timer, float mass, float& fx, float& fy) const;
+    // Angry Birds Stella native_applySensorForces (0x55ac4 -> 0x58104): the pull of sensor `s` on object `t`, once, applied now. false: no force
+    // (filtered out, sensor off or not a gravitation sensor, unknown object). Stella's box water (BlockComponents/BoxWater.lua) calls it every physics step.
+    bool ApplySensorForces(const std::string& sensor, const std::string& object);
+    // Stella getObjectVertices (0x54df4): per fixture, the polygon's vertices at the object's position plus the local vertex
+    // (the body's angle is not applied, as in the game). false: no such object or no body
+    bool ObjectVertices(const std::string& name, std::vector<std::vector<float>>& out);
+    // Stella objectAndTrackOverlap (0x3e5e4); false also for an object that does not exist (the game would crash there)
+    bool ObjectTrackOverlap(const std::string& name, const std::vector<float>& pts) { PhysObject* o = Find(name); return o && o->pbody && o->pbody->TrackOverlap(pts) == 1; }
+    bool SensorForces(PhysObject& s, PhysObject& t);
+    // Stella: updateBirdTrajectoryTable also applies the sensors (0x58104) and native_setAdditionalBirdGravity (game +0x138, a downward force of
+    // that times the mass, only in this simulation) to the simulated bird
+    bool stellaRules = false;
+    float additionalBirdGravity = -1;   // the constructor's -1 (0x2ea20): off
     // the aiming aid (updateBirdTrajectoryTable): the object flown on from its position and velocity under the gravitation sensors and its damping, one point every `every` steps
     void SimulateTrajectory(const std::string& n, int steps, int every, float h, std::vector<std::pair<float, float>>& out);
     // extension of the retail trail (which is the bird's free flight): the bird alone in a world with the world's gravity, launched with this velocity and stepped like the real world; no blocks, no ground
@@ -288,6 +313,12 @@ public:
     void Clear();
     // The name of the i-th joint in Frame().joints (for writing x1..y2 into objects.joints[name])
     const std::string& JointName(int index) const { return joints_[index]->name; }
+    // Classic 4.0 getJointList(name) (0x424830): the joints (in creation order) whose end1 or end2 is the object
+    std::vector<std::string> JointsOf(const std::string& object) const {
+        std::vector<std::string> out;
+        for (const auto& j : joints_) if (j->end1 == object || j->end2 == object) out.push_back(j->name);
+        return out;
+    }
 
     void SetLevelLimits(float minX, float maxX) { frame_.levelMinX = (int)minX; frame_.levelMaxX = (int)maxX; }
     void SetLevelLimitsY(float minY, float maxY) { frame_.levelMinY = (int)minY; frame_.levelMaxY = (int)maxY; }   // Space (0x462b10): all four limits are kept, truncated

@@ -256,6 +256,10 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
             "        local s = _G.type(g.slingshot) == \"table\" and g.slingshot or {}\n"
             "        local p = g.rubberBandPos or g.levelStartPosition or s.rubberbandPhysicalPos or s.levelStartPhysicalPos   -- Friends 2.0.0 keeps them in slingshot\n"
             "        if o == nil or p == nil or g.simulateAimingAid == nil or g.enableAimingAid == nil then return end\n"
+            "        -- (4.4) only while the slingshot is really being pulled: a level reset in the middle of a pull leaves the game's drag flag (Rio's dragStarted) set,\n"
+            "        -- and the scope stayed on; with the button up it is not drawn, so it goes off the next frame\n"
+            "        local held = (_G.type(env.keyHold) == \"table\" and env.keyHold.LBUTTON) or ((_G.tonumber(env.touchcount) or 0) > 0)\n"
+            "        if not held then return end\n"
             "        local aid = g.aimingAid\n"
             "        scope.drawn = true\n"
             "        if not scope.on then\n"
@@ -270,6 +274,29 @@ ScriptHost::ScriptHost(Platform& platform, const BootConfig& config)
             "        g.simulateAimingAid(n, vx * m, vy * m, 150, sx, sy, 0, fy or 0)\n"
             "    end\n"
             "end\n"
+            // (4.4) Classic 3.x: initializeMenu logs "Level complete first time" through the global flurry (subsystems.Flurry) for a save with cleared levels whose
+            // flag isFlurryFirstTimeLevelCollected is not set yet, before initSubsystems has made flurry; the error ran the start-up again every frame (the assets
+            // loaded over and over, a black screen). Until the game makes its own, flurry takes every call and does nothing
+            "if env.flurry == nil then env.flurry = _G.setmetatable({abStandIn = true}, {__index = function() return function() end end}) end\n"
+            // (4.4) Classic 4.0 (PC): natives with no work to do on a computer, matched against its exe
+            "if env.isMotionEnabled == nil then env.isMotionEnabled = function() return false end end\n"            // 0x522580: always false
+            "if env.setGCPopupAllowed == nil then env.setGCPopupAllowed = function() end end\n"                     // 0x522570: returns at once
+            "if env.iapEnabled == nil then env.iapEnabled = false end\n"                                              // a global the exe sets at start
+            "if env.setParticleEditorActive == nil then env.setParticleEditorActive = function(on) env.abParticleEditorActive = on and true or false end end\n"   // 0x41a610: GameLua +0x1424
+            // saveParticleFile(name) (0x428f50): particleTable[name] is written as `particles = {...}`; here to particles/<name>.lua in the save folder
+            "if env.saveParticleFile == nil and env.saveLuaFile then env.saveParticleFile = function(name)\n"
+            "    local t = _G.type(env.particleTable) == \"table\" and env.particleTable[name]\n"
+            "    if _G.type(t) ~= \"table\" then return end\n"
+            "    local keep = env.particles; env.particles = t\n"
+            "    env.saveLuaFile(\"particles/\" .. _G.tostring(name) .. \".lua\", \"particles\", true)\n"
+            "    env.particles = keep\n"
+            "end end\n"
+            // removeParticleFile(name) (0x429700) deletes data_src\particles\<name>.lua, a folder only Rovio's own tree has: nothing to do
+            "if env.removeParticleFile == nil then env.removeParticleFile = function() end end\n"
+            // activateDebugConsole(text) / deactivateDebugConsole() (0x420530 / 0x41ad70): the game's debug console object; the engine's console is the
+            // command prompt, so the call is written there
+            "if env.activateDebugConsole == nil then env.activateDebugConsole = function(t) _G.print(\"debug console: \" .. _G.tostring(t)) end end\n"
+            "if env.deactivateDebugConsole == nil then env.deactivateDebugConsole = function() end end\n"
             "for _, n in _G.ipairs({\"setAccelerometerActive\", \"enableMotion\", \"showSystemPopup\", \"setThemeForegroundOffsetY\", \"setThemeRectColour\", \"native_reloadIngameSprites\", \"setUpdating\", \"sendNotification\", \"printError\", \"drawSlingScopeNative\", \"enablePigDaysVignette\", \"disablePigDaysVignette\"}) do if env[n] == nil then env[n] = function() end end end\n"
             // Seasons 4.x: an explosion (or a bubble) that pushes an object breaks the object's breakable joints whose breakForce the push reaches
             "if env.destroyBreakableJoints == nil then\n"
@@ -1320,16 +1347,20 @@ bool ScriptHost::Update(float dt, float realDt) {
                   "end\n"
                   // the Sling Scope's path is shown only in the frames whose drawSlingScope draws it
                   "local scope, draw = env.abScope or _G.abScope, env.drawGame\n"
-                  "if scope and _G.type(draw) == \"function\" then\n"
-                  "    env.drawGame = function(...)\n"
-                  "        if scope.on and not scope.drawn then   -- not drawn since the last frame (the scope may be drawn after drawGame, by the hud)\n"
-                  "            scope.on = false\n"
-                  "            local aid = env.aimingAid\n"
-                  "            if not (_G.type(aid) == \"table\" and aid.showing) then env.enableAimingAid(false) if env.clearAimingAid then env.clearAimingAid(1) end end\n"
-                  "        end\n"
-                  "        scope.drawn = false\n"
-                  "        return draw(...)\n"
+                  "local function scopeFrame()\n"
+                  "    if scope.on and not scope.drawn then   -- not drawn since the last frame (the scope may be drawn after drawGame, by the hud)\n"
+                  "        scope.on = false\n"
+                  "        local aid = env.aimingAid\n"
+                  "        if not (_G.type(aid) == \"table\" and aid.showing) then env.enableAimingAid(false) if env.clearAimingAid then env.clearAimingAid(1) end end\n"
                   "    end\n"
+                  "    scope.drawn = false\n"
+                  "end\n"
+                  // (4.4) the engine's own hook at the start of every game frame (DrawGame): Rio draws through its GameScene and never calls drawGame,
+                  // so the scope was never switched off there once it had been on
+                  "if scope and _G.type(env.engine) == \"table\" and _G.type(env.engine.on) == \"function\" then\n"
+                  "    env.engine.on(\"drawGameBefore\", scopeFrame)\n"
+                  "elseif scope and _G.type(draw) == \"function\" then\n"
+                  "    env.drawGame = function(...) scopeFrame() return draw(...) end\n"
                   "end\n").c_str());
         // v3.1: Game Center achievements: the list, the unlock pop-up, the how-to texts and the achievement page (achievements_page.lua)
         lua_getfield(L_, LUA_REGISTRYINDEX, "ab.env");

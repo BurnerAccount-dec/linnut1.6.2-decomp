@@ -117,6 +117,39 @@ public:
     void SetFixedRotation(bool on) override { b_->SetFixedRotation(on); }
     void SetActive(bool on) override { b_->SetActive(on); }
     float ShapeRadius() const override { return b_->GetFixtureList() ? b_->GetFixtureList()->GetShape()->m_radius : 0.0f; }
+    void FixturePolygons(std::vector<std::vector<float>>& out) const override {
+        out.clear();
+        for (const b2Fixture* f = b_->GetFixtureList(); f; f = f->GetNext()) {
+            out.emplace_back();
+            if (f->GetType() != b2Shape::e_polygon) continue;
+            const b2PolygonShape* p = static_cast<const b2PolygonShape*>(f->GetShape());
+            for (int i = 0; i < p->m_vertexCount; i++) { out.back().push_back(p->m_vertices[i].x); out.back().push_back(p->m_vertices[i].y); }
+        }
+    }
+    // Stella objectAndTrackOverlap (0x3e5e4): an open chain through the points (world coordinates, identity transform) against the
+    // body's first fixture, child by child; the first overlapping segment answers true
+    int TrackOverlap(const std::vector<float>& pts) const override {
+        const b2Fixture* fa = b_->GetFixtureList();
+        if (!fa) return 0;
+        const int n = (int)(pts.size() / 2);
+        if (n < 2) return 0;
+        std::vector<b2Vec2> v((size_t)n);
+        for (int i = 0; i < n; i++) v[(size_t)i].Set(pts[(size_t)i * 2], pts[(size_t)i * 2 + 1]);
+        b2Transform id; id.SetIdentity();
+#ifdef AB_BOX2D_V22
+        b2ChainShape chain;
+        chain.CreateChain(v.data(), n);
+        for (int i = 0; i < n - 1; i++)
+            if (b2TestOverlap(fa->GetShape(), 0, &chain, i, b_->GetTransform(), id)) return 1;
+#else
+        for (int i = 0; i < n - 1; i++) {
+            b2PolygonShape edge;
+            edge.SetAsEdge(v[(size_t)i], v[(size_t)i + 1]);
+            if (b2TestOverlap(fa->GetShape(), &edge, b_->GetTransform(), id)) return 1;
+        }
+#endif
+        return 0;
+    }
     float Inertia() const override {
         if (b_->GetType() != b2_dynamicBody) return 0.0f;
         b2Vec2 lc = b_->GetLocalCenter();
@@ -554,6 +587,7 @@ public:
 
     float CreatePolygon(const BodyDef& d, const std::vector<float>& verts) override {
         PhysObject* o = MakeObject(d, -1.0f, false);
+        o->radiusField = -1.0f;      // Classic 4.0 createPolygon (0x439650): +0x110 = -1
         std::vector<b2Vec2> pts;
         for (size_t i = 0; i + 1 < verts.size(); i += 2) pts.push_back(b2Vec2(verts[i], verts[i + 1]));
         float area2 = 0;     // twice the signed area: Box2D wants the points counter-clockwise, and Stella has shapes drawn the other way round
@@ -957,6 +991,7 @@ private:
     PhysObject* MakeObject(const BodyDef& d, float rollFactor, bool circle) {
         PhysObject* o = NewObject(d, rollFactor, circle);
         o->isCircle = circle; o->boxW = d.w; o->boxH = d.h;
+        o->radiusField = circle ? d.w : 0.0f;   // Classic 4.0 getRadius: createCircle stores its radius, a box keeps the constructor's 0
         b2BodyDef bd;
         bd.type = d.density != 0.0f ? b2_dynamicBody : b2_staticBody;
         bd.position.Set(d.x, d.y);

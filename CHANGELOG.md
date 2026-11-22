@@ -2,6 +2,32 @@
 
 What changed in each version of the engine, newest first. The README has the current status; the reference for script writers is in [`docs/SCRIPTING.md`](docs/SCRIPTING.md) and how to run and debug in [`docs/USAGE.md`](docs/USAGE.md).
 
+## New in 4.4
+
+- **Angry Birds Stella: two natives the retail game registers but never calls, matched against its binary and kept for modders:** `native_applySensorForces(sensor, object)` (the pull of one gravitation sensor on one object, applied once: the PC Space formula with force scale 0.1, bird decay 1.3 a second, reverse gravity −0.1, the field's point worked out in double; water sensors push like water; also as `applySensorForces` in every game) and `native_setThemeFgLayerOffsetY(theme, layer, offsetY)` (the y offset of one foreground layer). Both are in `docs/SCRIPTING.md`.
+- **Angry Birds Stella: every native the retail game registers now exists**, each matched against the binary and documented in `docs/SCRIPTING.md`:
+  - `getObjectVertices(name)`: the corners of each fixture, the object's position plus the local corner (the game leaves the body's angle out, and so does the engine);
+  - `decomposePolygon(points)`: convex pieces of at most 8 corners, with the same algorithm as the game (Box2D's contributed polygon decomposition);
+  - `objectAndTrackOverlap(name, track)`: whether the object touches the line through `track.points`;
+  - `drawPolygon(points, x, y, r, g, b, a)`: a filled polygon in the world's view;
+  - `native_shareScreenShot()`: the frame saved as `Stella_Screenshot<n>.png` in the save folder;
+  - `native_getOSName`, `getDirectoryFileList`, `printWithTag`, `destroyUniqueShaders` and `onLoadLuaFileFail`, which do next to nothing in the shipped game and do the same here.
+
+  The first four work in every game.
+- **Angry Birds 4.0 for PC: every Lua function its exe registers now exists**, matched against the exe and listed in `docs/SCRIPTING.md`:
+  - Short Fuse levels no longer stop at `useAsBackgroundMask`; the error skipped the rest of the level set-up.
+  - The Egg Defender levels of Red's Mighty Feathers draw their dark rock walls instead of showing the sky through them.
+  - Red's Mighty Feathers: `getRadius` exists (its draw code stopped there).
+  - Theme rectangle layers are drawn and change colour (`setThemeRectColour`; the lightning flashes and fades of the rain and Short Fuse themes), with sprite-layer tints (`tintColor`, `setThemeLayerTintColour`, `setThemeTintColour`).
+  - Also added: `setGravityEnabled` / `isGravityEnabled`, `getJointList`, the composite-sprite parts (`res.getCompoSpriteData`, `getCompoSpriteEntry`, `setCompoSpriteEntry`), `captureScreen`, `setMousePosition`, text input fields, `toNewTimeFormat`, the unlock-code checksums, `removeTemporaryLevel`, and the small ones (`isMotionEnabled`, `setGCPopupAllowed`, the particle editor calls, the debug console calls, `iapEnabled`).
+- **Angry Birds Stella: the theme foreground is drawn.** The foreground layers of the new theme system (the Hometree's hanging branches) were never drawn: Stella shares Space's rule that skips a foreground without ground layers. They now frame the level and come into view as the camera zooms out.
+- **The Sling Scope switches off in every game.** The scope's path was turned off by a hook on the game's `drawGame`, which Rio never calls (it draws through its own scene); a level reset in the middle of a pull left the path on for good. The switch-off now runs from the engine's own frame hook, and the path is only drawn while the button (or a finger) is down.
+- **Angry Birds Friends: the Social server is found.** Friends has no `socialLevels` table, so its login never asked the server and went on as a local player. It now asks the server through the wallet's sync (the server's answer decides between "found", "no account" and "no server"), and `socialPlayer` / `socialServer` in `config.lua` beside the exe give it the account name and address.
+- **Friends 2.0.0, Christmas tree slingshot:** its collision rules are set again after a level reset (the reset built the level with the engine's default rules, and the tree and its ornaments collided with the birds again).
+- **Classic 3.x: the Bad Piggies sea sways.** `setThemeForegroundOffsetY(layer, y)`, which the Waves level effect calls every frame for the sea and the foam of the beach theme, did nothing; it now moves the layer as the game's own draw does (matched against the 3.3.0 apk).
+- **Classic 3.x data: a save with cleared levels starts.** The menu set-up logs "Level complete first time" through the game's analytics object before the game has made it (a save whose Flurry first-time flag is not set yet); the error ran the start-up again every frame, the assets loaded over and over and the screen stayed black after the splash. The engine now answers those calls until the game makes its own.
+- `setThemeLayer(index, {offY = ...}, which)`: an offset that is set replaces the layer's `relativeY`.
+
 ## New in 4.3
 
 - **Rio: the Samba Burst power-up works.** The script calls `setStatic(name, on)` to freeze its birds while they dance and to let them go again; the engine had no such function, so the burst stopped with a script error the moment the Samba Bird hit something. It exists now (`setStatic` in the Lua API, also usable from other scripts).

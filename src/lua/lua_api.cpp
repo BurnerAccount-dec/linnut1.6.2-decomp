@@ -27,6 +27,7 @@
 #include <map>
 #include "lua/aes.h"
 #include "lua/dec_folder.h"
+#include "physics/b2_polygon_decompose.h"
 #include <cstring>
 #include "lua/lua_api.h"
 
@@ -2278,6 +2279,280 @@ bool RioMode(lua_State* L);
 //   timeToContact, massA, massB, restitution, friction, impulse, tangentImpulse, aVx, aVy, bVx, bVy, aAngVel, bAngVel, energyLost (see the README).
 //   Box2D 2.1 worlds do not query the shapes: exactShapes is false and the contact is taken on the line between the centres, without spin.
 //   Angles are not returned because they follow from the velocities: math.atan2(vy, vx) for a direction, math.atan2(ny, nx) for the contact.
+// applySensorForces(sensor, object) (Stella's native_applySensorForces, 0x55ac4): the pull of one gravitation (or water) sensor on one object, applied
+// once now; true when a force was applied (the retail native returns nothing)
+int l_applySensorForces(lua_State* L) { lua_pushboolean(L, P(L)->ApplySensorForces(S(L, 1), S(L, 2))); return 1; }
+
+// Stella's polygon natives. A point list is {{x = , y = }, ...} counted from 1 (a missing x or y reads 0, as the game's getfield does).
+static void ReadPointList(lua_State* L, int idx, std::vector<float>& out) {
+    out.clear();
+    if (!lua_istable(L, idx)) return;
+    int n = (int)lua_objlen(L, idx);
+    for (int i = 1; i <= n; i++) {
+        lua_rawgeti(L, idx, i);
+        float x = 0, y = 0;
+        if (lua_istable(L, -1)) {
+            lua_getfield(L, -1, "x"); x = (float)lua_tonumber(L, -1); lua_pop(L, 1);
+            lua_getfield(L, -1, "y"); y = (float)lua_tonumber(L, -1); lua_pop(L, 1);
+        }
+        lua_pop(L, 1);
+        out.push_back(x); out.push_back(y);
+    }
+}
+static void PushPointList(lua_State* L, const std::vector<float>& pts) {
+    lua_createtable(L, (int)(pts.size() / 2), 0);
+    for (size_t i = 0; i + 1 < pts.size(); i += 2) {
+        lua_createtable(L, 0, 2);
+        lua_pushnumber(L, pts[i]); lua_setfield(L, -2, "x");
+        lua_pushnumber(L, pts[i + 1]); lua_setfield(L, -2, "y");
+        lua_rawseti(L, -2, (int)(i / 2) + 1);
+    }
+}
+// getObjectVertices(name) (0x54df4): one point list per fixture, in the body's fixture order; each vertex is the object's
+// position plus the local vertex (the body's angle is left out, as in the game). A circle gives an empty list; no object, {}
+int l_getObjectVertices(lua_State* L) {
+    std::vector<std::vector<float>> polys;
+    P(L)->ObjectVertices(S(L, 1), polys);
+    lua_createtable(L, (int)polys.size(), 0);
+    for (size_t i = 0; i < polys.size(); i++) { PushPointList(L, polys[i]); lua_rawseti(L, -2, (int)i + 1); }
+    return 1;
+}
+// decomposePolygon(points) (0x392fc): the convex pieces (at most 8 points each) of Box2D's contributed DecomposeConvex, see
+// physics/b2_polygon_decompose.h; fewer than 3 points or no triangle gives {}
+int l_decomposePolygon(lua_State* L) {
+    std::vector<float> pts;
+    ReadPointList(L, 1, pts);
+    std::vector<std::vector<float>> pieces;
+    int n = b2poly::DecomposeConvex(pts, pieces);
+    lua_createtable(L, n > 0 ? n : 0, 0);
+    for (int i = 0; i < n && i < (int)pieces.size(); i++) { PushPointList(L, pieces[(size_t)i]); lua_rawseti(L, -2, i + 1); }
+    return 1;
+}
+// objectAndTrackOverlap(name, track) (0x3e5e4): does the object's first fixture touch the open line through track.points (metres)?
+int l_objectAndTrackOverlap(lua_State* L) {
+    std::vector<float> pts;
+    if (lua_istable(L, 2)) { lua_getfield(L, 2, "points"); ReadPointList(L, lua_gettop(L), pts); lua_pop(L, 1); }
+    lua_pushboolean(L, P(L)->ObjectTrackOverlap(S(L, 1), pts));
+    return 1;
+}
+// drawPolygon(points, x, y, r, g, b, a) (0x43cf8): the polygon filled, moved by (x, y), in the world's view (metres), colour 0 to 1
+int l_drawPolygon(lua_State* L) {
+    std::vector<float> pts;
+    ReadPointList(L, 1, pts);
+    P(L)->DrawWorldPolygon(pts, (float)lua_tonumber(L, 2), (float)lua_tonumber(L, 3), (float)lua_tonumber(L, 4), (float)lua_tonumber(L, 5),
+                           (float)lua_tonumber(L, 6), (float)lua_tonumber(L, 7));
+    return 0;
+}
+// shareScreenShot() (Stella native_shareScreenShot, 0x552dc): the frame being drawn is saved as Stella_Screenshot<n>.png in the save folder
+int l_shareScreenShot(lua_State* L) { (void)L; P(L)->ShareScreenShot(); return 0; }
+
+// ---- Classic 4.0 (PC) natives, matched against its AngryBirds.exe (GameLua)
+// getRadius(name) (0x42eed0): the object's +0x110: createCircle's radius (or resizeCircle's), -1 for a polygon, 0 for a box; nil for no object
+int l_getRadius(lua_State* L) { float r = 0; if (!P(L)->ObjectRadiusField(S(L, 1), r)) { lua_pushnil(L); return 1; } lua_pushnumber(L, r); return 1; }
+// useAsBackgroundMask(name) (0x4293f0): sets +0x128; the object is drawn as a textured polygon in the batch drawn before the other textured blocks
+int l_useAsBackgroundMask(lua_State* L) { P(L)->SetObjectBackgroundMask(S(L, 1)); return 0; }
+// setGravityEnabled(name, on) / isGravityEnabled(name) (0x429320 / 0x429380): the byte at +0x29, true from the start; nothing else in the game reads it
+int l_setGravityEnabled(lua_State* L) { P(L)->SetObjectGravityEnabled(S(L, 1), lua_toboolean(L, 2) != 0); return 0; }
+int l_isGravityEnabled(lua_State* L) { bool on = true; P(L)->ObjectGravityEnabled(S(L, 1), on); lua_pushboolean(L, on); return 1; }
+// getJointList(name) (0x424830): the names of the joints whose end1 or end2 is the object, in the order they were made, from 1
+int l_getJointList(lua_State* L) {
+    std::vector<std::string> j = P(L)->ObjectJoints(S(L, 1));
+    lua_createtable(L, (int)j.size(), 0);
+    for (size_t i = 0; i < j.size(); i++) { lua_pushstring(L, j[i].c_str()); lua_rawseti(L, -2, (int)i + 1); }
+    return 1;
+}
+// toNewTimeFormat(t) (0x41baf0): {year, month} of today (local time) with day / hour / minutes / seconds taken from t.d / t.h / t.m / t.s
+int l_toNewTimeFormat(lua_State* L) {
+    std::time_t now = std::time(nullptr);
+    std::tm tmv{};
+#ifdef _WIN32
+    localtime_s(&tmv, &now);
+#else
+    localtime_r(&now, &tmv);
+#endif
+    auto field = [&](const char* k) { float v = 0; if (lua_istable(L, 1)) { lua_getfield(L, 1, k); v = (float)lua_tonumber(L, -1); lua_pop(L, 1); } return v; };
+    lua_createtable(L, 0, 6);
+    lua_pushnumber(L, (float)(tmv.tm_year + 1900)); lua_setfield(L, -2, "year");
+    lua_pushnumber(L, (float)(tmv.tm_mon + 1)); lua_setfield(L, -2, "month");
+    lua_pushnumber(L, field("d")); lua_setfield(L, -2, "day");
+    lua_pushnumber(L, field("h")); lua_setfield(L, -2, "hour");
+    lua_pushnumber(L, field("m")); lua_setfield(L, -2, "minutes");
+    lua_pushnumber(L, field("s")); lua_setfield(L, -2, "seconds");
+    return 1;
+}
+// native_sumLuaIntegerTableToString(t) (0x42b0b0): t[1] + t[2] + ... (each rounded down, as a 64-bit whole number) as a string
+int l_sumLuaIntegerTableToString(lua_State* L) {
+    long long sum = 0;
+    if (lua_istable(L, 1)) {
+        for (int i = 1;; i++) {
+            lua_rawgeti(L, 1, i);
+            if (lua_isnil(L, -1)) { lua_pop(L, 1); break; }
+            sum += (long long)std::floor((float)lua_tonumber(L, -1));
+            lua_pop(L, 1);
+        }
+    }
+    lua_pushstring(L, std::to_string(sum).c_str());
+    return 1;
+}
+// SHA-1 of a byte string, as lowercase hex
+static std::string Sha1Hex(const std::string& msg) {
+    uint32_t h[5] = {0x67452301u, 0xEFCDAB89u, 0x98BADCFEu, 0x10325476u, 0xC3D2E1F0u};
+    std::string m = msg;
+    uint64_t bits = (uint64_t)msg.size() * 8;
+    m.push_back((char)0x80);
+    while (m.size() % 64 != 56) m.push_back('\0');
+    for (int i = 7; i >= 0; i--) m.push_back((char)((bits >> (i * 8)) & 0xff));
+    auto rol = [](uint32_t v, int s) { return (v << s) | (v >> (32 - s)); };
+    for (size_t off = 0; off < m.size(); off += 64) {
+        uint32_t w[80];
+        for (int i = 0; i < 16; i++) w[i] = ((uint32_t)(uint8_t)m[off + i * 4] << 24) | ((uint32_t)(uint8_t)m[off + i * 4 + 1] << 16) | ((uint32_t)(uint8_t)m[off + i * 4 + 2] << 8) | (uint32_t)(uint8_t)m[off + i * 4 + 3];
+        for (int i = 16; i < 80; i++) w[i] = rol(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
+        uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4];
+        for (int i = 0; i < 80; i++) {
+            uint32_t f, k;
+            if (i < 20) { f = (b & c) | (~b & d); k = 0x5A827999u; }
+            else if (i < 40) { f = b ^ c ^ d; k = 0x6ED9EBA1u; }
+            else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDCu; }
+            else { f = b ^ c ^ d; k = 0xCA62C1D6u; }
+            uint32_t t = rol(a, 5) + f + e + k + w[i];
+            e = d; d = c; c = rol(b, 30); b = a; a = t;
+        }
+        h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e;
+    }
+    char out[41];
+    for (int i = 0; i < 5; i++) std::snprintf(out + i * 8, 9, "%08x", h[i]);
+    return std::string(out, 40);
+}
+// native_getUnlockRequestChecksum(a, b) (0x42a0b0): lowercase hex SHA-1 of (last argument .. "ShameOnYouHacker" .. the one before it)
+int l_getUnlockRequestChecksum(lua_State* L) {
+    int n = lua_gettop(L);
+    std::string last = n >= 1 && lua_isstring(L, n) ? lua_tostring(L, n) : "";
+    std::string before = n >= 2 && lua_isstring(L, n - 1) ? lua_tostring(L, n - 1) : "";
+    lua_pushstring(L, Sha1Hex(last + "ShameOnYouHacker" + before).c_str());
+    return 1;
+}
+// captureScreen(file) (0x424ad0): the frame being drawn is written to that file (save folder, .png added) once it is finished
+int l_captureScreen(lua_State* L) { P(L)->CaptureScreen(S(L, 1)); return 0; }
+// setMousePosition(x, y) (0x41aca0): the system cursor moves to that point of the screen
+int l_setMousePosition(lua_State* L) { P(L)->SetMousePosition(N(L, 1), N(L, 2)); return 0; }
+// removeTemporaryLevel(name) (0x430ec0): deletes the editor's play-test level file (name must contain "temp")
+int l_removeTemporaryLevel(lua_State* L) { P(L)->RemoveTemporaryLevel(S(L, 1)); return 0; }
+// Text input fields (createTextInputField(name) 0x42de70, removeTextInputField 0x42df40, activateTextInputField 0x423de0, deactivateTextInputField 0x423f80):
+// what is typed while a field is active goes into the global textInputFields[name]
+static void TextFieldTable(lua_State* L) {
+    PushEnv(L);
+    lua_getfield(L, -1, "textInputFields");
+    if (!lua_istable(L, -1)) { lua_pop(L, 1); lua_newtable(L); lua_pushvalue(L, -1); lua_setfield(L, -3, "textInputFields"); }
+    lua_remove(L, -2);
+}
+int l_createTextInputField(lua_State* L) {
+    std::string n = S(L, 1);
+    TextFieldTable(L);
+    lua_getfield(L, -1, n.c_str());
+    bool had = lua_isstring(L, -1) != 0;
+    lua_pop(L, 1);
+    if (!had) { lua_pushstring(L, ""); lua_setfield(L, -2, n.c_str()); }
+    lua_pop(L, 1);
+    return 0;
+}
+static bool TextFieldExists(lua_State* L, const std::string& name) {
+    TextFieldTable(L);
+    lua_getfield(L, -1, name.c_str());
+    bool ok = !lua_isnil(L, -1);
+    lua_pop(L, 2);
+    if (!ok) P(L)->Print("Tried to access non-existant text input field!");   // the game's own message
+    return ok;
+}
+int l_removeTextInputField(lua_State* L) {
+    std::string n = S(L, 1);
+    TextFieldTable(L); lua_pushnil(L); lua_setfield(L, -2, n.c_str()); lua_pop(L, 1);
+    P(L)->SetActiveTextField("");
+    return 0;
+}
+int l_activateTextInputField(lua_State* L) { std::string n = S(L, 1); if (TextFieldExists(L, n)) P(L)->SetActiveTextField(n); return 0; }
+int l_deactivateTextInputField(lua_State* L) { if (TextFieldExists(L, S(L, 1))) P(L)->SetActiveTextField(""); return 0; }
+// setThemeTintColour(r, g, b) (0x41b8a0), setThemeRectColour(i, r, g, b, a) (0x41b7f0), setThemeLayerTintColour(i, r, g, b, a) (0x41b860):
+// colours 0 to 255 (the game keeps bytes); i counts the theme's background layers from 0
+static float Byte(lua_State* L, int i) { return (float)((int)N(L, i) & 255); }
+int l_setThemeTintColour(lua_State* L) { P(L)->SetThemeTint(Byte(L, 1), Byte(L, 2), Byte(L, 3)); return 0; }
+int l_setThemeRectColour(lua_State* L) { P(L)->SetThemeLayerColour((int)N(L, 1), Byte(L, 2), Byte(L, 3), Byte(L, 4), Byte(L, 5), false); return 0; }
+int l_setThemeLayerTintColour(lua_State* L) { P(L)->SetThemeLayerColour((int)N(L, 1), Byte(L, 2), Byte(L, 3), Byte(L, 4), Byte(L, 5), true); return 0; }
+// res.getCompoSpriteData(name) (0x452470): {{sprite, x, y}, ...} for every part, from 1
+int r_getCompoSpriteData(lua_State* L) {
+    std::string c = S(L, 1);
+    int n = P(L)->CompoEntryCount(c);
+    lua_newtable(L);
+    for (int i = 0; i < n; i++) {
+        Platform::CompoEntryInfo e;
+        if (!P(L)->GetCompoEntry(c, i, e)) continue;
+        lua_createtable(L, 3, 0);
+        lua_pushstring(L, e.sprite.c_str()); lua_rawseti(L, -2, 1);
+        lua_pushnumber(L, e.x); lua_rawseti(L, -2, 2);
+        lua_pushnumber(L, e.y); lua_rawseti(L, -2, 3);
+        lua_rawseti(L, -2, i + 1);
+    }
+    return 1;
+}
+static int CompoIndexArg(lua_State* L, const std::string& c, int idx) {
+    if (lua_type(L, idx) == LUA_TNUMBER) return (int)lua_tonumber(L, idx);   // counted from 0, as in the game
+    return P(L)->CompoEntryIndex(c, lua_isstring(L, idx) ? lua_tostring(L, idx) : "");
+}
+// res.getCompoSpriteEntry(name, part) (0x4526f0): {name, x, y, scaleX, scaleY, angle, flipX, flipY, visible}; part is a number from 0 or a sprite name
+int r_getCompoSpriteEntry(lua_State* L) {
+    std::string c = S(L, 1);
+    Platform::CompoEntryInfo e;
+    if (P(L)->CompoEntryCount(c) < 0) { P(L)->Print("Could not find composprite (for get): " + c); lua_pushnil(L); return 1; }
+    if (!P(L)->GetCompoEntry(c, CompoIndexArg(L, c, 2), e)) { lua_pushnil(L); return 1; }
+    lua_createtable(L, 0, 9);
+    lua_pushstring(L, e.sprite.c_str()); lua_setfield(L, -2, "name");
+    lua_pushnumber(L, e.x); lua_setfield(L, -2, "x");
+    lua_pushnumber(L, e.y); lua_setfield(L, -2, "y");
+    lua_pushnumber(L, e.scaleX); lua_setfield(L, -2, "scaleX");
+    lua_pushnumber(L, e.scaleY); lua_setfield(L, -2, "scaleY");
+    lua_pushnumber(L, e.angle); lua_setfield(L, -2, "angle");
+    lua_pushboolean(L, e.flipX); lua_setfield(L, -2, "flipX");
+    lua_pushboolean(L, e.flipY); lua_setfield(L, -2, "flipY");
+    lua_pushboolean(L, e.visible); lua_setfield(L, -2, "visible");
+    return 1;
+}
+// res.setCompoSpriteEntry(name, part, t) (0x452a90): the fields of t that are given replace the part's
+int r_setCompoSpriteEntry(lua_State* L) {
+    std::string c = S(L, 1);
+    if (P(L)->CompoEntryCount(c) < 0) { P(L)->Print("Could not find composprite (for set): " + c); return 0; }
+    int i = CompoIndexArg(L, c, 2);
+    Platform::CompoEntryInfo e;
+    if (!P(L)->GetCompoEntry(c, i, e) || !lua_istable(L, 3)) return 0;
+    lua_getfield(L, 3, "name"); if (lua_isstring(L, -1)) e.sprite = lua_tostring(L, -1); lua_pop(L, 1);
+    auto num = [&](const char* k, float& v) { lua_getfield(L, 3, k); if (lua_isnumber(L, -1)) v = (float)lua_tonumber(L, -1); lua_pop(L, 1); };
+    auto flag = [&](const char* k, bool& v) { lua_getfield(L, 3, k); if (lua_isboolean(L, -1)) v = lua_toboolean(L, -1) != 0; lua_pop(L, 1); };
+    num("x", e.x); num("y", e.y); num("scaleX", e.scaleX); num("scaleY", e.scaleY); num("angle", e.angle);
+    flag("flipX", e.flipX); flag("flipY", e.flipY); flag("visible", e.visible);
+    P(L)->SetCompoEntry(c, i, e);
+    return 0;
+}
+// Stella's simulation natives: getSimulationTrajectoryPoints() (0x34e9c) is the points updateBirdTrajectoryTable stored, {x = , y = } in metres from
+// index 1; ClearSimulationTrajectory() (0x34e90) empties that list; native_drawSimulationTrajectory() (0x49bb8) draws the aiming aid when it is on;
+// native_setAdditionalBirdGravity(g) (0x34e88) is a downward force of g times the bird's mass in the simulation only (0 or less: none, -1 at start)
+int l_getSimulationTrajectoryPoints(lua_State* L) {
+    std::vector<std::pair<float, float>> pts;
+    P(L)->SimulationTrajectory(pts);
+    lua_createtable(L, (int)pts.size(), 0);
+    for (size_t i = 0; i < pts.size(); i++) {
+        lua_createtable(L, 0, 2);
+        lua_pushnumber(L, pts[i].first); lua_setfield(L, -2, "x");
+        lua_pushnumber(L, pts[i].second); lua_setfield(L, -2, "y");
+        lua_rawseti(L, -2, (int)i + 1);
+    }
+    return 1;
+}
+int l_ClearSimulationTrajectory(lua_State* L) { float r = 0; P(L)->BodyCommand("", 25, 0, r); return 0; }
+int l_drawSimulationTrajectory(lua_State* L) { float r = 0; P(L)->BodyCommand("", 26, 0, r); return 0; }
+int l_setAdditionalBirdGravity(lua_State* L) { float r = 0; P(L)->BodyCommand("", 27, N(L, 1), r); return 0; }
+
+// setThemeForegroundOffsetY(layer, y) (Classic 3.x, GameLua::setThemeForegroundOffsetY: the float at +0x38 of foreground record `layer`, counted from 0): the
+// layer's y offset in world pixels; the Waves level effect moves the sea and the foam with it
+int l_setThemeForegroundOffsetY(lua_State* L) { P(L)->SetThemeForegroundOffsetY((int)N(L, 1), N(L, 2)); return 0; }
+
 int l_predictCollision(lua_State* L) {
     // optional arguments 4 to 7: the velocities to test with, A's x and y then B's x and y; nil or left out keeps the body's present velocity
     float vel[4];
@@ -3783,7 +4058,9 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"requireFile", l_requireFile}, {"loadLuaFileToObject", l_loadLuaFileToObject}, {"loadLuaFile", l_loadLuaFileToObject},   // 2.0.0: the same without an object
         {"loadLevel", l_loadLevel}, {"loadLevelEditor", l_loadLevelEditor}, {"saveLevel", l_saveLevel}, {"saveLevelForReload", l_saveLevelForReload}, {"saveLuaFile", l_saveLuaFile}, {"checkForPersistentFile", l_checkForPersistentFile}, {"loadPersistentFileWrapper", l_loadPersistentFileWrapper},
         {"initializePainter", l_initializePainter}, {"clearCanvas", l_clearCanvas}, {"paintToCanvas", l_paintToCanvas}, {"drawCanvasWithMask", l_drawCanvasWithMask},
-        {"getDominantCanvasColors", l_getDominantCanvasColors}, {"createSpriteFromCanvas", l_createSpriteFromCanvas}, {"loadCanvasSprite", l_loadCanvasSprite}, {"loadPiggyBank", l_loadPiggyBank}, {"createSilhouette", l_createSilhouette}, {"createPolygonSprite", l_createPolygonSprite}, {"createShapeWithHoles", l_createShapeWithHoles}, {"registerHoles", l_registerHoles}, {"predictCollision", l_predictCollision}, {"setObjectGravity", l_setObjectGravity}, {"setObjectGravityScale", l_setObjectGravityScale}, {"resetObjectGravity", l_resetObjectGravity}, {"getObjectGravity", l_getObjectGravity}, {"setupCompoObject", l_setupCompoObject},
+        {"getDominantCanvasColors", l_getDominantCanvasColors}, {"createSpriteFromCanvas", l_createSpriteFromCanvas}, {"loadCanvasSprite", l_loadCanvasSprite}, {"loadPiggyBank", l_loadPiggyBank}, {"createSilhouette", l_createSilhouette}, {"createPolygonSprite", l_createPolygonSprite}, {"createShapeWithHoles", l_createShapeWithHoles}, {"registerHoles", l_registerHoles}, {"predictCollision", l_predictCollision}, {"applySensorForces", l_applySensorForces}, {"getObjectVertices", l_getObjectVertices}, {"decomposePolygon", l_decomposePolygon}, {"objectAndTrackOverlap", l_objectAndTrackOverlap}, {"drawPolygon", l_drawPolygon}, {"shareScreenShot", l_shareScreenShot},
+        {"getRadius", l_getRadius}, {"useAsBackgroundMask", l_useAsBackgroundMask}, {"setGravityEnabled", l_setGravityEnabled}, {"isGravityEnabled", l_isGravityEnabled}, {"getJointList", l_getJointList}, {"toNewTimeFormat", l_toNewTimeFormat}, {"native_sumLuaIntegerTableToString", l_sumLuaIntegerTableToString}, {"native_getUnlockRequestChecksum", l_getUnlockRequestChecksum}, {"captureScreen", l_captureScreen}, {"setMousePosition", l_setMousePosition}, {"removeTemporaryLevel", l_removeTemporaryLevel}, {"createTextInputField", l_createTextInputField}, {"removeTextInputField", l_removeTextInputField}, {"activateTextInputField", l_activateTextInputField}, {"deactivateTextInputField", l_deactivateTextInputField}, {"setThemeTintColour", l_setThemeTintColour}, {"setThemeRectColour", l_setThemeRectColour}, {"setThemeLayerTintColour", l_setThemeLayerTintColour},
+        {"getSimulationTrajectoryPoints", l_getSimulationTrajectoryPoints}, {"ClearSimulationTrajectory", l_ClearSimulationTrajectory}, {"drawSimulationTrajectory", l_drawSimulationTrajectory}, {"setAdditionalBirdGravity", l_setAdditionalBirdGravity}, {"setThemeForegroundOffsetY", l_setThemeForegroundOffsetY}, {"setObjectGravity", l_setObjectGravity}, {"setObjectGravityScale", l_setObjectGravityScale}, {"resetObjectGravity", l_resetObjectGravity}, {"getObjectGravity", l_getObjectGravity}, {"setupCompoObject", l_setupCompoObject},
         {"createDirectory", l_createDirectory}, {"checkDirectory", l_checkDirectory}, {"checkForLuaFile", l_checkForLuaFile},
         {"createBox", l_createBox}, {"createCircle", l_createCircle}, {"createPolygon", l_createPolygon}, {"createLineShape", l_createLineShape},
         {"clearVertices", l_clearVertices}, {"addVertex", l_addVertex},
@@ -3887,7 +4164,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"createTextGroupSet", r_createTextGroupSet}, {"loadLocale", r_loadLocale}, {"useLocale", r_useLocale}, {"getLocales", r_getLocales}, {"getLocale", r_getLocale}, {"releaseFont", r_nothing3}, {"releaseAudio", r_nothing3},
         {"getString", r_getString}, {"drawSprite", r_drawSprite}, {"drawCompoSprite", r_drawCompoSprite}, {"drawTexturedLine2D", r_drawTexturedLine2D},
         {"drawString", r_drawString}, {"setClipRect", r_setClipRect}, {"getClipRect", r_getClipRect},
-        {"getSpriteBounds", r_getSpriteBounds}, {"getSpritePivot", r_getSpritePivot},
+        {"getSpriteBounds", r_getSpriteBounds}, {"getSpritePivot", r_getSpritePivot}, {"getCompoSpriteData", r_getCompoSpriteData}, {"getCompoSpriteEntry", r_getCompoSpriteEntry}, {"setCompoSpriteEntry", r_setCompoSpriteEntry},
         {"getCompoSpriteBounds", r_getCompoSpriteBounds}, {"getSpritePixel", r_getSpritePixel}, {"getCompoSprites", r_getCompoSprites},
         {"getStringWidth", r_getStringWidth}, {"getFontHeight", r_getFontHeight}, {"createSystemFont", r_createSystemFont}, {"getAvailableSystemFonts", r_getAvailableSystemFonts}, {"getFontLeading", r_getFontLeading}, {"getFontTracking", r_getFontTracking},
         {"getFontMaxAscending", r_getFontMaxAscending}, {"getFontMaxDescending", r_getFontMaxDescending},

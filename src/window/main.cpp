@@ -780,8 +780,10 @@ static int GameMain(int argc, char** argv) {
                         if (k == SDLK_MINUS || k == SDLK_KP_MINUS) platform.AddSpeed(-0.25f);
                         else if (k == SDLK_EQUALS || k == SDLK_PLUS || k == SDLK_KP_PLUS) platform.AddSpeed(0.25f);
                     }
+                    if (e.key.keysym.sym == SDLK_BACKSPACE) platform.TextBackspace();   // Classic 4.0 text input fields
                     input.KeyDown(MapKey(e.key.keysym.sym));
                     break;
+                case SDL_TEXTINPUT: platform.TextTyped(e.text.text); break;
                 case SDL_KEYUP: input.KeyUp(MapKey(e.key.keysym.sym)); break;
                 case SDL_MOUSEMOTION: toScreen(e.motion.x, e.motion.y); break;
                 case SDL_MOUSEBUTTONDOWN:
@@ -847,6 +849,14 @@ static int GameMain(int argc, char** argv) {
 #ifdef _WIN32
             SetGameIcon(window, wc.name);           // the title bar exists again now: give it its icon
 #endif
+        }
+        float warpX, warpY;
+        if (platform.TakeMouseWarp(warpX, warpY)) {   // Classic 4.0 setMousePosition: screen units -> window points
+            int ww = 1, wh = 1, dw = 1, dh = 1;
+            SDL_GetWindowSize(window, &ww, &wh);
+            SDL_GL_GetDrawableSize(window, &dw, &dh);
+            if (dw <= 0 || dh <= 0) { dw = ww; dh = wh; }
+            SDL_WarpMouseInWindow(window, (int)(warpX * ww / dw), (int)(warpY * wh / dh));
         }
         if (platform.ExitRequested()) running = false;
         for (size_t i = 0; i < wheels.size(); i++)

@@ -364,6 +364,88 @@ bool PhysicsWorld::GravityPull(const PhysObject& s, const PhysObject& t, float t
     return true;
 }
 
+// Angry Birds Stella native_applySensorForces(sensor, object), matched against the iPhone binary (0x55ac4 looks both names up and calls 0x58104):
+// - (category of the object & (mask of the sensor | 0x80000000)) must not be 0 when the sensor has a mask (>= 0); the sensor must be on (id 22, +0xff)
+//   and a gravitation sensor (id 21 == 2, +0xbc); a water sensor (native_setIsWater, +0x107) goes to the water code (0x58694, the same as Space's)
+// - radial (radius > -1): F = max - (max - min) * (distance / radius), towards the sensor's position; the direction is normalised only when the
+//   distance is at least FLT_EPSILON (a nearer object gets the unnormalised, near-zero vector)
+// - field (no radius): the point half the extent along (-sin, cos) of the sensor's angle, worked out in double from sin / cos rounded to float;
+//   F = max - (max - min) * (distance to that point / extent), along (-sin, cos) normalised
+// - magnitude F * (mass * 0.1); a controllable object (native_setControlled) gets the gravity force multiplier, or (after its first collision,
+//   native_setTimeSinceCollision >= 0) multiplier - 1.3 * time when that is above 1; setRevertGravity multiplies each component by -0.1;
+//   setRevertGravityWithMultiplier skips the object at or above its speed limit and multiplies by its (negated) multiplier
+// - the force acts at the object's body position (not its centre of mass) and wakes it; static and kinematic bodies take no force
+bool PhysicsWorld::ApplySensorForces(const std::string& sensor, const std::string& object) {
+    PhysObject* sp = Find(sensor); PhysObject* tp = Find(object);
+    if (!sp || !tp || !sp->pbody || !tp->pbody) return false;
+    return SensorForces(*sp, *tp);
+}
+
+bool PhysicsWorld::ObjectVertices(const std::string& name, std::vector<std::vector<float>>& out) {
+    out.clear();
+    PhysObject* o = Find(name);
+    if (!o || !o->pbody) return false;
+    o->pbody->FixturePolygons(out);
+    const float x = o->pbody->PosX(), y = o->pbody->PosY();
+    for (auto& f : out)
+        for (size_t i = 0; i + 1 < f.size(); i += 2) { f[i] += x; f[i + 1] += y; }
+    return true;
+}
+
+void PhysicsWorld::PushForce(PhysObject& o, float fx, float fy, float px, float py) {
+    if (captureForces_) { capFx_ += fx; capFy_ += fy; return; }
+    o.pbody->ApplyForce(fx, fy, px, py);
+}
+
+bool PhysicsWorld::SensorForces(PhysObject& s, PhysObject& t) {
+    if (s.gravMask >= 0 && (t.gravCat & (int)((unsigned)s.gravMask | 0x80000000u)) == 0) return false;
+    if (!s.gravOn || s.sensorKind != 2) return false;
+    if (s.isWater) { ApplyWater(s, t); return true; }
+    const float eps = 1.1920929e-07f;
+    const float tx = t.pbody->PosX(), ty = t.pbody->PosY();
+    float ux, uy, F;
+    if (s.gravRadius > -1.0f) {
+        float dx = s.pbody->PosX() - tx, dy = s.pbody->PosY() - ty;
+        float len = std::sqrt(dx * dx + dy * dy);
+        float k = len / s.gravRadius;
+        F = s.gravMax - (s.gravMax - s.gravMin) * k;
+        ux = dx; uy = dy;
+        if (len >= eps) { float inv = 1.0f / len; ux = dx * inv; uy = dy * inv; }
+    } else {
+        double a = (double)s.pbody->Angle();
+        float c = (float)std::cos(a), sn = (float)std::sin(a);
+        double h = (double)s.gravExt * 0.5;
+        float px = (float)((double)s.pbody->PosX() - (double)sn * h);
+        float py = (float)((double)s.pbody->PosY() + (double)c * h);
+        float dx = px - tx, dy = py - ty;
+        float d = std::sqrt(dx * dx + dy * dy);
+        float k = d / s.gravExt;
+        F = s.gravMax - (s.gravMax - s.gravMin) * k;
+        ux = -sn; uy = c;
+        float len = std::sqrt(ux * ux + uy * uy);
+        if (len >= eps) { float inv = 1.0f / len; ux = ux * inv; uy = uy * inv; }
+    }
+    float mag = F * (t.pbody->Mass() * 0.1f);
+    float fx, fy;
+    if (t.isBird) {
+        float timer = t.birdGravReduce;
+        if (timer >= 0) { float m = gravityForceMultiplier + timer * -1.3f; if (m > 1.0f) mag = mag * m; }
+        else mag = mag * gravityForceMultiplier;
+        fx = ux * mag; fy = uy * mag;
+    } else if (t.revertGravity) {
+        fx = (mag * ux) * -0.1f; fy = (mag * uy) * -0.1f;
+    } else if (t.revertMulti) {
+        float vx = t.pbody->VelX(), vy = t.pbody->VelY();
+        if (std::sqrt(vx * vx + vy * vy) >= t.revertMaxSpeed) return false;
+        fx = (mag * ux) * t.revertMult; fy = (mag * uy) * t.revertMult;
+    } else {
+        fx = mag * ux; fy = mag * uy;
+    }
+    if (t.pbody->Type() != 1) return false;                  // b2_dynamicBody only (the engine's Type(): 1 dynamic)
+    PushForce(t, fx, fy, tx, ty);
+    return true;
+}
+
 // 0x41e440: water. `w` is the water sensor (+0x11c minimum, +0x120 maximum, +0x124 radius = ids 25..27, +0x15e = id 34), `o` the object in it.
 // The force points at the water's centre (a circle) or straight up (a box), is the buoyancy mass * 0.1 * (density of the object - density of the water)
 // scaled from the maximum at the surface to the minimum at full depth, fades out inside the top 1.5 world units of the water, and acts a little to
@@ -388,6 +470,7 @@ void PhysicsWorld::ApplyWater(PhysObject& w, PhysObject& o) {
     }
     if (w.stopOnExit) { ux = 0; uy = 1; fVar2 = 0; }                     // +0x15e (id 34)
     float F = mass * Tn("water.buoyancy", 0.1f) * (o.waterDensity - w.waterDensity) * (wMax - (wMax - wMin) * (fVar2 / fVar3));
+    if (std::getenv("AB_SIMDBG")) std::fprintf(stderr, "WATERDBG circle=%d boxH=%g rad=%g min=%g max=%g f2=%g f3=%g dens=%g,%g g=%g F=%g\n", (int)w.isCircle, w.boxH, wRad, wMin, wMax, fVar2, fVar3, o.waterDensity, w.waterDensity, g, F);
     if (bird) F = waterForceMultiplier * F;
     float band = std::min(g * Tn("water.band", 1.5f), fVar3);
     float offX = 0, offY = 0;
@@ -407,9 +490,9 @@ void PhysicsWorld::ApplyWater(PhysObject& w, PhysObject& o) {
     }
     float vx = o.pbody->VelX(), vy = o.pbody->VelY();
     if (-g * Tn("water.pushSpeedLimit", 15.0f) < uy * vy + ux * vx || bird)
-        o.pbody->ApplyForce(F * ux, F * uy, o.pbody->PosX() + size * offX, o.pbody->PosY() + size * offY);
+        PushForce(o, F * ux, F * uy, o.pbody->PosX() + size * offX, o.pbody->PosY() + size * offY);
     float drag = (bird ? birdWaterDrag : objectWaterDrag) * mass;        // always, whatever the depth
-    o.pbody->ApplyForce(-vx * drag, -vy * drag, o.pbody->PosX(), o.pbody->PosY());
+    PushForce(o, -vx * drag, -vy * drag, o.pbody->PosX(), o.pbody->PosY());
 }
 
 int PhysicsWorld::SensorPair(PhysObject* sen, PhysObject* other, bool enter) {
@@ -602,6 +685,39 @@ void PhysicsWorld::SimulateTrajectory(const std::string& n, int steps, int every
     float x = o->pbody->PosX(), y = o->pbody->PosY(), vx = o->pbody->VelX(), vy = o->pbody->VelY();
     float damp = o->pbody->LinearDamping(), mass = o->pbody->Mass(), invMass = mass > 0 ? 1.0f / mass : 0.0f, r = o->pbody->ShapeRadius();
     float wgx = 0, wgy = 0; GetGravity(wgx, wgy);
+    if (stellaRules) {
+        // Stella's updateBirdTrajectoryTable (0x35fa8): BirdSimulation is woken, then every step (i from 0): each gravitation sensor whose first
+        // fixture overlaps the bird's (b2TestOverlap, 0x5b6458) gets 0x58104 (the native_applySensorForces force, water included), the additional
+        // bird gravity (+0x138) adds a force of that times the mass straight down when above 0, the bird alone is stepped (0x5c6b90), its forces
+        // cleared (0x5c6b30), and its position stored when i % simulationStorePointsSampler is 0 (the first point is after the first step)
+        float ang = o->pbody->Angle(), w = o->pbody->AngularVelocity();
+        for (int i = 0; i < steps; i++) {
+            o->pbody->SetTransform(x, y, ang);
+            o->pbody->SetLinearVelocity(vx, vy);
+            captureForces_ = true; capFx_ = capFy_ = 0;
+            for (const auto& so : objects_) {
+                PhysObject& s = *so;
+                if (s.sensorKind != 2 || !s.pbody || &s == o) continue;
+                if (o->pbody->OverlapAt(*s.pbody, x, y) == 0) continue;
+                SensorForces(s, *o);
+            }
+            captureForces_ = false;
+            float fx = capFx_, fy = capFy_;
+            if (std::getenv("AB_SIMDBG")) std::fprintf(stderr, "SIMDBG %d x=%g y=%g vx=%g vy=%g f=%g,%g\n", i, x, y, vx, vy, fx, fy);
+            if (additionalBirdGravity > 0) fy += additionalBirdGravity * mass;
+            vx += h * (wgx + invMass * fx); vy += h * (wgy + invMass * fy);
+            float k = 1.0f - h * damp; k = k < 0 ? 0 : (k > 1 ? 1 : k);
+            vx *= k; vy *= k;
+            float tx = h * vx, ty = h * vy;
+            if (tx * tx + ty * ty > 4.0f) { float q = 2.0f / std::sqrt(tx * tx + ty * ty); vx *= q; vy *= q; }
+            x += h * vx; y += h * vy;
+            if (every > 0 && i % every == 0) out.push_back({x, y});
+        }
+        o->pbody->SetTransform(x, y, ang);                               // the retail simulation steps the real body, so it is left where the flight ended
+        o->pbody->SetLinearVelocity(vx, vy);
+        o->pbody->SetAngularVelocity(w);
+        return;
+    }
     float timer = o->birdGravReduce;
     if (std::getenv("AB_TRAJDBG")) std::fprintf(stderr, "TRAJ0 x=%.3f y=%.3f v=%.3f,%.3f h=%g steps=%d every=%d m=%g isBird=%d cat=%d mult=%g\n", x, y, vx, vy, h, steps, every, mass, (int)o->isBird, o->gravCat, gravityForceMultiplier);
     for (int i = 0; i < steps; i++) {

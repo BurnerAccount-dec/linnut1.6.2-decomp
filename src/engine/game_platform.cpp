@@ -16,6 +16,8 @@
 #include "lua/lua_api.h"
 #include "video/video_audio.h"
 #include "engine/level_writer.h"
+#include "engine/png_decoder.h"
+#include "physics/b2_polygon_decompose.h"
 
 #include <cmath>
 #include <algorithm>
@@ -438,6 +440,7 @@ PhysicsWorld& GamePlatform::Physics() {
         return material;
     };
     physics_->starWarsRules = scripts_ && scripts_->IsStarWars();
+    physics_->stellaRules = scripts_ && scripts_->IsStella();   // (Stella is a Space game to the engine too: the branches above take the Space path)
     physics_->phoneSpaceGravity = scripts_ && scripts_->IsSpace() && !scripts_->IsStarWars() &&
         (scripts_->ScriptPath().find("data_iphone") != std::string::npos || scripts_->ScriptPath().find("data_ipad") != std::string::npos);
     // the contact filter of an object with blockCollision false reads objects.world[name].collisionMaterials live
@@ -989,6 +992,16 @@ void GamePlatform::SaveLevel(const std::string& path) {
     bool written = scripts_ && ab::WriteLevelFile(scripts_->State(), absolute ? file : ResolveDataFile(file), IsSeasonsScripts(), error, &text);
     if (!text.empty()) savedLevels_[file] = text;       // v2.2: kept in memory too, so TAB in the editor still finds its temp copy when the game folder is read-only
     if (!written) Print("saveLevel: " + error);
+}
+
+// Classic 4.0 removeTemporaryLevel(name) (0x430ec0): deletes the editor's play-test level; a name without "temp" in it is refused with the game's own message
+void GamePlatform::RemoveTemporaryLevel(const std::string& path) {
+    if (path.find("temp") == std::string::npos) { Print("Attempted to remove level " + path + " that apparently isn't temporary."); return; }
+    std::string file = path;
+    if (file.size() < 4 || file.compare(file.size() - 4, 4, ".lua") != 0) file += ".lua";
+    bool absolute = file.size() > 1 && (file[1] == ':' || file[0] == '/');
+    std::remove((absolute ? file : ResolveDataFile(file)).c_str());
+    savedLevels_.erase(file);
 }
 
 bool GamePlatform::FindSavedLevel(const std::string& path, std::vector<uint8_t>& bytes) {
@@ -1618,8 +1631,88 @@ void GamePlatform::EndFrame() {
         FlushZ();
     }
     if (keepLast_ && backend_) { lastFrame_.clear(); backend_->ReadPixels(lastFrame_, lastW_, lastH_); }
+    if (!captureFile_.empty() && backend_) {
+        // Classic 4.0 captureScreen(file) (0x424ad0): the finished frame is written to that file (in the save folder)
+        std::vector<unsigned char> raw;
+        int w = 0, h = 0;
+        if (backend_->ReadPixels(raw, w, h) && w > 0 && h > 0) {
+            std::string file = captureFile_;
+            if (file.size() < 4 || file.compare(file.size() - 4, 4, ".png") != 0) file += ".png";
+            WritePngFile(ResolveUserFile(file, true).c_str(), w, h, raw.data());
+        }
+        captureFile_.clear();
+    }
+    if (screenshotPending_ && backend_) {
+        // Stella native_shareScreenShot (0x552dc): the finished frame as Stella_Screenshot<n>.png, n counting from 1 (the game writes it to
+        // its temporary folder and opens the share sheet; here it goes to the save folder)
+        screenshotPending_ = false;
+        std::vector<unsigned char> raw;
+        int w = 0, h = 0;
+        if (backend_->ReadPixels(raw, w, h) && w > 0 && h > 0) {
+            std::string file = "Stella_Screenshot" + std::to_string(++screenshotCount_) + ".png";
+            WritePngFile(ResolveUserFile(file, true).c_str(), w, h, raw.data());
+        }
+    }
     quadsThisFrame_ = 0;
     if (backend_) backend_->EndFrame();
+}
+
+// Classic 4.0 text input fields: the typed characters go to textInputFields[active field] (a string), Backspace takes the last one off
+void GamePlatform::TextTyped(const std::string& utf8) {
+    if (activeTextField_.empty() || !scripts_) return;
+    lua_State* L = scripts_->State();
+    int top = lua_gettop(L);
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    lua_getfield(L, -1, "textInputFields");
+    if (lua_istable(L, -1)) {
+        lua_getfield(L, -1, activeTextField_.c_str());
+        std::string s = lua_isstring(L, -1) ? lua_tostring(L, -1) : "";
+        lua_pop(L, 1);
+        s += utf8;
+        lua_pushstring(L, s.c_str());
+        lua_setfield(L, -2, activeTextField_.c_str());
+    }
+    lua_settop(L, top);
+}
+void GamePlatform::TextBackspace() {
+    if (activeTextField_.empty() || !scripts_) return;
+    lua_State* L = scripts_->State();
+    int top = lua_gettop(L);
+    lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
+    lua_getfield(L, -1, "textInputFields");
+    if (lua_istable(L, -1)) {
+        lua_getfield(L, -1, activeTextField_.c_str());
+        std::string s = lua_isstring(L, -1) ? lua_tostring(L, -1) : "";
+        lua_pop(L, 1);
+        while (!s.empty() && (static_cast<unsigned char>(s.back()) & 0xC0) == 0x80) s.pop_back();   // a whole UTF-8 character
+        if (!s.empty()) s.pop_back();
+        lua_pushstring(L, s.c_str());
+        lua_setfield(L, -2, activeTextField_.c_str());
+    }
+    lua_settop(L, top);
+}
+
+// Stella drawPolygon(points, x, y, r, g, b, a) (0x43cf8): the polygon filled in one colour (0 to 1), points and offset in metres
+// (the world's view: 20 pixels a metre, like the aiming aid)
+void GamePlatform::DrawWorldPolygon(const std::vector<float>& pts, float ox, float oy, float r, float g, float b, float a) {
+    if (!backend_ || pts.size() < 6) return;
+    std::vector<float> tri;
+    b2poly::FillTriangles(pts, tri);
+    RenderState keep = state_;
+    state_ = RenderState();
+    state_.tx = -camX_; state_.ty = -camY_;
+    state_.sx = state_.sy = worldScale_;
+    auto clamp01 = [](float v) { return v < 0 ? 0.0f : v > 1 ? 1.0f : v; };
+    for (size_t i = 0; i + 5 < tri.size(); i += 6) {
+        float px[4], py[4], xy[8], uv[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+        for (int k = 0; k < 3; k++) { px[k] = (tri[i + (size_t)k * 2] + ox) * 20.0f; py[k] = (tri[i + (size_t)k * 2 + 1] + oy) * 20.0f; }
+        px[3] = px[2]; py[3] = py[2];
+        for (int k = 0; k < 4; k++) Transform(px[k], py[k], 0, 0, xy[k * 2], xy[k * 2 + 1]);
+        QueuedQuad q = MakeQuad(-1, clamp01(a), clamp01(r), clamp01(g), clamp01(b));
+        std::memcpy(q.xy, xy, sizeof xy); std::memcpy(q.uv, uv, sizeof uv);
+        EmitQuad(q);
+    }
+    state_ = keep;
 }
 
 // 0x40c570: each channel is clamped to 0..255 and rounded
@@ -1881,11 +1974,11 @@ void GamePlatform::ResDrawSprite(const std::string& name, float x, float y, int 
     for (const CompoPart& part : compo->parts) {
         const SpriteSheet* partSheet = nullptr;
         const Sprite* ps = sprites_.Find(part.sprite, &partSheet);
-        if (!ps) continue;
+        if (!ps || part.hidden) continue;   // hidden: Classic 4.0 setCompoSpriteEntry(..., {visible = false})
         if (part.exact) {
             // a scaled, turned or mirrored part (Stella's theme composites stretch one strip of leaves 10 times across): its pivot lands on
             // (x + part.x, y + part.y) and it is scaled, turned and mirrored about that point
-            const float ksx = part.scale, ksy = part.scaleY != 0 ? part.scaleY : part.scale;
+            const float ksx = part.scale, ksy = (part.scaleY != 0 ? part.scaleY : part.scale) * (part.flipY ? -1.0f : 1.0f);
             if (ksx == 0 || ksy == 0) continue;
             const float px = x + (float)part.x, py = y + (float)part.y;
             const RenderState keep = state_;
@@ -2350,7 +2443,7 @@ void GamePlatform::SetObjectFriction(const std::string& n, float f) {
 }
 
 void GamePlatform::ResizeObjectCircle(const std::string& n, float r) {
-    if (PhysObject* o = Physics().Find(n)) o->pbody->ResizeCircle(r);
+    if (PhysObject* o = Physics().Find(n)) { o->pbody->ResizeCircle(r); o->radiusField = r; }   // Classic 4.0 (0x43d1e0): getRadius gives it back
 }
 
 void GamePlatform::SetObjectRestitution(const std::string& n, float r) {
@@ -2602,7 +2695,8 @@ void GamePlatform::SetTheme(const std::string& themeArg) {
     const std::string theme = themeEnv ? std::string(themeEnv) : themeArg;
     if (theme != bgTheme_) { bgRef_.have = false; bgRef_.nH0 = 0; bgTheme_ = theme; }
     ntRef_ = decltype(ntRef_)();   // the ThemeSystem is made again with every level, its reference camera is read again   // 0x435f70: the reference camera and the first screen height are dropped only when the theme changes
-    swTheme_ = false; swBg_ = false; newTheme_ = false; ntFg_.clear(); fgParticles_.clear(); bgLayers_.clear(); fgLayers_.clear(); fgSpeed_.clear(); fgScale_.clear(); fgAuto_.clear(); fgOffset_.clear(); fgNamed_.clear(); fgWater_.clear(); fgDx_.clear(); fgDy_.clear(); fgHidden_.clear(); themeTexture_.clear();
+    swTheme_ = false; swBg_ = false; newTheme_ = false; ntFg_.clear(); fgParticles_.clear(); bgLayers_.clear(); fgLayers_.clear(); fgSpeed_.clear(); fgScale_.clear(); fgAuto_.clear(); fgOffset_.clear(); fgOffY_.clear(); fgNamed_.clear(); fgWater_.clear(); fgDx_.clear(); fgDy_.clear(); fgHidden_.clear(); themeTexture_.clear();
+    themeTintR_ = themeTintG_ = themeTintB_ = 255;   // a new theme starts untinted
     if (!scripts_) return;
     lua_State* L = scripts_->State();
     int top = lua_gettop(L);
@@ -2750,6 +2844,24 @@ void GamePlatform::SetTheme(const std::string& themeArg) {
                                 continue;
                             }
                             lua_pop(L, 1);
+                            {   // Classic 4.0: a rectangle layer ({rect = {r, g, b, a, relLeft, relBottom, relWidth, relHeight}}) and a sprite layer's tintColor
+                                int lt = lua_gettop(L);
+                                lua_getfield(L, lt, "rect");
+                                if (lua_istable(L, -1)) {
+                                    int rt = lua_gettop(L);
+                                    layer.rect = true;
+                                    layer.colR = number(rt, "r", 255); layer.colG = number(rt, "g", 255); layer.colB = number(rt, "b", 255); layer.colA = number(rt, "a", 255);
+                                    layer.relL = number(rt, "relLeft", 0); layer.relB = number(rt, "relBottom", 0); layer.relW = number(rt, "relWidth", 1); layer.relH = number(rt, "relHeight", 1);
+                                }
+                                lua_pop(L, 1);
+                                lua_getfield(L, lt, "tintColor");
+                                if (lua_istable(L, -1)) {
+                                    int ct = lua_gettop(L);
+                                    layer.tintOn = true;
+                                    layer.colR = number(ct, "r", 255); layer.colG = number(ct, "g", 255); layer.colB = number(ct, "b", 255); layer.colA = number(ct, "a", 255);
+                                }
+                                lua_pop(L, 1);
+                            }
                             lua_rawgeti(L, -1, 2);
                             if (lua_isstring(L, -1)) layer.sprite = lua_tostring(L, -1);
                             lua_pop(L, 1);
@@ -3408,6 +3520,7 @@ bool GamePlatform::SetThemeLayer(int which, int i, const ThemeLayerInfo& in) {
     auto& v = which == 1 ? ntFg_ : bgLayers_;
     if (i < 0 || i >= (int)v.size()) return false;
     BgLayer& l = v[i];
+    if (in.offY != l.offY) l.relY = 3.4028235e38f;   // an offset that is set wins over relativeY (as a write of the record's offsetY does in Stella, 0x3f630)
     l.sprite = in.sprite; l.speed = in.speed; l.scale = in.scale; l.scaleX = in.scaleX; l.scaleY = in.scaleY; l.offset = in.offset; l.offX = in.offX; l.offY = in.offY; l.posX = in.posX; l.posY = in.posY;
     l.dx = in.dx; l.dy = in.dy; l.velX = in.velX; l.velY = in.velY; l.angle = in.angle; l.looping = in.looping; l.hidden = in.hidden;
     return true;
@@ -3468,6 +3581,18 @@ void GamePlatform::DrawBackground() {
     for (const BgLayer& layer : bgLayers_) {
         if (layer.hidden) continue;
         if (std::getenv("AB_DRAWDBG")) std::fprintf(stderr, "BGLAYER %s scale=%.3f speed=%.3f off=%.1f loop=%d\n", layer.sprite.c_str(), layer.scale, layer.speed, layer.offset, (int)layer.looping);
+        if (layer.rect) {   // Classic 4.0 (0x41ced7): a rectangle over its part of the screen in the layer colour, nothing when it is see-through
+            if (layer.colA > 0) {
+                const float W = (float)screenWidth_, H = (float)screenHeight_;
+                DrawRect(layer.colR / 255.0f, layer.colG / 255.0f, layer.colB / 255.0f, layer.colA / 255.0f,
+                         layer.relL * W, H * (1.0f - layer.relB - layer.relH), (layer.relL + layer.relW) * W, H * (1.0f - layer.relB), false);
+            }
+            continue;
+        }
+        // Classic 4.0 (0x41c989): a sprite layer is drawn in its tintColor when it has one, else in the theme's tint (setThemeTintColour)
+        const float tr = (layer.tintOn ? layer.colR : themeTintR_) / 255.0f, tg = (layer.tintOn ? layer.colG : themeTintG_) / 255.0f, tb = (layer.tintOn ? layer.colB : themeTintB_) / 255.0f;
+        const float ta = layer.tintOn ? layer.colA / 255.0f : 1.0f;
+        auto applyTint = [&]() { state_.tintR = tr; state_.tintG = tg; state_.tintB = tb; state_.alpha = ta; };
         // a layer is a sprite or a composite sprite (the Seasons hills are composites)
         const Sprite* sp = sprites_.Find(layer.sprite);
         const CompoSprite* compo = sp ? nullptr : sprites_.FindCompo(layer.sprite);
@@ -3478,6 +3603,7 @@ void GamePlatform::DrawBackground() {
         float s = layer.scale, inv = 1.0f / s;
         if (layer.space) {   // Space: screen-space layers (no world scale): pinned ones sit at (offsetX, offsetY), looping ones repeat across the screen
             state_ = RenderState();
+            applyTint();
             state_.sx = state_.sy = s;
             float shift = layer.speed * camX_ * 0.05f * worldScale_;
             if (layer.looping) {
@@ -3488,6 +3614,7 @@ void GamePlatform::DrawBackground() {
         }
         float baseShift = layer.speed * camX_, shift = layer.speed * (camX_ + layer.offset);   // 0x41a6e7: (offset + camera) * parallax
         state_ = RenderState();
+        applyTint();
         state_.ty = -camY_ * inv + layer.dy / (s * worldScale_);
         if (scripts_ && scripts_->IsSeasons4()) {
             // Seasons 4.x: the far layers move up and down by their speed too. With the camera's bottom edge on the ground they sit on the
@@ -3528,8 +3655,9 @@ void GamePlatform::DrawForeground() {
     auto afterHook = [this]() { if (scripts_) { state_ = RenderState(); EmitHook(scripts_->State(), "drawForeground"); } };
     DrawHookGuard<decltype(afterHook)> fgGuard(afterHook);
     if (Tune(scripts_ ? scripts_->State() : nullptr, "foreground.skip", 0) != 0) return;
-    // Angry Birds Space has no ground (its foreground layers use named fields and are not read here); Star Wars keeps the Seasons-style ones
-    if (!backend_ || (scripts_ && scripts_->IsSpace() && fgLayers_.empty())) return;
+    // Angry Birds Space has no ground (its foreground layers use named fields and are not read here); Star Wars keeps the Seasons-style ones.
+    // (4.4) Stella also counts as Space here, and its foreground is the new theme system's list (ntFg_): it was never drawn
+    if (!backend_ || (scripts_ && scripts_->IsSpace() && fgLayers_.empty() && !(scripts_->IsStella() && newTheme_ && !ntFg_.empty()))) return;
     if (newTheme_ && !ntFg_.empty()) { DrawNewThemeLayers(ntFg_, (int)bgLayers_.size()); return; }
     // a foreground layer is a sprite or a composite sprite (the Ham 'o' Ween menu draws its trees and pumpkins as composites)
     auto extent = [&](const std::string& name, float& w, float& pivotX, float& h, float& pivotY) {
@@ -3568,7 +3696,9 @@ void GamePlatform::DrawForeground() {
         float x0 = -(m + c * w) / c;
         state_ = RenderState();
         state_.tx = x0 - std::trunc(x0) + fgDx_[fgIndex] / (worldScale_ * c);
-        state_.ty = -camY_ / c + nm.offY + fgDy_[fgIndex] / (worldScale_ * c);
+        fgOffY_.resize(fgLayers_.size(), 0.0f);
+        // (4.4) Classic 3.x drawForegroundNative (x86 0x10bab0): the layer is placed at (offsetY - camera y) / scale; setThemeForegroundOffsetY moves it (the Bad Piggies sea and foam)
+        state_.ty = -camY_ / c + nm.offY + fgOffY_[fgIndex] / c + fgDy_[fgIndex] / (worldScale_ * c);
         state_.sx = state_.sy = worldScale_ * c;
         if (fgIndex < (int)fgWater_.size() && fgWater_[fgIndex].water) {      // Piglantis: the water layers sit on the surface (objects.waterLevel), not on the ground; their height wobbles a little
             float level = 0; bool haveLevel = false;
@@ -3858,6 +3988,18 @@ std::vector<std::string> GamePlatform::GameDrawOrder() {
 // finally everything with a z of 5 or more.
 // Space aiming aid natives (0x461bd0 enableAimingAid, 0x46d200 setAimingAidSprite, 0x4634a0 populateAimingAid, 0x463a60 clearAimingAid, 0x479ab0 updateBirdTrajectoryTable)
 bool GamePlatform::BodyCommand(const std::string& n, int cmd, float a, float& result) {
+    if (cmd == 25) { aimPts_.clear(); return true; }            // Stella ClearSimulationTrajectory (0x34e90): the stored points only (end = begin)
+    if (cmd == 26) {                                             // Stella native_drawSimulationTrajectory (0x49bb8): the aiming aid, when it is on, in the world's view
+        if (!aimEnabled_) return true;
+        RenderState keep = state_;
+        state_ = RenderState();
+        state_.tx = -camX_; state_.ty = -camY_;
+        state_.sx = state_.sy = worldScale_;
+        DrawAimingAidDots();
+        state_ = keep;
+        return true;
+    }
+    if (cmd == 27) { Physics().additionalBirdGravity = a; return true; }   // Stella native_setAdditionalBirdGravity (0x34e88, game +0x138)
     if (cmd < 20 || cmd > 24) return Physics().BodyCommand(n, cmd, a, result);
     if (cmd == 20) aimEnabled_ = a != 0;
     else if (cmd == 21) { aimSprite_ = n; aimScale_ = a > 0 ? a : (scripts_ && scripts_->IsStella()) ? 0.1f : 1; }   // Stella draws its sprites at a tenth (the scale of its blocks), the aiming dots too
@@ -3875,6 +4017,11 @@ bool GamePlatform::BodyCommand(const std::string& n, int cmd, float a, float& re
             lua_getfield(L, LUA_REGISTRYINDEX, "ab.env");
             auto num = [&](const char* k, auto& v) { lua_getfield(L, -1, k); if (lua_isnumber(L, -1)) v = (std::remove_reference_t<decltype(v)>)lua_tonumber(L, -1); lua_pop(L, 1); };
             num("simulationIterations", iterations); num("simulationTimeStepMultiplier", mult); num("simulationStorePointsSampler", sampler);
+            if (scripts_->IsStella()) {                          // Stella (0x5f6be) reads them from the worldAttributes table when the level is set up
+                lua_getfield(L, -1, "worldAttributes");
+                if (lua_istable(L, -1)) { num("simulationIterations", iterations); num("simulationTimeStepMultiplier", mult); num("simulationStorePointsSampler", sampler); }
+                lua_pop(L, 1);
+            }
             lua_getfield(L, -1, "objects");
             if (lua_istable(L, -1)) { lua_getfield(L, -1, "currentTimeStep"); if (lua_isnumber(L, -1)) timeStep = (float)lua_tonumber(L, -1); lua_pop(L, 1); }
             lua_settop(L, top);
@@ -3972,6 +4119,23 @@ void GamePlatform::UpdateAimingAid(float dt) {
     while (aimTimer_ <= 0 && guard++ < 8) { aimTimer_ += spawn; aimDots_.push_back({0, 0, 1.2f}); }
 }
 
+// 0x45d570: every dot goes through a Catmull-Rom spline of the table (0x45d380) and is drawn scaled by its own value (in the world's render state)
+void GamePlatform::DrawAimingAidDots() {
+    if (aimSprite_.empty() || aimPts_.size() < 4) return;
+    const SpriteSheet* sheet = nullptr;
+    const Sprite* sp = sprites_.Find(aimSprite_, &sheet);
+    if (!sp) return;
+    RenderState keep = state_;
+    state_.angle = 0; state_.pivotX = state_.pivotY = 0;
+    { TagScope t(this, "trajectory");
+      for (const AimDot& d : aimDots_) {
+          TrajectoryPoint p = AimSpline(d.x);
+          float ds = d.s * aimScale_;
+          DrawSpriteAt(*sheet, *sp, p.x * 20.0f - sp->pivotX * ds, p.y * 20.0f - sp->pivotY * ds, 0, 0, true, sp->w * ds, sp->h * ds);
+      } }
+    state_ = keep;
+}
+
 GamePlatform::TrajectoryPoint GamePlatform::AimSpline(float x) const {   // 0x45d380, Catmull-Rom between points idx+1 and idx+2
     int n = (int)aimPts_.size();
     int idx = (int)x; if (idx < 0) idx = 0; if (idx > n - 4) idx = n - 4;
@@ -3999,22 +4163,8 @@ void GamePlatform::DrawGame() {
     bool oneGroup = rio || (scripts_ && (scripts_->IsSpace() || scripts_->IsStella()));   // Rio and Space draw every object in one pass over the z layers
     bool trajDone = false;
     // each of the six lists: its dots go through TRAIL_WHITE_1, _2, _3 and start again, then its puffs (BIRD_SPECIAL); then Space's aiming aid
-    auto drawAim = [&]() {
-        // 0x45d570: every dot goes through a Catmull-Rom spline of the table (0x45d380) and is drawn scaled by its own value
-        if (!aimSprite_.empty() && aimPts_.size() >= 4) {
-            const SpriteSheet* sheet = nullptr;
-            if (const Sprite* sp = sprites_.Find(aimSprite_, &sheet)) {
-                RenderState keep = state_;
-                state_.angle = 0; state_.pivotX = state_.pivotY = 0;
-                { TagScope t(this, "trajectory");
-                  for (const AimDot& d : aimDots_) {
-                      TrajectoryPoint p = AimSpline(d.x);
-                      { float ds = d.s * aimScale_; DrawSpriteAt(*sheet, *sp, p.x * 20.0f - sp->pivotX * ds, p.y * 20.0f - sp->pivotY * ds, 0, 0, true, sp->w * ds, sp->h * ds); }
-                  } }
-                state_ = keep;
-            }
-        }
-    };
+    // Stella's drawGameNative leaves the aiming aid out: native_drawSimulationTrajectory (0x49bb8) draws it where the script calls it
+    auto drawAim = [&]() { if (!(scripts_ && scripts_->IsStella())) DrawAimingAidDots(); };
     const bool aimOverCharacters = !(scripts_ && (scripts_->IsSpace() || scripts_->IsStarWars()));   // Classic and the later games: the aiming aid is drawn over the birds and pigs
     // Stella draws its sprites at a tenth (the scale of its blocks): the trail puffs too, about their pivot
     const float trailK = (scripts_ && scripts_->IsStella()) ? 0.1f : 1.0f;

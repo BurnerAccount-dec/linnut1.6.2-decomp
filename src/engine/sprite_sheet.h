@@ -31,7 +31,7 @@ struct SpriteSheet {
 
 // One composite sprite (a "COMP" entry of a *_composprites.dat file): sprites placed relative to one
 // origin. The size and origin are computed from the parts' sprites (0x43af10).
-struct CompoPart { std::string sprite; int x = 0, y = 0; float fx = 0, fy = 0, scale = 1, angle = 0; bool exact = false; float scaleY = 0; bool flipX = false; };   // scaleY 0: the same as scale; flipX: RVIO flag 0x100   // exact: made by setupCompoObject, placed at (fx, fy) with its own scale and angle
+struct CompoPart { std::string sprite; int x = 0, y = 0; float fx = 0, fy = 0, scale = 1, angle = 0; bool exact = false; float scaleY = 0; bool flipX = false; bool flipY = false, hidden = false; };   // flipY / hidden: Classic 4.0 setCompoSpriteEntry (flipY, visible)   // scaleY 0: the same as scale; flipX: RVIO flag 0x100   // exact: made by setupCompoObject, placed at (fx, fy) with its own scale and angle
 struct CompoSprite {
     std::string name;
     std::vector<CompoPart> parts;

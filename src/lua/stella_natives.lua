@@ -118,6 +118,40 @@ env.native_resizeRadius = function(name, radius, density, friction, restitution)
     if env.setFriction and friction then env.setFriction(name, friction) end
     if env.setRestitution and restitution then env.setRestitution(name, restitution) end
 end
+-- native_applySensorForces(sensor, object), matched against the exe (0x55ac4 -> 0x58104): the pull of a gravitation sensor (or the push of a water
+-- sensor) on one object, applied once, now. The box water (BlockComponents/BoxWater.lua) calls it every physics step for each block inside it.
+env.native_applySensorForces = function(sensor, object)
+    if env.applySensorForces then env.applySensorForces(sensor, object) end
+end
+-- The trajectory simulation, matched against the exe (none of Stella's scripts use it): updateBirdTrajectoryTable() flies the object "BirdSimulation"
+-- simulationIterations steps of objects.currentTimeStep * simulationTimeStepMultiplier under the gravitation and water sensors it overlaps and the
+-- additional bird gravity, storing a point every simulationStorePointsSampler steps; getSimulationTrajectoryPoints() returns them ({x =, y =} in metres),
+-- ClearSimulationTrajectory() empties them, native_drawSimulationTrajectory() draws the aiming aid (enableAimingAid, setAimingAidSprite) along them.
+-- native_setAdditionalBirdGravity(g) (0x34e88): a downward force of g times the mass, in the simulation only; 0 or less is off (-1 at start).
+env.native_setAdditionalBirdGravity = function(g) if env.setAdditionalBirdGravity and tonumber(g) then env.setAdditionalBirdGravity(tonumber(g)) end end
+env.native_drawSimulationTrajectory = function() if env.drawSimulationTrajectory then env.drawSimulationTrajectory() end end
+-- native_setThemeFgLayerOffsetY(theme, layer, offsetY), matched against the exe (0x3f630): foreground layer `layer` (1 is the first) of the theme takes
+-- offsetY as its y offset (+52 of its record, the field the theme's offsetY fills); `theme` only names the theme in the exe's own bookkeeping.
+-- Stella registers it but none of its scripts call it.
+env.native_setThemeFgLayerOffsetY = function(theme, layer, offsetY)
+    if env.setThemeLayer and tonumber(layer) and tonumber(offsetY) then env.setThemeLayer(math.floor(tonumber(layer)), {offY = tonumber(offsetY)}, 1) end
+end
+-- Natives Stella registers that none of its scripts call, matched against the exe (4.4):
+-- getObjectVertices, decomposePolygon, objectAndTrackOverlap and drawPolygon are the engine's own functions of those names (see lua_api.cpp).
+-- native_shareScreenShot() (0x552dc): saves the finished frame as Stella_Screenshot<n>.png, n counting from 1 (the game then opens the share sheet)
+env.native_shareScreenShot = function() if env.shareScreenShot then env.shareScreenShot() end end
+-- native_getOSName() (0x55a1c): builds an empty value and returns it, so it is always nil in this build
+env.native_getOSName = function() return nil end
+-- getDirectoryFileList(path) (0x54974): makes a new table and returns it without filling it, so it is always {}
+env.getDirectoryFileList = function() return {} end
+-- printWithTag(...) (0x348b8): an empty function in the shipped game
+env.printWithTag = none
+-- destroyUniqueShaders(list) (0x4b718): removes the named copies from the shader list, entries 1 to #list - 1 only (a list of fewer than
+-- two names removes nothing). This engine draws without shaders and createUniqueShaders only makes names, so there is nothing to remove.
+env.destroyUniqueShaders = none
+-- onLoadLuaFileFail(path) (0x51640): the game calls the script's onLoadLuaFileFail(path) when gamelogic.lua does not load; a script that
+-- defines one replaces this, which on its own does nothing
+if env.onLoadLuaFileFail == nil then env.onLoadLuaFileFail = none end
 -- native_setSprite(name, sprite): the object is drawn with that sprite (utils.lua setSprite, which keeps the name it last set)
 -- native_getLevelLimits (0x54468) returns the four floats the scene keeps at +0x360 (minX, minY, maxX, maxY), which setLevelLimits (0x4c850) stores
 local levelLimits = {0, 0, 0, 0}

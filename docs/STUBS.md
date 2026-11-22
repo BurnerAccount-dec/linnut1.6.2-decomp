@@ -16,7 +16,10 @@ What is stubbed, approximated or untested, by game. Found by searching the engin
 - Star Wars Hoth backgrounds incomplete; `deathstar_1` crashes; Space 1.1.0 `.ipa` background drawing is still off in places.
 
 ## Angry Birds Stella (`stella_natives.lua`)
-- `native_applySensorForces`: blocked, not implemented.
+- `native_applySensorForces` and `native_setThemeFgLayerOffsetY` are matched against the binary (4.4); Stella registers them but never calls them.
+- Every Lua name Stella registers exists (4.4). Those its scripts never call are matched against the binary: `getObjectVertices`, `decomposePolygon`, `objectAndTrackOverlap`, `drawPolygon`, `native_shareScreenShot`, `native_getOSName`, `getDirectoryFileList`, `printWithTag`, `destroyUniqueShaders` and `onLoadLuaFileFail`. Two differences remain:
+  - `native_shareScreenShot` saves the picture to the save folder; there is no share sheet on a computer.
+  - `destroyUniqueShaders` has nothing to remove, because the engine draws without shaders.
 - Abilities in `extra_scripts.lua` are a port for Classic birds: the aim aids use Classic's own sprites and lines (Stella's art is not in the other games), Dahlia's force scales are tuned by eye, and one ability state `S` is shared, so two birds cannot hold different timers.
 
 ## Angry Birds Friends
@@ -35,3 +38,12 @@ What is stubbed, approximated or untested, by game. Found by searching the engin
 
 
 Per-sprite control (4.2) does not reach the parts inside composite sprites (a composite is changed as one sprite) or the aiming-aid dots.
+
+Stella abilities: each activation makes a fresh state table, and only one ability runs at a time (a second bird's tap is ignored until the running one ends), so timers are never shared between two abilities at once.
+
+## Angry Birds 4.0 (PC)
+- Every Lua name the exe registers exists (4.4). The differences that remain:
+  - `setGravityEnabled` stores its flag and does nothing else, exactly as the exe does.
+  - A background mask block is drawn in the order of the other blocks: the game draws all masks as one batch just before the other textured blocks.
+  - `saveParticleFile` and `captureScreen` write to the save folder.
+  - The theme's rectangle layers use the screen fractions from `blocks.lua` and the layer colour the scripts set.

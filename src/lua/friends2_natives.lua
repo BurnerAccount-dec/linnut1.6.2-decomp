@@ -781,7 +781,7 @@ do
     local function rules()
         local w = env.objects and env.objects.world
         local on = w ~= nil and w.slingshotTree_1 ~= nil
-        if on and not done and env.setColliderRule then
+        if on and env.setColliderRule then                                  -- (4.4) every frame: a reset builds the level again with the engine's default rules
             for i = 0, 15 do env.setColliderRule(9, i, false) end          -- the tree's parts (collider none)
             env.setColliderRule(13, 3, false)                               -- the ornaments it lobs (collider projectile) hit everything but the birds (and the tree)
         end
