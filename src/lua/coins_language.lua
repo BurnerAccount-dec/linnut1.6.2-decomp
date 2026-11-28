@@ -77,7 +77,7 @@ local function syncDone(server, body, why, sent)
     local coins, account
     if body then coins, account = string.match(body, "^ok\t(%d+)\t([^\n]*)") end
     if not coins then
-        state.why = body and "It runs an older version: restart it from social-server/" or (server .. ": " .. tostring(why))
+        state.why = (body or (type(why) == "string" and string.find(why, "^status "))) and "It runs an older version: start social-server\\start.bat in the engine's folder" or (server .. ": " .. tostring(why))
         state.status, state.nextSync = "offline", state.clock + cfg.retryAfter
         return false
     end
@@ -131,13 +131,14 @@ env.abFindSocialAccount = function()
     -- (4.4) no name set (Friends has no socialLevels): the wallet's own sync asks the server, so a running server is found, and an account the
     -- wallet is already shared with counts; the server answering without an account is "nosocial" (the game said "unchecked" and never asked)
     if not player then
-        if not sync() then return "noserver" end
+        if not sync() then return (state.why and string.find(state.why, "older version", 1, true)) and "oldserver" or "noserver" end
         return wallet.account and "found" or "nosocial"
     end
     local url = "/classic/account?player=" .. urlEncode(player)
-    local body = env.httpGet(server .. url, 1.5)
-    if not body and string.find(server, "//localhost", 1, true) then body = env.httpGet((string.gsub(server, "//localhost", "//127.0.0.1", 1)) .. url, 1.5) end
-    if not body then return "noserver" end
+    local body, why = env.httpGet(server .. url, 1.5)
+    if not body and string.find(server, "//localhost", 1, true) then body, why = env.httpGet((string.gsub(server, "//localhost", "//127.0.0.1", 1)) .. url, 1.5) end
+    -- (4.5) a server that answers but does not know the question (status 404) is an older copy of the Social server: it is running, only too old
+    if not body then return (type(why) == "string" and string.find(why, "^status ")) and "oldserver" or "noserver" end
     local what = string.match(body, "^ok\t(%a+)")
     if what == "found" then return "found" elseif what == "none" then return "nosocial" end
     return "noserver"

@@ -1,3 +1,5 @@
+#include <cstdlib>
+#include <cctype>
 #include <cstdio>
 #include "lua/aes.h"
 #include "lua/sevenzip.h"
@@ -214,6 +216,45 @@ bool ReadSaveFile(const std::string& path, std::string& text, bool& encrypted, c
         }
     }
     text.assign(bytes.begin(), bytes.end());
+    // v4.5: settings.playtime as a table (one entry per device, the way Space and Star Wars keep it) in a save the older Classic games
+    // read: they add the frame time to it and stop at the menu ("attempt to perform arithmetic on field 'playtime'"), the retail games
+    // too. Only that field is put back to a number (the total of the table's numbers); the rest of the progress is kept, and the file
+    // as it was is kept once as <file>.original
+    if (!g_spaceFamily) {
+        size_t at = 0;
+        while ((at = text.find("playtime", at)) != std::string::npos) {
+            size_t i = at + 8;
+            const bool word = (at == 0 || !(std::isalnum((unsigned char)text[at - 1]) || text[at - 1] == '_')) && i < text.size() && !(std::isalnum((unsigned char)text[i]) || text[i] == '_');
+            while (i < text.size() && std::isspace((unsigned char)text[i])) i++;
+            if (!word || i >= text.size() || text[i] != '=') { at += 8; continue; }
+            i++;
+            while (i < text.size() && std::isspace((unsigned char)text[i])) i++;
+            if (i >= text.size() || text[i] != '{') { at += 8; continue; }
+            size_t end = i;
+            int depth = 0;
+            for (; end < text.size(); end++) {
+                if (text[end] == '{') depth++;
+                else if (text[end] == '}' && --depth == 0) break;
+            }
+            if (end >= text.size()) break;
+            double total = 0;
+            for (size_t k = i; k < end; k++) {
+                if (text[k] != '=') continue;
+                const char* from = text.c_str() + k + 1;
+                char* stop = nullptr;
+                double v = std::strtod(from, &stop);
+                if (stop != from) total += v;
+            }
+            {
+                std::ifstream probe((path + ".original").c_str(), std::ios::binary);
+                if (!probe) { std::ofstream keep((path + ".original").c_str(), std::ios::binary); std::ifstream src(path.c_str(), std::ios::binary); keep << src.rdbuf(); }
+            }
+            char num[64];
+            std::snprintf(num, sizeof(num), "%.17g", total);
+            text.replace(i, end - i + 1, num);
+            at = i;
+        }
+    }
     return true;
 }
 

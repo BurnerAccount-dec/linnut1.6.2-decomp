@@ -2878,6 +2878,10 @@ void GamePlatform::SetTheme(const std::string& themeArg) {
                             lua_rawgeti(L, -1, 6);
                             layer.hasFixedX = lua_isnumber(L, -1) != 0;         // the Seasons crane layers carry a position here; Piglantis' fixed layers (the islands) have none and start at the level's left edge
                             lua_pop(L, 1);
+                            // (4.5) Seasons 4.x: fillBelow = {r, g, b, a} fills the screen below the layer's bottom edge in that colour (Pig Days' sky under its background)
+                            lua_getfield(L, -1, "fillBelow");
+                            if (lua_istable(L, -1)) { layer.fillBelow = true; GetNumber(L, lua_gettop(L), "r", layer.fillR); GetNumber(L, lua_gettop(L), "g", layer.fillG); GetNumber(L, lua_gettop(L), "b", layer.fillB); GetNumber(L, lua_gettop(L), "a", layer.fillA); }
+                            lua_pop(L, 1);
                             if (scripts_ && scripts_->IsSpace()) {
                                 // Angry Birds Space 1.1.0 (iPhone): {sheet, sprite, zDistance, scale, elements, bgLayer = , offsetX = , offsetY = , scaleSpeed = }
                                 int lt = lua_gettop(L);
@@ -2986,7 +2990,9 @@ void GamePlatform::SetTheme(const std::string& themeArg) {
                                 fgSpeed_.push_back(lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : 1.0f);
                                 lua_pop(L, 1);
                                 lua_rawgeti(L, -1, 4);
-                                fgScale_.push_back(lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : (scripts_ && scripts_->IsStarWars() ? 1.0f : 1.5f));   // 0x44b9xx: index 4 defaults to 1
+                                // 0x44b9xx: index 4 defaults to 1. (4.5) So does it in Classic 4.0 (PC, 0x446bea) and Seasons 4.x (0x43ef96): their sand and sea (Bad Piggies, theme23)
+                                // are drawn at the same scale, which the Waves effect counts on; with 1.5 for the sand the wave left a gap of sand under the sea
+                                fgScale_.push_back(lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : (scripts_ && (scripts_->IsStarWars() || scripts_->IsSeasons4()) ? 1.0f : 1.5f));
                                 lua_pop(L, 1);
                                 lua_rawgeti(L, -1, 5);
                                 fgAuto_.push_back(lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : 0.0f);
@@ -2995,6 +3001,9 @@ void GamePlatform::SetTheme(const std::string& themeArg) {
                                 fgWater_.resize(fgLayers_.size());
                                 lua_getfield(L, -1, "water"); fgWater_.back().water = lua_toboolean(L, -1) != 0; lua_pop(L, 1);
                                 lua_getfield(L, -1, "scaleWobbleY"); fgWater_.back().wobbleY = lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : 0.0f; lua_pop(L, 1);
+                                lua_getfield(L, -1, "fillBelow");     // (4.5) the colour under the layer (the deep sea under the front wave): without it the gaps the wobble opens showed the sky
+                                if (lua_istable(L, -1)) { FgWater& fw = fgWater_.back(); fw.fill = true; GetNumber(L, lua_gettop(L), "r", fw.fillR); GetNumber(L, lua_gettop(L), "g", fw.fillG); GetNumber(L, lua_gettop(L), "b", fw.fillB); GetNumber(L, lua_gettop(L), "a", fw.fillA); }
+                                lua_pop(L, 1);
                                 lua_getfield(L, -1, "v");
                                 if (lua_isnumber(L, -1) && fgWater_.back().water) fgAuto_.back() = -(float)lua_tonumber(L, -1) / 60.0f;      // px per second, the Star Wars velX convention
                                 lua_pop(L, 1);
@@ -3501,6 +3510,9 @@ bool GamePlatform::GetThemeLayer(int which, int i, ThemeLayerInfo& o) {
         fgDx_.resize(fgLayers_.size(), 0); fgDy_.resize(fgLayers_.size(), 0); fgHidden_.resize(fgLayers_.size(), 0);
         o = ThemeLayerInfo();
         o.sprite = fgLayers_[i]; o.speed = fgSpeed_[i]; o.scale = fgScale_[i]; o.offset = fgOffset_[i]; o.dx = fgDx_[i]; o.dy = fgDy_[i]; o.hidden = fgHidden_[i] != 0;
+        fgOffY_.resize(fgLayers_.size(), 0.0f); fgNamed_.resize(fgLayers_.size());
+        o.offY = fgNamed_[i].offY; o.posY = fgOffY_[i];      // (4.5) the layer's own offsetY and what setThemeForegroundOffsetY added
+        o.special = fgNamed_[i].named || (i < (int)fgWater_.size() && fgWater_[i].water);
         return true;
     }
     auto& v = which == 1 ? ntFg_ : bgLayers_;
@@ -3508,6 +3520,7 @@ bool GamePlatform::GetThemeLayer(int which, int i, ThemeLayerInfo& o) {
     const BgLayer& l = v[i];
     o.sprite = l.sprite; o.speed = l.speed; o.scale = l.scale; o.scaleX = l.scaleX; o.scaleY = l.scaleY; o.offset = l.offset; o.offX = l.offX; o.offY = l.offY; o.posX = l.posX; o.posY = l.posY;
     o.dx = l.dx; o.dy = l.dy; o.velX = l.velX; o.velY = l.velY; o.angle = l.angle; o.looping = l.looping; o.hidden = l.hidden;
+    o.fixedX = l.hasFixedX; o.special = l.rect || l.space || l.tintOn;
     return true;
 }
 bool GamePlatform::SetThemeLayer(int which, int i, const ThemeLayerInfo& in) {
@@ -3625,6 +3638,13 @@ void GamePlatform::DrawBackground() {
             state_.ty = (screenHeight_ * (1.0f - mY) - camY_ * worldScale_ * mY) / (s * worldScale_) + layer.dy / (s * worldScale_);
         }
         state_.sx = state_.sy = s * worldScale_;
+        if (layer.fillBelow && layer.fillA > 0) {      // (4.5) fillBelow: from the layer's bottom edge to the bottom of the screen
+            const float sh = sp ? (float)sp->h : (float)ch, pivotY = sp ? (float)sp->pivotY : (float)oy;
+            const float bottom = (state_.ty + (sh - pivotY)) * state_.sy;
+            RenderState keep = state_;
+            if (bottom < (float)screenHeight_) DrawRect(layer.fillR / 255.0f, layer.fillG / 255.0f, layer.fillB / 255.0f, layer.fillA / 255.0f, 0, bottom - 1, (float)screenWidth_, (float)screenHeight_ + 1, false);
+            state_ = keep;
+        }
         if (layer.looping) {
             float m = std::fmod(shift, w * s);
             float x0 = -(m + w * s) * inv;
@@ -3712,6 +3732,13 @@ void GamePlatform::DrawForeground() {
             state_.ty += -level * 20.0f / c;
             float wob = 1.0f + fgWater_[fgIndex].wobbleY * 3.0f * std::sin(waterTime_ * 6.2831853f * 0.45f + (float)fgIndex * 1.7f);
             state_.ty *= 1.0f / wob; state_.sy *= wob;
+        }
+        if (fgIndex < (int)fgWater_.size() && fgWater_[fgIndex].fill && fgWater_[fgIndex].fillA > 0) {     // (4.5) fillBelow: from the layer's bottom edge to the bottom of the screen
+            const FgWater& fw = fgWater_[fgIndex];
+            const float bottom = (state_.ty + (h - py)) * state_.sy;
+            RenderState keep = state_;
+            if (bottom < (float)screenHeight_) DrawRect(fw.fillR / 255.0f, fw.fillG / 255.0f, fw.fillB / 255.0f, fw.fillA / 255.0f, 0, bottom - 1, (float)screenWidth_, (float)screenHeight_ + 1, false);
+            state_ = keep;
         }
         float right = screenWidth_ / (worldScale_ * c) + px;
         long tile = (long)std::trunc(shift / (c * w)) - 1;
@@ -4164,7 +4191,12 @@ void GamePlatform::DrawGame() {
     bool trajDone = false;
     // each of the six lists: its dots go through TRAIL_WHITE_1, _2, _3 and start again, then its puffs (BIRD_SPECIAL); then Space's aiming aid
     // Stella's drawGameNative leaves the aiming aid out: native_drawSimulationTrajectory (0x49bb8) draws it where the script calls it
-    auto drawAim = [&]() { if (!(scripts_ && scripts_->IsStella())) DrawAimingAidDots(); };
+    // (4.5) tuning["aim.skip"] = 1 leaves the dots out, and the "drawAim" event comes where they are drawn, in the world's render state (extras/native_drawing/aiming_aid.lua)
+    auto drawAim = [&]() {
+        if (scripts_ && scripts_->IsStella()) return;
+        if (Tune(scripts_ ? scripts_->State() : nullptr, "aim.skip", 0) == 0) DrawAimingAidDots();
+        if (scripts_) { RenderState keep = state_; EmitHook(scripts_->State(), "drawAim"); state_ = keep; }
+    };
     const bool aimOverCharacters = !(scripts_ && (scripts_->IsSpace() || scripts_->IsStarWars()));   // Classic and the later games: the aiming aid is drawn over the birds and pigs
     // Stella draws its sprites at a tenth (the scale of its blocks): the trail puffs too, about their pivot
     const float trailK = (scripts_ && scripts_->IsStella()) ? 0.1f : 1.0f;
@@ -4191,7 +4223,10 @@ void GamePlatform::DrawGame() {
         trajDone = true;
         instSeen_[2].clear();
         state_.angle = 0; state_.pivotX = state_.pivotY = 0;
-        for (int list = 0; list < 6; list++) {
+        // (4.5) tuning["trajectory.skip"] = 1 leaves the dots and puffs out, and the "drawTrail" event comes where they are drawn: after the blocks, before the birds
+        // (extras/native_drawing/bird_trail.lua draws them from Lua there)
+        const bool trailSkip = Tune(scripts_ ? scripts_->State() : nullptr, "trajectory.skip", 0) != 0;
+        for (int list = 0; list < 6 && !trailSkip; list++) {
             const std::string* custom = trajCustom_[list / 3];
             for (size_t i = 0; i < trajDots_[list].size(); i++) {
                 const SpriteSheet* sheet = nullptr;
@@ -4210,6 +4245,7 @@ void GamePlatform::DrawGame() {
                 puffNo++;
             }
         }
+        if (scripts_) { RenderState keep = state_; EmitHook(scripts_->State(), "drawTrail"); state_ = keep; }
         if (!aimOverCharacters) drawAim();
     };
     auto drawGroup = [&](int which) {
@@ -4413,8 +4449,13 @@ void GamePlatform::AddParticles(const std::string& type, float amount, float x, 
             p.vy = (d->maxVelY - d->minVelY) * Rand01() + d->minVelY;
         }
         if (d->space) p.angle = ((d->maxAngle - d->minAngle) * Rand01() + d->minAngle) * 0.017453292f + (d->useSpawnerAngle ? angle : 0.0f);
+        // (4.5) Classic 4.0 (0x443c0f..0x443c7b) and Seasons 4.x (0x44426e..0x4442d6): the sprite starts turned by a second pick from the emitter's
+        // angle range plus the angle the call passes (a box emitter has no angle range of its own); minAngle / maxAngle are not read. The Surf and Turf rain
+        // (theme15rain, emitter angle 120) falls as slanted streaks; with minAngle it lay flat
+        else if (scripts_ && scripts_->IsSeasons4() && !scripts_->IsStarWars() && !scripts_->IsStella() && (d->v2Emitter || d->seasons)) p.angle = ((d->angleMaxEmitter - d->angleMinEmitter) * Rand01() + d->angleMinEmitter) * 0.017453292f + angle;
         else if (d->v2Emitter && d->hasAngle) p.angle = ((d->maxAngle - d->minAngle) * Rand01() + d->minAngle) * 0.017453292f;   // Rio: minAngle / maxAngle turn the sprite, the emitter angles only the direction
-        else if (d->seasons || d->v2Emitter) p.angle = ((d->angleMaxEmitter - d->angleMinEmitter) * Rand01() + d->angleMinEmitter) * 0.017453292f;
+        else if (d->v2Emitter) p.angle = ((d->angleMaxEmitter - d->angleMinEmitter) * Rand01() + d->angleMinEmitter) * 0.017453292f;
+        else if (d->seasons) p.angle = ((d->angleMaxEmitter - d->angleMinEmitter) * Rand01() + d->angleMinEmitter) * 0.017453292f;
         else p.angle = Rand01() * 3.1415927f + Rand01() * 3.1415927f;   // 1.x: the exe uses one random number twice
         p.angleVel = (d->maxAngleVel - d->minAngleVel) * Rand01() + d->minAngleVel;
         p.scaleBegin = (d->maxScaleBegin - d->minScaleBegin) * Rand01() + d->minScaleBegin;

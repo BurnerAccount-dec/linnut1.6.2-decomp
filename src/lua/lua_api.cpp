@@ -525,6 +525,63 @@ int l_loadLuaFileToObject(lua_State* L) {
             lua_pop(L, 1);
             if (str) { lua_pushnil(L); lua_setfield(L, 2, "filename"); }
         }
+        if (rc == 0 && !std::getenv("AB_NOPOWERUPS") && path.size() >= 14 && path.compare(path.size() - 14, 14, "/game_conf.lua") == 0) {
+            // v4.5: Classic 4.0.0 (PC) has the power-ups (PowerupManager, the in-game power-up bar, 5 of each to start with) but its
+            // game_conf.lua leaves g_powerups_enabled off, as the PC build had no shop to buy them from: they are switched on here
+            PushEnv(L);
+            lua_getfield(L, -1, "g_powerups_enabled");
+            const bool off = lua_isboolean(L, -1) && !lua_toboolean(L, -1);
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "commonScriptPath");
+            std::string common = lua_isstring(L, -1) ? lua_tostring(L, -1) : "";
+            lua_pop(L, 1);
+            std::vector<uint8_t> pm;
+            if (off && !common.empty() && ab::ReadLuaFile(common + "/powerups/PowerupManager.lua", pm) && !pm.empty()) {
+                lua_pushboolean(L, 1);
+                lua_setfield(L, -2, "g_powerups_enabled");
+                // (4.5) the store: with the power-ups on, the shop buttons open the game's own power-up shop (menus/shop), which needs the game's store code,
+                // iap_new.lua, that gamelogic only loads with hasIaps. hasIaps is switched on and the store natives the mobile builds have are stood in for:
+                // _G.Payment (iapInitPaymentProviders, getIapProducts, iapBuyItem, iapRestoreItems, iapHasPaymentProvider) and isIapEnabled(). There is
+                // no payment: a purchase goes through at once, as a successful one does (PAYMENT_SUCCEEDED, 0), and the items are given.
+                // AB_NOSHOP leaves hasIaps off; then a store that does nothing stands in for iap (initializeMenu calls iap.init()).
+                std::vector<uint8_t> iapNew;
+                const bool shop = !std::getenv("AB_NOSHOP") && ab::ReadLuaFile(common + "/iap_new.lua", iapNew) && !iapNew.empty();
+                if (shop) {
+                    static const char* payment =
+                        "local env = ...\n"
+                        "if env.isIapEnabled == nil then env.isIapEnabled = function() return env.iapEnabled == true end end\n"
+                        "if _G.Payment ~= nil then return end\n"
+                        "local P = {abStandIn = true}\n"
+                        "P.iapInitPaymentProviders = function() if P.onPaymentProviderSelected then P.onPaymentProviderSelected('store') end end\n"
+                        "P.iapHasPaymentProvider = function() return true end\n"
+                        "P.getIapProducts = function()\n"
+                        "  local t = {}\n"
+                        "  for id, info in _G.pairs(_G.type(env.g_iap_item_info) == 'table' and env.g_iap_item_info or {}) do\n"
+                        "    local usd = _G.type(info) == 'table' and _G.type(info.price) == 'table' and info.price.usd\n"
+                        "    t[id] = {id = id, price = usd and _G.string.format('$%.2f', usd) or ''}\n"
+                        "  end\n"
+                        "  return t\n"
+                        "end\n"
+                        "P.iapBuyItem = function(id) if P.onPurchaseStatusChanged then P.onPurchaseStatusChanged(id, 0) end end\n"
+                        "P.iapRestoreItems = function() if P.onRestoreDone then P.onRestoreDone(true) end end\n"
+                        "_G.Payment = P\n";
+                    lua_pushboolean(L, 1);
+                    lua_setfield(L, -2, "hasIaps");
+                    if (luaL_loadstring(L, payment) == 0) {
+                        lua_pushvalue(L, -2);
+                        if (lua_pcall(L, 1, 0, 0) != 0) lua_pop(L, 1);
+                    } else lua_pop(L, 1);
+                } else {
+                    lua_getfield(L, -1, "iap");
+                    const bool noIap = lua_isnil(L, -1);
+                    lua_pop(L, 1);
+                    if (noIap && luaL_loadstring(L, "return setmetatable({abStandIn = true}, {__index = function() return function() end end})") == 0) {
+                        if (lua_pcall(L, 0, 1, 0) == 0) lua_setfield(L, -2, "iap"); else lua_pop(L, 1);
+                    }
+                }
+            }
+            lua_pop(L, 1);
+        }
         if (rc == 0 && spaceBlocks) {
             const char* filer =
                 "local T, bt, env = ...\nlocal pairs, ipairs, type = _G.pairs, _G.ipairs, _G.type\n"
@@ -2117,6 +2174,20 @@ int l_populateAimingAid(lua_State* L) { float r = 0; P(L)->BodyCommand("", 22, 0
 int l_clearAimingAid(lua_State* L) { float r = 0; P(L)->BodyCommand("", 23, 0, r); return 0; }
 int l_updateBirdTrajectoryTable(lua_State* L) { float r = 0; P(L)->BodyCommand(lua_isstring(L, 1) ? lua_tostring(L, 1) : "BirdSimulation", 24, 0, r); return 0; }
 int l_spriteExists(lua_State* L) { lua_pushboolean(L, P(L)->SpriteExists(S(L, 1))); return 1; }
+// (4.5) getAimingAidPoints() -> {{x=, y=}, ...} (metres), scale, sprite, speed, spawnTime, on (new dots are being made): what the engine's aiming aid draws its dots along
+int l_getAimingAidPoints(lua_State* L) {
+    std::vector<float> xy; float scale, speed, spawn; std::string sprite; bool on;
+    P(L)->AimingAidPoints(xy, scale, sprite, speed, spawn, on);
+    lua_newtable(L);
+    for (size_t i = 0; i + 1 < xy.size(); i += 2) {
+        lua_newtable(L);
+        lua_pushnumber(L, xy[i]); lua_setfield(L, -2, "x");
+        lua_pushnumber(L, xy[i + 1]); lua_setfield(L, -2, "y");
+        lua_rawseti(L, -2, (int)(i / 2) + 1);
+    }
+    lua_pushnumber(L, scale); lua_pushstring(L, sprite.c_str()); lua_pushnumber(L, speed); lua_pushnumber(L, spawn); lua_pushboolean(L, on);
+    return 6;
+}
 int l_simulateAimingAid(lua_State* L) { float st[2] = {(float)luaL_optnumber(L, 5, 0), (float)luaL_optnumber(L, 6, 0)}, fo[2] = {(float)luaL_optnumber(L, 7, 0), (float)luaL_optnumber(L, 8, 0)}; lua_pushboolean(L, P(L)->AimSimulate(lua_isstring(L, 1) ? lua_tostring(L, 1) : "", N(L, 2), N(L, 3), lua_isnumber(L, 4) ? (int)lua_tonumber(L, 4) : 120, lua_isnumber(L, 5) && lua_isnumber(L, 6) ? st : nullptr, lua_isnumber(L, 7) || lua_isnumber(L, 8) ? fo : nullptr)); return 1; }
 int l_setSensorGravityMask(lua_State* L) { return BodyCmd(L, 10); }
 int l_setFilterMask(lua_State* L) { return BodyCmd(L, 30); }
@@ -2813,6 +2884,8 @@ int l_getThemeLayers(lua_State* L) {
         num("offX", t.offX); num("offY", t.offY); num("posX", t.posX); num("posY", t.posY); num("dx", t.dx); num("dy", t.dy); num("velX", t.velX); num("velY", t.velY); num("angle", t.angle);
         lua_pushboolean(L, t.looping); lua_setfield(L, -2, "looping");
         lua_pushboolean(L, t.hidden); lua_setfield(L, -2, "hidden");
+        lua_pushboolean(L, t.fixedX); lua_setfield(L, -2, "fixedX");
+        lua_pushboolean(L, t.special); lua_setfield(L, -2, "special");
         lua_rawseti(L, -2, i + 1);
     }
     return 1;
@@ -3100,7 +3173,7 @@ int l_setDrawZRange(lua_State* L) { P(L)->SetDrawZRange((int)N(L, 1), (int)N(L, 
 int l_setAlpha(lua_State* L) {
     std::string t = TargetArg(L, 2);
     if (t.empty()) P(L)->SetAlpha(N(L, 1));
-    else if (P(L)->HasObject(t)) P(L)->SetObjectAlpha(t, N(L, 1));       // an object: the same alpha setObjectAlpha sets
+    else if (P(L)->HasObject(t)) P(L)->SetObjectAlpha(t, N(L, 1));       // an object: the same alpha setObjectAlpha sets (the override of its name)
     else P(L)->SetRenderOverride(t, 0, N(L, 1), 0, 0);
     return 0;
 }
@@ -4087,7 +4160,7 @@ void RegisterApi(lua_State* L, Platform* p) {
         {"getAngle", l_getAngle}, {"getWorldPoint", l_getWorldPoint}, {"setObjectParameter", l_setObjectParameter}, {"setBodyType", l_setBodyType}, {"getBodyType", l_getBodyType}, {"setScale", l_setScale}, {"setRenderScale", l_setRenderScale}, {"getRenderScale", l_getRenderScale}, {"getScale", l_getScale}, {"setSpeedCap", l_setSpeedCap}, {"getSpeedCap", l_getSpeedCap}, {"clearSpeedCap", l_clearSpeedCap}, {"getTouchingObjects", l_getTouchingObjects}, {"rayCast", l_rayCast}, {"fileExists", l_fileExists},
         {"setPhysicsSimulationScale", l_setPhysicsSimulationScale}, {"setPhysicsEnabled", l_setPhysicsEnabled}, {"setThemeOffsetY", l_setThemeOffsetY}, {"setStartingCameraValue", l_setStartingCameraValue},
         {"isPhysicsEnabled", l_isPhysicsEnabled}, {"setLevelLimits", l_setLevelLimits},
-        {"setTopLeft", l_setTopLeft}, {"getCamera", l_getCamera}, {"getThemeLayers", l_getThemeLayers}, {"getBackgroundSprites", l_getBackgroundSprites}, {"getForegroundSprites", l_getForegroundSprites}, {"setBackgroundSprite", l_setBackgroundSprite}, {"setForegroundSprite", l_setForegroundSprite}, {"clearSpriteChanges", l_clearSpriteChanges}, {"getTrailSprites", l_getTrailSprites}, {"setTrailSprite", l_setTrailSprite}, {"setThemeLayer", l_setThemeLayer}, {"setWorldScale", l_setWorldScale}, {"setMaxWorldScale", l_setMaxWorldScale}, {"resetMouseWheelScale", l_resetMouseWheelScale},
+        {"setTopLeft", l_setTopLeft}, {"getCamera", l_getCamera}, {"getThemeLayers", l_getThemeLayers}, {"getAimingAidPoints", l_getAimingAidPoints}, {"getBackgroundSprites", l_getBackgroundSprites}, {"getForegroundSprites", l_getForegroundSprites}, {"setBackgroundSprite", l_setBackgroundSprite}, {"setForegroundSprite", l_setForegroundSprite}, {"clearSpriteChanges", l_clearSpriteChanges}, {"getTrailSprites", l_getTrailSprites}, {"setTrailSprite", l_setTrailSprite}, {"setThemeLayer", l_setThemeLayer}, {"setWorldScale", l_setWorldScale}, {"setMaxWorldScale", l_setMaxWorldScale}, {"resetMouseWheelScale", l_resetMouseWheelScale},
         {"setMaxTranslation", l_setMaxTranslation},
         {"setRenderState", l_setRenderState}, {"drawRect", l_drawRect}, {"drawLine2D", l_drawLine2D},
         {"drawTexturedRect", l_nothing}, {"drawSome", l_nothing},

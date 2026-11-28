@@ -229,6 +229,7 @@ fb.openFacebookSession = function(cb)
     local name = env.abSocialName and env.abSocialName()
     local lines = found == "nosocial"
         and {"No Angry Birds Social account", name and ("named " .. name .. " was found.") or "is set for this player.", "Make one on the Social server,", "or play as a local player."}
+        or found == "oldserver" and {"The Social server that is running is", "an older copy without Friends logins.", "Start social-server\\start.bat in the", "engine's folder, or play as a local player."}
         or {"The Social server does not answer,", "so no Social account was found.", "Start it, or play as a local player."}
     env.abNotice(lines, {{"cancel", "ESCAPE"}, {"LOCAL PLAYER", "LOCAL"}}, function(i)
         if i == 2 then logIn(cb) else later(cb, false, "cancelled") end

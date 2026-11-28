@@ -87,7 +87,11 @@ bool FileExists(const std::string& p) { std::ifstream f(p.c_str(), std::ios::bin
 // Runs a shell command and waits at most `seconds` for it (0: as long as it takes). Returns the exit code, or -1 when the time ran out and the command (and
 // everything it started) was killed. v3.3: unluac 1.2.2 never finishes on some scripts (Seasons 4.1.0's scripts/menu_flow.lua is one: it loops for ever on a
 // loop it cannot rebuild), and the run waited for it for ever, so the second decompiler (unluac-alt, which does finish) never got its turn.
-int RunWithTimeout(const std::string& cmd, int seconds) {
+// v4.5: `watch` (when given) is the command's output file: the command is also stopped once that file passes `maxBytes`. unluac can loop while it writes
+// (Classic 4.0.0's redbird_special.lua grew to 160 MB in the 90 seconds), filling the disk before the time ran out.
+long long FileSize(const std::string& p) { std::ifstream f(p.c_str(), std::ios::binary | std::ios::ate); return f ? (long long)f.tellg() : 0; }
+
+int RunWithTimeout(const std::string& cmd, int seconds, const std::string& watch = std::string(), long long maxBytes = 0) {
 #ifdef _WIN32
     HANDLE job = CreateJobObjectA(nullptr, nullptr);
     if (job) {
@@ -104,7 +108,14 @@ int RunWithTimeout(const std::string& cmd, int seconds) {
     if (!CreateProcessA(nullptr, buf.data(), nullptr, nullptr, FALSE, CREATE_SUSPENDED | CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) { if (job) CloseHandle(job); return std::system(cmd.c_str()); }
     if (job) AssignProcessToJobObject(job, pi.hProcess);
     ResumeThread(pi.hThread);
-    DWORD wait = WaitForSingleObject(pi.hProcess, seconds > 0 ? (DWORD)seconds * 1000 : INFINITE);
+    DWORD wait = WAIT_TIMEOUT;
+    for (DWORD waited = 0;;) {
+        wait = WaitForSingleObject(pi.hProcess, 200);
+        if (wait != WAIT_TIMEOUT) break;
+        waited += 200;
+        if (seconds > 0 && waited >= (DWORD)seconds * 1000) break;
+        if (maxBytes > 0 && FileSize(watch) > maxBytes) break;
+    }
     int rc = -1;
     if (wait == WAIT_OBJECT_0) { DWORD code = 1; GetExitCodeProcess(pi.hProcess, &code); rc = (int)code; }
     else if (job) TerminateJobObject(job, 1); else TerminateProcess(pi.hProcess, 1);
@@ -121,7 +132,7 @@ int RunWithTimeout(const std::string& cmd, int seconds) {
         pid_t r = waitpid(pid, &status, WNOHANG);
         if (r == pid) return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
         if (r < 0) return 1;
-        if (seconds > 0 && time(nullptr) - start >= seconds) { kill(-pid, SIGKILL); waitpid(pid, &status, 0); return -1; }
+        if ((seconds > 0 && time(nullptr) - start >= seconds) || (maxBytes > 0 && FileSize(watch) > maxBytes)) { kill(-pid, SIGKILL); waitpid(pid, &status, 0); return -1; }
         usleep(50000);
     }
 #endif
@@ -138,8 +149,9 @@ bool Decompile(const std::string& jar, const std::string& in, const std::string&
 #endif
     int seconds = 90;
     if (const char* t = std::getenv("AB_DEC_TIMEOUT")) seconds = std::atoi(t);
-    const int rc = RunWithTimeout(cmd, seconds);
-    if (rc == -1) { std::printf("dec: %s gave up after %d s on %s\n", jar.c_str(), seconds, in.c_str()); std::fflush(stdout); }
+    // a script is at most a few hundred KB of text: an output past 32 MB is a decompiler going round in circles
+    const int rc = RunWithTimeout(cmd, seconds, out, 32LL << 20);
+    if (rc == -1) { std::printf("dec: %s gave up on %s (more than %d s or 32 MB of output)\n", jar.c_str(), in.c_str(), seconds); std::fflush(stdout); }
     std::ifstream o(out.c_str(), std::ios::binary | std::ios::ate);
     return rc == 0 && o && o.tellg() > 0;
 }

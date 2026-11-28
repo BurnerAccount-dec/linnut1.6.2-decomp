@@ -228,7 +228,7 @@ Already there, nothing new needed:
 
 `setAlpha`, `setTint`, `resetTint`, `getTint`, `setSkew`, `setBend`, `setRenderZ`, `setBlur`, `resetBlur`, `setPixelate`, `resetPixelate` and the new `setBlendMode`, `setShader`, `setTintChannel`, `setVisualRotation` take a string as their **last** argument. Without it they change the render state like before (what the next sprites are drawn with). With it they are kept for that target and applied whenever it is drawn:
 
-* an **object name** (`setAlpha(0.5, "pig_3")` is the same as `setObjectAlpha`, so you do not need that one any more; the others apply to its picture),
+* an **object name** (`setAlpha(0.5, "pig_3")` and `setObjectAlpha("pig_3", 0.5)` set the same value; the others apply to its picture),
 * a **sprite name** (every drawing of that sprite),
 * a **composite sprite name** (all of its parts; give one part's sprite name to change only that part),
 * `"background"`, `"foreground"`, `"trajectory"` (the dots, puffs and Space's aiming aid) and `"particles"`: what the engine draws itself.
@@ -281,19 +281,44 @@ Masked and tiled sprites (the ground blocks) use it as well.
 
 ### Transparency of one object
 
-`setRenderState` cannot reach objects that `drawGameNative` draws (blocks, birds, pigs), so the engine has a native per-object value:
+`setRenderState` cannot reach the objects the engine draws for the game (blocks, birds, pigs), so each object has a transparency of its own:
 
-- `setObjectAlpha(name, alpha)`: from 0 (invisible) to 1 (solid, the default); out-of-range values are clamped. It stays on that object until you set it again, and it does not touch anything else that is drawn.
+- `setObjectAlpha(name, alpha)`: from 0 (invisible) to 1 (solid, the default); out-of-range values are clamped. It stays on that object until you set it again (or `resetRenderOverrides(name)`), and it does not touch anything else that is drawn.
 - `getObjectAlpha(name)`: the value, or -1 if there is no such object.
+- `setAlpha(alpha, name)` is the same call written the way of the other per-target settings (see "Graphics settings for one target"): `setObjectAlpha("pig_3", 0.5)` and `setAlpha(0.5, "pig_3")` set the same value, and `getObjectAlpha` reads it whichever one set it. The other per-target settings (`setTint`, `setBlendMode`, `setShader`, `setOffset` ...) take an object name the same way.
 
-Use it with the name that `createObject` returned, or the keys of `objects.world`. For example, to make all ice (light) blocks of a Rio level see-through, and fade one block:
+Use the name that `createObject` returned, or the keys of `objects.world`. For example, to make all ice (light) blocks of a level see-through, and fade one block:
 
     for name, obj in _G.pairs(objects.world) do
-        if _G.string.find(name, "BLOCK_LIGHT") then setObjectAlpha(name, 0.3) end
+        if obj.material == "light" then setObjectAlpha(name, 0.3) end
     end
     setObjectAlpha("BLOCK_ROCK_1X10_1_2", 0.6)
 
-It applies to the whole object, composite sprites included, and works in every game.
+It applies to the whole object, composite sprites and tiled (texture) blocks included, and works in every game. A name that is not an object yet (the object is made later) is ignored by `setObjectAlpha`; `setAlpha(a, name)` keeps it for a sprite of that name instead.
+
+### Drawing the engine's own pictures from Lua (4.5)
+
+`extras/extra_scripts/native_drawing/` holds the engine's background and foreground, bird trail and aiming aid dots written in Lua with the same rules as the C++ (`backgrounds.lua`, `bird_trail.lua`, `aiming_aid.lua`). Each one switches the engine's drawing off while it is on (`tuning["background.skip"]`, `["foreground.skip"]`, `["trajectory.skip"]`, `["aim.skip"]`) and draws in the event that comes at the same place in the frame, so a level looks the same pixel for pixel and a mod can change any part of it. Their tables (`nativeBackground`, `birdTrail`, `aimingAidDots`) have an `enabled` switch and the draw functions, which can be replaced.
+
+- `engine.on("drawTrail", fn)`: inside `drawGameNative`, after the blocks and before the birds, where the trail is drawn (the world's render state is set again after it).
+- `engine.on("drawAim", fn)`: where the aiming aid's dots are drawn.
+- `getThemeLayers(0)` entries now also have `fixedX` (the cranes: placed one after another) and `special` (a layer the engine draws its own way: rectangles, tints, Space's screen layers); `getThemeLayers(2)` entries have `offY` (the layer's own offset), `posY` (what `setThemeForegroundOffsetY` added) and `special` (named or water layers).
+- `getAimingAidPoints()` returns the aiming aid's path (`{{x=, y=}, ...}` in metres), the dot scale, the sprite, the dot speed, the time between dots and whether new dots are being made.
+
+### The store of Angry Birds 4.0 for PC (4.5)
+
+The PC build of Classic 4.0 has the mobile store's scripts (`scripts_common/iap_new.lua`, `scripts/iap/`, `scripts_common/menus/shop/`) but its exe has no store, so `options.lua` sets `hasIaps = false` and the shop never opens. With the power-ups on, the engine sets `hasIaps = true` after `game_conf.lua` (so `gamelogic.lua` loads `iap_new.lua`) and puts in what the mobile exes register:
+
+| Name | What it does here |
+|---|---|
+| `Payment.iapInitPaymentProviders()` | calls `Payment.onPaymentProviderSelected("store")` at once (the game then sets `iapEnabled = true`) |
+| `Payment.iapHasPaymentProvider()` | `true` |
+| `Payment.getIapProducts()` | `{[id] = {id = id, price = "$0.99"}, ...}` from the game's `g_iap_item_info` |
+| `Payment.iapBuyItem(id)` | calls `Payment.onPurchaseStatusChanged(id, 0)` (PAYMENT_SUCCEEDED): the game gives the items |
+| `Payment.iapRestoreItems()` | calls `Payment.onRestoreDone(true)` |
+| `isIapEnabled()` | the global `iapEnabled` |
+
+`Payment.abStandIn` is `true`. A mod can replace any of these before the game calls them (for example to make `iapBuyItem` fail with `Payment.onPurchaseStatusChanged(id, 1)`), or open the shop itself with `requireFile("menus/shop/shop.lua")` and `shop.openFromMenu(groupName)`. `AB_NOSHOP=1` in the environment leaves all of this out.
 
 ### Collider types
 
@@ -524,7 +549,7 @@ Technically Box2D 2.2 applies the world's gravity to every body and has no per-b
 
 ### Transparency, draw order and colliders
 
-- `setObjectAlpha(name, alpha)` / `getObjectAlpha(name)`: the transparency of one object when `drawGameNative` draws it, 0 (invisible) to 1 (solid). `getObjectAlpha` returns -1 for an unknown object.
+- `setObjectAlpha(name, alpha)` / `getObjectAlpha(name)`: the transparency of one object, 0 (invisible) to 1 (solid); the same value as `setAlpha(alpha, name)`. `getObjectAlpha` returns -1 for an unknown object.
 - `setObjectZOrder(name, z)` / `getObjectZOrder(name)`: the object's draw order in `drawGameNative` (the `z_order` of `createBlock`; higher is in front). `objects.world[name].z_order` always shows the current value. `getObjectZOrder` returns `nil` for an unknown object.
 - `bringObjectToFront(name)` / `sendObjectToBack(name)`: move the object in front of / behind every other object and return its new `z_order`.
 - `getObjectDrawOrder()`: the names of the objects `drawGameNative` draws, from the back to the front.
@@ -724,7 +749,7 @@ end)
 | `getIntersectingObjects{x1, y1, x2, y2}` / `getIntersectingObjects(box)` | The objects whose shapes overlap a box (Seasons passes the sizes of the sides, Rio / Space signed offsets). Used by explosions. |
 | `rayCast(x1, y1, x2, y2 [, all])` (2.4) | The nearest object the segment crosses: `name, hitX, hitY, normalX, normalY, fraction`, or `nil`; with `all = true` a list of such tables, nearest first. `getRayCastedObjects{x1=, y1=, x2=, y2=}` (Space) returns a flat list, six values per object. |
 | `hasMovingObjects()` / `hasMovingObjectsZeroTolerance()` | True while any object (other than those flagged with parameter 12 in SW) moves faster than 0.5 / 0.001. The game waits for this to be false before it judges a level. |
-| `setObjectAlpha(name, a)` / `getObjectAlpha(name)` | Transparency (0 invisible, 1 solid) used by `drawGameNative`; `getObjectAlpha` is -1 for an unknown object. |
+| `setObjectAlpha(name, a)` / `getObjectAlpha(name)` | Transparency of one object (0 invisible, 1 solid), the same value as `setAlpha(a, name)`; `getObjectAlpha` is -1 for an unknown object. |
 | `setObjectZOrder(name, z)`, `getObjectZOrder(name)`, `bringObjectToFront(name)`, `sendObjectToBack(name)`, `getObjectDrawOrder()` | The draw order of `drawGameNative`. |
 | `setColliderType(name, type)`, `getColliderType(name)`, `setColliderRule(typeA, typeB, collides)`, `getColliderRule(typeA, typeB)` | Collider classes: two objects collide only when the rule for their types allows it. |
 | `setPolygonRadius(r)` / `getPolygonRadius()` | The skin radius of boxes and polygons made afterwards (Rio's Box2D 2.2). |

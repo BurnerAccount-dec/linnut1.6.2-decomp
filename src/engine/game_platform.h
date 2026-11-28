@@ -294,8 +294,14 @@ public:
     void SetSpeedCap(const std::string& n, float speed, float vx, float vy) override { Physics().SetSpeedCap(n, speed, vx, vy); }
     bool GetSpeedCap(const std::string& n, float& speed, float& vx, float& vy) override { return Physics().GetSpeedCap(n, speed, vx, vy); }
     std::vector<std::string> TouchingObjects(const std::string& n) override { return Physics().TouchingObjects(n); }
-    void SetObjectAlpha(const std::string& n, float a) override { Physics().SetObjectAlpha(n, a); }
-    float ObjectAlpha(const std::string& n) override { return Physics().ObjectAlpha(n); }
+    // v4.5: the alpha of an object is the alpha override of its name (what setAlpha(a, name) sets and the drawing applies); the physics' own field was no
+    // longer read by the drawing, so setObjectAlpha had stopped doing anything
+    void SetObjectAlpha(const std::string& n, float a) override { Physics().SetObjectAlpha(n, a); if (Physics().ObjectAlpha(n) >= 0) SetRenderOverride(n, 0, a, 0, 0); }
+    float ObjectAlpha(const std::string& n) override {
+        if (Physics().ObjectAlpha(n) < 0) return -1.0f;
+        float a = 1, b, c;
+        return GetRenderOverride(n, 0, a, b, c) ? a : 1.0f;
+    }
     void SetObjectZOrder(const std::string& n, float z) override { Physics().SetObjectZOrder(n, z); }
     float ObjectZOrder(const std::string& n) override { return Physics().ObjectZOrder(n); }
     float MoveObjectZ(const std::string& n, bool front) override { return Physics().MoveObjectZ(n, front); }
@@ -498,6 +504,10 @@ private:
     // Lua access to the theme layers and the camera (getCamera, getThemeLayers, setThemeLayer)
     void GroundColor(bool set, float& r, float& g, float& b) override { if (set) { groundR_ = r; groundG_ = g; groundB_ = b; } else { r = groundR_; g = groundG_; b = groundB_; } }
     void ClearParticleCache() override { oldParticleDefs_.push_back(std::move(particleDefs_)); particleDefs_.clear(); }   // live particles keep pointing at their old definition
+    void AimingAidPoints(std::vector<float>& xy, float& scale, std::string& sprite, float& speed, float& spawn, bool& on) override {
+        xy.clear(); for (const TrajectoryPoint& p : aimPts_) { xy.push_back(p.x); xy.push_back(p.y); }
+        scale = aimScale_; sprite = aimSprite_; AimParams(speed, spawn); on = aimOn_;
+    }
     void GetCamera(float& x, float& y, float& ws, int& w, int& h) override { x = camX_; y = camY_; ws = worldScale_; w = screenWidth_; h = screenHeight_; }
     int ThemeLayerCount(int which) override { return which == 2 ? (int)fgLayers_.size() : (int)(which == 1 ? ntFg_ : bgLayers_).size(); }
     bool GetThemeLayer(int which, int i, ThemeLayerInfo& o) override;
@@ -597,7 +607,7 @@ private:
     std::map<std::string, BirdFace> birdFaces_;
 
     struct BgLayer { float dx = 0, dy = 0; bool hidden = false;   // Lua: extra offset in screen pixels, skip the layer
-                     std::string sprite; float speed = 1, scale = 1; bool looping = true, hasFixedX = false; float autoScroll = 0, offset = 0; bool space = false; float offX = 0, offY = 0, baseOffY = 0;
+                     std::string sprite; float speed = 1, scale = 1; bool looping = true, hasFixedX = false; bool fillBelow = false; float fillR = 0, fillG = 0, fillB = 0, fillA = 255; float autoScroll = 0, offset = 0; bool space = false; float offX = 0, offY = 0, baseOffY = 0;
                      // Classic 4.0 themes: {rect = {r, g, b, a, relLeft, relBottom, relWidth, relHeight}} is a screen rectangle in one colour (0 to 255);
                      // the layer colour (rect colour, or the sprite tint when tintOn) is what setThemeRectColour / setThemeLayerTintColour change
                      bool rect = false, tintOn = false; float colR = 255, colG = 255, colB = 255, colA = 255; float relL = 0, relB = 0, relW = 1, relH = 1;
@@ -712,7 +722,7 @@ private:
     std::vector<std::string> fgLayers_;
     struct FgNamed { bool named = false, fill = false; float offY = 0, r = 0, g = 0, b = 0; };
     std::vector<FgNamed> fgNamed_;
-    struct FgWater { bool water = false; float wobbleY = 0; };      // Piglantis: a foreground layer with water = true sits on the water surface (objects.waterLevel) instead of the ground
+    struct FgWater { bool water = false; float wobbleY = 0; bool fill = false; float fillR = 0, fillG = 0, fillB = 0, fillA = 255; };   // (4.5) fill: the theme's fillBelow colour, drawn from the layer's bottom edge down      // Piglantis: a foreground layer with water = true sits on the water surface (objects.waterLevel) instead of the ground
     std::vector<FgWater> fgWater_;
     std::map<int, std::string> fgParticles_;
     bool swTheme_ = false;
